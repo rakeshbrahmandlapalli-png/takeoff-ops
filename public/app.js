@@ -656,13 +656,15 @@
   // set goes in batches of 10 (a phone that takes more gets the lot at once).
   // Photos go with no text: WhatsApp copies shared text onto EVERY photo, which
   // stops it grouping them into an album. The reg is on the clipboard to paste.
+  // Android's canShare() says yes to 12 and share() then quietly refuses, so
+  // the answer isn't trusted: only iPhones and iPads send the lot in one go.
   var PT_BATCH = 10;
+  var BIG_SHARE = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   function ptBatch() {
     if (!pt) return null;
     var left = pt.files.slice(pt.sent || 0);
     if (!left.length) return null;
-    if (left.length > PT_BATCH && navigator.canShare && navigator.canShare({ files: left })) return left;
-    return left.slice(0, PT_BATCH);
+    return BIG_SHARE ? left : left.slice(0, PT_BATCH);
   }
   function ptSendLabel() {
     var b = ptBatch(); if (!b || b.length === pt.files.length) return "Send on WhatsApp";
@@ -678,7 +680,13 @@
     }
     btn.disabled = true;
     try { await navigator.share({ files: batch }); }
-    catch (e) { btn.disabled = false; if (e.name !== "AbortError") toast("Couldn't open sharing: " + e.message, true); return; }
+    catch (e) {
+      btn.disabled = false;
+      // An iPhone that turns the whole set down drops to batches of 10 next time.
+      if (BIG_SHARE && batch.length > PT_BATCH) { BIG_SHARE = false; toast("Too many photos in one go for this phone. Sending in batches of 10 instead.", true); return openPt(r); }
+      if (e.name !== "AbortError") toast("Couldn't open sharing: " + e.message, true);
+      return;
+    }
     pt.sent = (pt.sent || 0) + batch.length;
     if (pt.sent < pt.files.length) { toast(pt.sent + " of " + pt.files.length + " sent. Now send the next batch."); return openPt(r); }
     if (!r.pt_at) tapPick(r, "pt");
