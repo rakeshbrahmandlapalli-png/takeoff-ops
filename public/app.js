@@ -224,8 +224,10 @@
     var sh = sheet();
     var r = await sb.from("bookings").select("*").eq("sheet_id", S.sheetId).order(sh && sh.kind === "picks" ? "drop_at" : "return_at", { ascending: true, nullsFirst: false });
     if (r.error) { toast(r.error.message, true); return; }
-    S.rows = r.data || [];
+    S.rows = (r.data || []).filter(function (x) { return !x.removed_at; });
+    S.removed = (r.data || []).filter(function (x) { return x.removed_at; });
   }
+  function dropRemoved(id) { S.removed = (S.removed || []).filter(function (x) { return x.id !== id; }); }
   // A yard picker open on a row must not be redrawn out from under the finger.
   function yardOpen() { var a = document.activeElement; return !!(a && a.dataset && a.dataset.yard !== undefined); }
 
@@ -245,8 +247,10 @@
   function onChange(p) {
     var n = p.new || {}, o = p.old || {}, id = n.id || o.id;
     var idx = S.rows.findIndex(function (r) { return r.id === id; });
-    if (p.eventType === "DELETE") { if (idx >= 0) S.rows.splice(idx, 1); }
+    if (p.eventType === "DELETE") { if (idx >= 0) S.rows.splice(idx, 1); dropRemoved(id); }
+    else if (n.sheet_id === S.sheetId && n.removed_at) { if (idx >= 0) S.rows.splice(idx, 1); dropRemoved(id); S.removed.push(n); }
     else if (n.sheet_id === S.sheetId) {
+      dropRemoved(id);
       if (S.pending[id]) return;                   // our own tap is still saving; its answer wins
       var before = idx >= 0 ? S.rows[idx] : null;
       if (idx >= 0) S.rows[idx] = n; else S.rows.push(n);
@@ -627,6 +631,7 @@
       extra += '<button type="button" data-pcall="New Booking" class="' + (r.pick_called === "New Booking" ? "on nb" : "") + '">NEW BOOKING</button>';
     }
     if (extra) h += '<label>MARK AS</label><div class="pseg">' + extra + "</div>";
+    if (can("import")) h += '<button type="button" class="link rmcar" data-removecar>Remove this car (no show, cancelled)</button>';
     h += '<div class="pbtns"><button type="button" data-close>Close</button>' + (can("note") || can("flights") ? '<button type="button" class="save" data-savepanel>Save</button>' : "") + "</div>";
     $("panelBody").innerHTML = h;
     if (!$("panel").open) $("panel").showModal();
@@ -640,6 +645,7 @@
     if (t.dataset.noflight !== undefined && quick) { quick.noFlight = true; drawQuickFlight(); setTimeout(function () { var i = $("collectTime"); if (i) i.focus(); }, 50); return; }
     if (t.dataset.flightback !== undefined && quick) { quick.noFlight = false; drawQuickFlight(); return; }
     if (t.dataset.copy === "returns" || t.dataset.copy === "stats") { e.stopPropagation(); return putOnClipboard(copyText(t.dataset.copy)); }
+    if (t.dataset.restore) return restoreCar(t);
     if (!panelRow) return;
     var r = S.rows.filter(function (x) { return x.id === panelRow.id; })[0] || panelRow;
     if (t.dataset.savepanel !== undefined) {
@@ -663,7 +669,86 @@
     }
     if (t.dataset.word) { var p = t.dataset.word.split(":"); tapDrop(r, p[0], p[1]); return $("panel").close(); }
     if (t.dataset.pcall) { tapPick(r, "called", t.dataset.pcall); return $("panel").close(); }
+    if (t.dataset.removecar !== undefined) return askRemove(r);
+    if (t.dataset.backcar !== undefined) return openPanel(r);
+    if (t.dataset.removewhy) return removeCar(r, t.dataset.removewhy, t);
   });
+
+  // ── add a car by hand, remove a no-show (office) ──
+  function askRemove(r) {
+    $("panelBody").innerHTML = '<h2 id="panelTitle">Remove ' + esc(r.reg || "this car") + "?</h2>" +
+      '<p class="sub">It leaves the board and the counts, and is never carried over as an overstay. You can put it back from Menu, Removed cars.</p>' +
+      '<label>WHY</label><div class="pseg">' + ["No show", "Cancelled", "Duplicate"].map(function (w) {
+        return '<button type="button" data-removewhy="' + w + '">' + w.toUpperCase() + "</button>";
+      }).join("") + '</div><div class="pbtns"><button type="button" data-backcar>Back</button></div>';
+  }
+  async function removeCar(r, why, btn) {
+    btn.disabled = true;
+    var x = await sb.rpc("remove_booking", { p_booking: r.id, p_reason: why });
+    if (x.error) { btn.disabled = false; return toast(x.error.message, true); }
+    S.rows = S.rows.filter(function (y) { return y.id !== r.id; });
+    dropRemoved(r.id); S.removed.push(x.data);
+    toast(r.reg + " removed: " + why);
+    $("panel").close();
+  }
+  function openRemoved() {
+    var list = (S.removed || []).slice().sort(function (a, b) { return a.removed_at < b.removed_at ? 1 : -1; });
+    $("panelBody").innerHTML = '<h2 id="panelTitle">Removed cars <small>' + esc(sheetName()) + "</small></h2>" +
+      (list.length ? '<div class="rmlist">' + list.map(function (r) {
+        return '<div><span><b>' + esc(r.reg || "NO REG") + "</b> " + esc(r.name) + '<small>' + esc(r.removed_reason) + " · " + esc(staffName(r.removed_by) || "") + " · " + esc(dayShort(r.removed_at) + " " + hhmm(r.removed_at)) +
+          '</small></span><button type="button" data-restore="' + r.id + '">Put back</button></div>';
+      }).join("") + "</div>" : '<p class="sub">Nothing removed from this sheet.</p>') +
+      '<div class="pbtns"><button type="button" data-close>Close</button></div>';
+    if (!$("panel").open) $("panel").showModal();
+  }
+  async function restoreCar(btn) {
+    btn.disabled = true;
+    var x = await sb.rpc("restore_booking", { p_booking: btn.dataset.restore });
+    if (x.error) { btn.disabled = false; return toast(x.error.message, true); }
+    dropRemoved(x.data.id); S.rows.push(x.data);
+    toast(x.data.reg + " is back on the board");
+    openRemoved();
+  }
+  function openAddCar() {
+    var sh = sheet(); if (!sh) return;
+    var drops = sh.kind === "drops";
+    function f(id, label, attrs) { return '<label for="' + id + '">' + label + '</label><input id="' + id + '" ' + (attrs || "") + ">"; }
+    function when(id, label, day) { return '<label>' + label + '</label><div class="when2"><input id="' + id + 'D" type="date" value="' + esc(day || "") + '"><input id="' + id + 'T" type="time"></div>'; }
+    $("panelBody").innerHTML = '<h2 id="panelTitle">Add a car <small>' + esc(sheetLabel(sh)) + "</small></h2>" +
+      '<form id="addCarForm" novalidate>' +
+      f("acReg", "REG", 'autocomplete="off" autocapitalize="characters" maxlength="12" required') +
+      f("acName", "NAME", 'autocomplete="off" maxlength="80"') +
+      f("acPhone", "PHONE", 'type="tel" autocomplete="off" maxlength="30"') +
+      f("acMake", "CAR", 'autocomplete="off" maxlength="60" placeholder="Make and colour"') +
+      f("acRef", "REF", 'autocomplete="off" maxlength="40" placeholder="Booking reference, if there is one"') +
+      (drops ? when("acRet", "BACK", sh.day) + f("acFlight", "FLIGHT", 'autocomplete="off" autocapitalize="characters" maxlength="12"') +
+        '<label for="acYard">YARD</label><select id="acYard"><option value="">None yet</option>' + (S.company.yards || []).map(function (y) { return '<option value="' + esc(y) + '">' + esc(YARD_LABEL[y] || y) + "</option>"; }).join("") + "</select>"
+        : when("acDrop", "DROP-OFF", sh.day) + when("acRet", "BACK", "")) +
+      '<label for="acNote">NOTE</label><textarea id="acNote" maxlength="500"></textarea>' +
+      '<div class="pbtns"><button type="button" data-close>Cancel</button><button class="save" id="acGo">Add car</button></div></form>';
+    if (!$("panel").open) $("panel").showModal();
+    setTimeout(function () { $("acReg").focus(); }, 50);
+  }
+  function localWhen(id) {
+    var d = $(id + "D"), t = $(id + "T");
+    if (!d || !d.value) return "";
+    return d.value + " " + (t.value || "00:00");
+  }
+  async function addCar() {
+    var sh = sheet(), reg = $("acReg").value.trim();
+    if (!reg) return toast("Enter the registration.", true);
+    var ret = localWhen("acRet");
+    if (sh.kind === "drops" && !ret) return toast("Enter when the car is back.", true);
+    var p = { reg: reg, name: $("acName").value, phone: $("acPhone").value, make: $("acMake").value, ref: $("acRef").value, note: $("acNote").value,
+      return_local: ret, drop_local: sh.kind === "picks" ? localWhen("acDrop") : "",
+      flight: $("acFlight") ? normFlight($("acFlight").value) || "" : "", yard: $("acYard") ? $("acYard").value : "" };
+    $("acGo").disabled = true;
+    var x = await sb.rpc("add_booking", { p_sheet: sh.id, p: p });
+    if (x.error) { $("acGo").disabled = false; return toast(x.error.message, true); }
+    await loadRows();
+    toast(x.data.reg + " added");
+    $("panel").close();
+  }
 
   // ── PICKS: returns by day, stats by hour (as on the Sheet app) ──
   function ordinal(d) { var t = d % 10, h = d % 100; return t === 1 && h !== 11 ? "ST" : t === 2 && h !== 12 ? "ND" : t === 3 && h !== 13 ? "RD" : "TH"; }
@@ -1402,6 +1487,8 @@
     if (t.dataset.archivesheet) return archiveSheet(t.dataset.archivesheet, true);
     if (t.dataset.unarchive) return archiveSheet(t.dataset.unarchive, false);
     if (t.dataset.deletesheet) return deleteSheet(t.dataset.deletesheet);
+    if (t.dataset.addcar !== undefined) { $("menu").close(); return openAddCar(); }
+    if (t.dataset.removedlist !== undefined) { $("menu").close(); return openRemoved(); }
     if (t.dataset.notifyon !== undefined) return turnOnNotifications(t);
     if (t.dataset.notifyoff !== undefined) return turnOffNotifications(false);
     if (t.dataset.notifytest !== undefined) return sendTest(t, false);
@@ -1443,6 +1530,7 @@
   });
   document.addEventListener("submit", async function (e) {
     if (e.target.id === "archSearch") { e.preventDefault(); return searchArchive(); }
+    if (e.target.id === "addCarForm") { e.preventDefault(); return addCar(); }
     if (e.target.id === "quickForm") {
       e.preventDefault();
       if (quick && quick.noFlight) { var ct = $("collectTime").value; if (!/^\d{2}:\d{2}$/.test(ct)) { toast("Type the collection time.", true); return; } return saveQuickFlight("NO FLIGHT", ct); }
@@ -1496,6 +1584,8 @@
       ["import", "Import bookings", can("import")], ["staff", "Staff", can("staff")], ["settings", "Settings", can("settings")], ["me", "Me · sign out", true]];
     var sh = sheet();
     var sheetTools = sh && can("import") ? '<label>THIS SHEET · ' + esc(sheetLabel(sh)) + '</label><div class="menu-list">' +
+      '<button type="button" data-addcar>Add a car</button>' +
+      '<button type="button" data-removedlist>Removed cars' + ((S.removed || []).length ? " (" + S.removed.length + ")" : "") + "</button>" +
       (sh.archived_at ? '<button type="button" data-unarchive="' + sh.id + '">Bring back to the list</button>' : '<button type="button" data-archivesheet="' + sh.id + '">Archive this sheet</button>') +
       '<button type="button" class="danger" data-deletesheet="' + sh.id + '">Delete this sheet</button></div>' : "";
     $("menuBody").innerHTML = "<h2>" + esc(S.company.name) + '</h2><p class="sub">' + esc(S.me.name) + " · " + esc(ROLE_LABEL[S.me.role] || S.me.role) + "</p>" +
