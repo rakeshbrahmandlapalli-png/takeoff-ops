@@ -942,13 +942,19 @@
   // another company's name. Nothing here is per-company code; it is all data.
   var BRAND_KEY = "takeoff_brand";
   var PRODUCT = "Parking Ops";
-  // What to call this app when speaking to the person using it. Their own
-  // company if we know it, the product if we do not — never another customer.
   function brandName() {
     if (S.company) return String((S.company.brand && S.company.brand.short) || S.company.name || PRODUCT);
     try {
       var c = JSON.parse(localStorage.getItem(BRAND_KEY) || "null");
       if (c) return String((c.brand && c.brand.short) || c.name || PRODUCT);
+    } catch (e) {}
+    return PRODUCT;
+  }
+  function brandFullName() {
+    if (S.company) return String((S.company.brand && S.company.brand.name) || S.company.name || PRODUCT);
+    try {
+      var c = JSON.parse(localStorage.getItem(BRAND_KEY) || "null");
+      if (c) return String((c.brand && c.brand.name) || c.name || PRODUCT);
     } catch (e) {}
     return PRODUCT;
   }
@@ -958,7 +964,7 @@
     // right name and colour. Without it an Airport Parking Bay driver opens
     // their app and is greeted by another company.
     try { if (co) localStorage.setItem(BRAND_KEY, JSON.stringify({ name: co.name, brand: co.brand || {} })); } catch (e) {}
-    var name = String(b.name || (co && co.name) || PRODUCT).trim();
+    var name = String((co && co.name) || b.name || PRODUCT).trim();
     var short = String(b.short || name).trim();
 
     document.title = name;
@@ -966,10 +972,9 @@
     if (t) t.setAttribute("content", short);
 
     // Only the wordmark and the board button. NOT ".brand" on its own: the
-    // buttons wear "btn brand" for their colour, and renaming those would put
-    // the company name on Continue, Sign in and Create owner.
     Array.prototype.forEach.call(document.querySelectorAll("span.brand, .tobrand"), function (el) {
-      el.textContent = short;
+      var isGateScreen = el.closest(".gate") !== null;
+      el.textContent = isGateScreen ? name : short;
       if (el.classList.contains("tobrand")) el.setAttribute("aria-label", name + " board");
     });
 
