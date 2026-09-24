@@ -606,9 +606,10 @@
       '<div class="pseg ptadd"><button type="button" data-ptcam>CAMERA</button>' +
       '<label><input type="file" accept="image/*" multiple data-ptfile hidden>CHOOSE FROM GALLERY</label></div>' +
       '<label class="ptnative" id="ptNative"><input type="file" accept="image/*" capture="environment" data-ptfile hidden>Camera not working? Use the phone\'s camera (one photo at a time)</label>' +
-      (pt.files.length ? '<div class="ptthumbs">' + pt.urls.map(function (u) { return '<img src="' + u + '" alt="">'; }).join("") + '</div><p class="hint">' + pt.files.length + " photo" + (pt.files.length === 1 ? "" : "s") + ' ready. <button type="button" class="link" data-ptclear>Start again</button></p>'
+      (pt.files.length ? '<div class="ptthumbs">' + pt.urls.map(function (u, i) { return '<img src="' + u + '" alt=""' + (i < (pt.sent || 0) ? ' class="sent"' : "") + ">"; }).join("") + '</div><p class="hint">' + pt.files.length + " photo" + (pt.files.length === 1 ? "" : "s") + ' ready. <button type="button" class="link" data-ptclear>Start again</button></p>'
         : '<p class="hint">No photos yet. Take them one by one, or pick them all from the gallery.</p>') +
-      '<div class="pbtns"><button type="button" data-close>Cancel</button><button type="button" class="save" data-ptsend' + (pt.files.length ? "" : " disabled") + ">Send on WhatsApp</button></div>" +
+      (pt.sent ? '<p class="ptprog"><b>' + pt.sent + " of " + pt.files.length + " sent.</b> Keep going until all are sent. PT ticks itself after the last batch.</p>" : "") +
+      '<div class="pbtns"><button type="button" data-close>Cancel</button><button type="button" class="save" data-ptsend' + (pt.files.length ? "" : " disabled") + ">" + ptSendLabel() + "</button></div>" +
       '<button type="button" class="link" data-ptmark>Tick PT without sending photos</button>';
     if (!$("panel").open) $("panel").showModal();
   }
@@ -651,21 +652,38 @@
     input.value = "";
     openPt(r);
   }
+  // Android browsers hand at most 10 photos to another app at a time, so a big
+  // set goes in batches of 10 (a phone that takes more gets the lot at once).
+  // Photos go with no text: WhatsApp copies shared text onto EVERY photo, which
+  // stops it grouping them into an album. The reg is on the clipboard to paste.
+  var PT_BATCH = 10;
+  function ptBatch() {
+    if (!pt) return null;
+    var left = pt.files.slice(pt.sent || 0);
+    if (!left.length) return null;
+    if (left.length > PT_BATCH && navigator.canShare && navigator.canShare({ files: left })) return left;
+    return left.slice(0, PT_BATCH);
+  }
+  function ptSendLabel() {
+    var b = ptBatch(); if (!b || b.length === pt.files.length) return "Send on WhatsApp";
+    var from = (pt.sent || 0) + 1;
+    return "Send photos " + from + "–" + (from + b.length - 1) + " of " + pt.files.length;
+  }
   async function ptSend(r, btn) {
-    // Photos only, no text: WhatsApp copies shared text onto EVERY photo, which
-    // stops it grouping them into one album. The reg goes on the clipboard and
-    // is pasted once into WhatsApp's caption box, as the team does by hand.
-    var caption = ptCaption(r), data = { files: pt.files };
+    var caption = ptCaption(r), batch = ptBatch();
+    if (!batch) return;
     try { await navigator.clipboard.writeText(caption); } catch (e) {}
-    if (!navigator.canShare || !navigator.canShare({ files: pt.files })) {
-      return toast("This phone can't pass photos to WhatsApp from the app. Send them from WhatsApp; the caption is copied.", true);
+    if (!navigator.canShare || !navigator.canShare({ files: batch })) {
+      return toast("This phone can't pass photos to WhatsApp from the app. Send them from WhatsApp; the reg is copied.", true);
     }
     btn.disabled = true;
-    try { await navigator.share(data); }
+    try { await navigator.share({ files: batch }); }
     catch (e) { btn.disabled = false; if (e.name !== "AbortError") toast("Couldn't open sharing: " + e.message, true); return; }
+    pt.sent = (pt.sent || 0) + batch.length;
+    if (pt.sent < pt.files.length) { toast(pt.sent + " of " + pt.files.length + " sent. Now send the next batch."); return openPt(r); }
     if (!r.pt_at) tapPick(r, "pt");
     ptClear();
-    toast(caption + ": PT done");
+    toast(caption + ": all photos sent, PT done");
     $("panel").close();
   }
   function tapPick(r, key, value) {
