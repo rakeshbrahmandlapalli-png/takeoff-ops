@@ -345,7 +345,7 @@
     show("logBtn", can("summary") || can("log"));
     show("flBtn", can("flights") && !picks);
     show("rtBtn", can("picksinfo") && picks);
-    show("psBtn", can("picksinfo") && picks);
+    show("psBtn", can("picksinfo"));
     show("boardHead", board);
     show("viewHead", !board);
     if (!board) $("viewTitle").textContent = VIEW_TITLE[S.view] || "";
@@ -792,6 +792,40 @@
     }
     return { hours: hours, totalSched: ts, totalDone: td, last30: last30, last60: last60 };
   }
+  // DROPS by the booked return hour, in shift order (06:00 round to 05:59).
+  // Overstays are older returns, so they get their own line, not an hour.
+  function dropsStats() {
+    var due = {}, sent = {}, done = {}, over = { due: 0, sent: 0, done: 0 }, last30 = 0, last60 = 0, now = Date.now();
+    var shift = (sheet() || {}).day, start = +((S.company && S.company.drops_day_end) || "06").slice(0, 2);
+    S.rows.forEach(function (r) {
+      var isSent = !!r.sent_at, isDone = !!r.cleared_at;
+      var p = r.return_at ? londonParts(new Date(r.return_at)) : null;
+      var old = r.overstay || !p || (p.key < shift) || (p.key === shift && +p.time.slice(0, 2) < start);
+      if (old) { over.due++; if (isSent) over.sent++; if (isDone) over.done++; }
+      else { var h = +p.time.slice(0, 2); due[h] = (due[h] || 0) + 1; if (isSent) sent[h] = (sent[h] || 0) + 1; if (isDone) done[h] = (done[h] || 0) + 1; }
+      if (r.cleared_at) { var m = (now - new Date(r.cleared_at).getTime()) / 60000; if (m >= 0 && m <= 30) last30++; if (m >= 0 && m <= 60) last60++; }
+    });
+    var hours = [], t = { due: over.due, sent: over.sent, done: over.done };
+    for (var i = 0; i < 24; i++) {
+      var h = (start + i) % 24;
+      if (!due[h]) continue;
+      t.due += due[h]; t.sent += sent[h] || 0; t.done += done[h] || 0;
+      hours.push({ label: pad(h) + ":00–" + pad((h + 1) % 24) + ":00", due: due[h], sent: sent[h] || 0, done: done[h] || 0 });
+    }
+    return { hours: hours, over: over, total: t, last30: last30, last60: last60 };
+  }
+  function openDropsStats() {
+    var D = dropsStats();
+    function line(label, x, cls) { return '<div class="pst4' + (cls || "") + '"><b' + (cls ? "" : ' class="num"') + ">" + label + '</b><i class="num">' + x.due + '</i><i class="num">' + x.sent + '</i><i class="num' + (x.done ? " dn" : "") + '">' + x.done + "</i></div>"; }
+    $("panelBody").innerHTML = '<h2 id="panelTitle">DROPS by hour <small>' + esc(sheetName()) + "</small></h2>" +
+      '<div class="pst4 head"><b>Due back</b><i>Due</i><i>Sent</i><i>Collected</i></div>' +
+      D.hours.map(function (h) { return line(h.label, h); }).join("") +
+      (D.over.due ? line("Overstays", D.over, " sec2") : "") +
+      line("TOTAL", D.total, " tot") +
+      '<div class="pst4"><b>Collected, last 30 min</b><i class="num">' + D.last30 + '</i><i></i><i></i></div><div class="pst4"><b>Collected, last 60 min</b><i class="num">' + D.last60 + "</i><i></i><i></i></div>" +
+      '<div class="pbtns"><button type="button" data-close>Close</button><button type="button" class="save" data-copy="stats">Copy</button></div>';
+    panelRow = null; if (!$("panel").open) $("panel").showModal();
+  }
   function catLines() {
     var sh = sheet(), n = catCounts();
     return CATS.filter(function (c) { return sh && (sh.short_until || c[0] === "same" || c[0] === "next"); })
@@ -838,6 +872,11 @@
         R0.owed.forEach(function (x) { lines.push("  " + x.line + " - " + (x.kind ? x.kind.toUpperCase() + " - " : "") + x.note); });
         lines.push("TOTAL £" + R0.owed.reduce(function (t, x) { return t + x.due; }, 0).toFixed(2));
       }
+    } else if ((sheet() || {}).kind === "drops") {
+      var D = dropsStats();
+      lines = ["DROPS BY HOUR — " + sheetName(), "", "Due back   Due   Sent   Collected"].concat(D.hours.map(function (h) { return h.label + "   " + h.due + "   " + h.sent + "   " + h.done; }),
+        D.over.due ? ["Overstays   " + D.over.due + "   " + D.over.sent + "   " + D.over.done] : [],
+        ["TOTAL   " + D.total.due + "   " + D.total.sent + "   " + D.total.done, "", "Collected last 30 min   " + D.last30, "Collected last 60 min   " + D.last60]);
     } else {
       var P = picksStats();
       lines = ["PICKS STATS — " + sheetName(), "", "Hour   Scheduled   Completed"].concat(P.hours.map(function (h) { return h.label + "   " + h.sched + "   " + h.done; }),
@@ -1204,7 +1243,7 @@
     import: ["office", "manager"], staff: ["office", "manager"], settings: ["manager"] };
   var PERMS = [["sent", "DROPS: press SENT"], ["called", "DROPS: press CALLED and OVERSTAY"], ["clear", "DROPS: press CLEAR and COMPLAINT"], ["yard", "Set yards"],
     ["note", "Write notes"], ["flights", "Enter and check flight numbers"], ["intake", "PICKS: Collected, No show, PT"], ["rtc", "PICKS: RTC"],
-    ["picksinfo", "PICKS: returns and stats"], ["summary", "Summary"], ["log", "Activity log and archive"], ["import", "Import, add and remove cars"],
+    ["picksinfo", "Hourly stats, and PICKS returns"], ["summary", "Summary"], ["log", "Activity log and archive"], ["import", "Import, add and remove cars"],
     ["staff", "Staff: add people, new links, switch off"], ["settings", "Settings"]];
   function roleCan(role, a) { if (role === "owner") return true; var l = ROLE_CAN[a]; return l ? l.indexOf(role) !== -1 : role !== "view"; }
   function personCan(p, a) { var x = p.extra || []; if (x.indexOf("-" + a) !== -1) return false; if (x.indexOf(a) !== -1) return true; return roleCan(p.role, a); }
@@ -1569,7 +1608,7 @@
     if (t.id === "logBtn") return go("summary");
     if (t.id === "flBtn") return checkFlights(t);
     if (t.id === "rtBtn") return openReturns();
-    if (t.id === "psBtn") return openPicksStats();
+    if (t.id === "psBtn") return (sheet() || {}).kind === "drops" ? openDropsStats() : openPicksStats();
     if (t.id === "refreshBtn") { t.disabled = true; await loadSheets(); await loadRows(); S.runs = null; S.activity = null; render(); t.disabled = false; flush(); return; }
     if (t.dataset.checkflights !== undefined) return checkFlights(t);
     if (t.dataset.savesettings !== undefined) return saveSettings(t);

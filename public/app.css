@@ -255,6 +255,15 @@ dialog::backdrop{background:rgb(32 33 36 / .5);}
 .pst.head i,.pst.tot i{color:#3c4043;font-weight:700;}
 .pst.tot{margin-top:2px;}
 .pst.tot i.dn{color:#137333;}
+.pst4{display:grid;grid-template-columns:1fr 3.4em 3.4em 5.2em;align-items:center;gap:6px;padding:9px 8px;border-bottom:1px solid #eceff1;font-size:14.5px;}
+.pst4 b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pst4 i{font-style:normal;text-align:right;color:#5f6368;}
+.pst4 i.dn{color:#137333;font-weight:700;}
+.pst4.head,.pst4.tot{background:#e8eaed;border-radius:6px;border-bottom:0;font-weight:700;}
+.pst4.head i,.pst4.tot i{color:#3c4043;font-weight:700;}
+.pst4.tot{margin:2px 0 10px;}
+.pst4.tot i.dn{color:#137333;}
+.pst4.sec2{background:#fff2cc;}
 .pst.sec{grid-template-columns:1fr;margin-top:12px;background:#fff2cc;border-radius:6px;border-bottom:0;}
 .field{display:flex;flex-direction:column;gap:6px;margin:10px 0;color:var(--ink-2);font-size:14px;}
 .field input,.field select{min-height:48px;padding:0 12px;border:1px solid #9AA0AA;border-radius:var(--r);font-size:16px;background:#fff;color:var(--ink);}
