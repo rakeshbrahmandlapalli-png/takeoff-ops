@@ -601,9 +601,14 @@
   function openPt(r) {
     if (!pt || pt.id !== r.id) { ptClear(); pt = { id: r.id, files: [], urls: [] }; }
     panelRow = r;
+    var num = (S.company && S.company.pt_whatsapp) || "", reg = ptCaption(r);
     $("panelBody").innerHTML = '<h2 id="panelTitle">PT · ' + esc(r.reg || "NO REG") + (r.num ? " <small>#" + r.num + "</small>" : "") + "</h2>" +
-      '<label class="chk ptauto"><input type="checkbox" data-ptauto' + (ptAutoCaption() ? " checked" : "") + "><span>Add <b>" + esc(ptCaption(r)) + "</b> to the photos automatically</span></label>" +
-      (ptAutoCaption() ? "" : '<p class="sub">When WhatsApp opens: long-press the caption box, tap <b>Paste</b> (<b>' + esc(ptCaption(r)) + "</b> is copied for you), then Send.</p>") +
+      // Step 1: the reg as its own message, so WhatsApp keeps the photos as albums.
+      '<div class="ptstep' + (pt.regSent ? " done" : "") + '"><b>1</b>' +
+      (num ? '<a class="btn ' + (pt.regSent ? "ghost" : "brand") + '" href="https://wa.me/' + esc(num) + "?text=" + encodeURIComponent(reg) + '" target="_blank" rel="noopener" data-ptreg>' + (pt.regSent ? "✓ Sent " : "Send ") + esc(reg) + " to WhatsApp</a>"
+        : '<button type="button" class="btn ' + (pt.regSent ? "ghost" : "brand") + '" data-ptregshare>' + (pt.regSent ? "✓ Sent " : "Send ") + esc(reg) + " to WhatsApp</button>") +
+      "</div>" + (pt.regSent ? "" : '<p class="hint">Opens the chat with ' + esc(reg) + " typed. Tap Send, then come back here for the photos.</p>") +
+      '<div class="ptstep"><b>2</b><span>Photos</span></div>' +
       '<div class="pseg ptadd"><button type="button" data-ptcam>CAMERA</button>' +
       '<label><input type="file" accept="image/*" multiple data-ptfile hidden>CHOOSE FROM GALLERY</label></div>' +
       '<label class="ptnative" id="ptNative"><input type="file" accept="image/*" capture="environment" data-ptfile hidden>Camera not working? Use the phone\'s camera (one photo at a time)</label>' +
@@ -659,8 +664,6 @@
   // stops it grouping them into an album. The reg is on the clipboard to paste.
   // Android's canShare() says yes to 12 and share() then quietly refuses, so
   // the answer isn't trusted: only iPhones and iPads send the lot in one go.
-  // Whether the reg rides along with the photos. Remembered on this phone.
-  function ptAutoCaption() { try { return localStorage.getItem("pt_autocaption") !== "0"; } catch (e) { return true; } }
   var PT_BATCH = 10;
   var BIG_SHARE = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   function ptBatch() {
@@ -682,9 +685,8 @@
       return toast("This phone can't pass photos to WhatsApp from the app. Send them from WhatsApp; the reg is copied.", true);
     }
     btn.disabled = true;
-    var data = { files: batch };
-    if (ptAutoCaption()) data.text = caption;
-    try { await navigator.share(data); }
+    // Photos only: text shared with them lands on every photo and breaks the album.
+    try { await navigator.share({ files: batch }); }
     catch (e) {
       btn.disabled = false;
       // An iPhone that turns the whole set down drops to batches of 10 next time.
@@ -790,6 +792,12 @@
     if (t.dataset.shutter !== undefined) return ptShoot(r);
     if (t.dataset.camdone !== undefined) { camStop(); return openPt(r); }
     if (t.dataset.ptsend !== undefined) return ptSend(r, t);
+    if (t.dataset.ptregshare !== undefined) {
+      // No PT number set: share the reg and let them pick the chat.
+      if (!navigator.share) return toast("Set the PT WhatsApp number in Settings.", true);
+      navigator.share({ text: ptCaption(r) }).then(function () { if (pt) pt.regSent = true; openPt(r); }).catch(function () {});
+      return;
+    }
     if (t.dataset.ptclear !== undefined) { ptClear(); return openPt(r); }
     if (t.dataset.ptmark !== undefined) { if (!r.pt_at) tapPick(r, "pt"); ptClear(); return $("panel").close(); }
     if (t.dataset.removecar !== undefined) return askRemove(r);
@@ -1661,7 +1669,22 @@
         // Only speaks up when the settings would run past the monthly plan.
         (perDay > 1900 ? '<div class="alert">About ' + (perDay * 30).toLocaleString("en-GB") + " FlightRadar24 credits a month: more than the 60,000 plan.</div>" : "")) +
       '<div class="row-actions"><button type="button" class="btn ghost" data-resetsettings>Back to defaults</button><button type="button" class="btn brand" data-savesettings>Save</button></div></div>' +
-      discordHtml();
+      discordHtml() + ptNumberHtml();
+  }
+  function ptNumberHtml() {
+    var n = (S.company && S.company.pt_whatsapp) || "";
+    return '<div class="box" style="padding:14px;margin-top:14px;max-width:560px"><strong>PT photos: WhatsApp number</strong>' +
+      '<p class="note">PT opens this chat with the reg typed, before the photos are sent.' + (n ? " Now: <b>+" + esc(n) + "</b>" : " Not set.") + "</p>" +
+      '<label class="field">Number<input id="ptNumber" type="tel" autocomplete="off" placeholder="07932 029349 or +44 7932 029349" value="' + esc(n ? "+" + n : "") + '"></label>' +
+      '<div class="row-actions"><button type="button" class="btn brand" data-savept>Save number</button></div></div>';
+  }
+  async function savePtNumber(btn) {
+    btn.disabled = true;
+    var r = await sb.rpc("set_pt_whatsapp", { p_number: $("ptNumber").value });
+    btn.disabled = false;
+    if (r.error) return toast(r.error.message, true);
+    S.company.pt_whatsapp = r.data || "";
+    toast(r.data ? "Saved: +" + r.data : "Number removed"); render();
   }
   // Discord links work like passwords for the channel, so the app never shows
   // them back: it only knows whether each one is set.
@@ -1833,6 +1856,9 @@
     var t = e.target.closest("button,a"); if (!t) return;
     if (t.dataset.copy) { try { await navigator.clipboard.writeText(t.dataset.copy); toast("Copied"); } catch (err) { toast("Couldn't copy: select the link and copy it", true); } return; }
     if (!S.me) return;
+    // The link opens WhatsApp by itself; just remember it was sent.
+    if (t.dataset.ptreg !== undefined) { if (pt) pt.regSent = true; setTimeout(function () { if (panelRow && pt) openPt(panelRow); }, 400); return; }
+    if (t.dataset.savept !== undefined) return savePtNumber(t);
     if (t.dataset.view) return go(t.dataset.view);
     if (t.id === "menuBtn") return openMenu();
     if (t.id === "logBtn") return go("summary");
@@ -1921,7 +1947,6 @@
       return;
     }
     if (t.dataset.ptfile !== undefined) return ptAdd(t);
-    if (t.dataset.ptauto !== undefined) { try { localStorage.setItem("pt_autocaption", t.checked ? "1" : "0"); } catch (err) {} if (panelRow) openPt(panelRow); return; }
     if (t.dataset.file) { var f = t.files && t.files[0]; if (!f) return; S.imp[t.dataset.file + "File"] = f; S.imp.error = ""; render(); return; }
     if (t.dataset.alertpref !== undefined) {
       var P = Object.assign({ drops: true, picks: true, flights: true }, S.notify.prefs); P[t.dataset.alertpref] = t.checked;
