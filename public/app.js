@@ -593,6 +593,46 @@
       }
     });
   }
+  // PT: photos go to WhatsApp with the reg as the caption, then PT is ticked.
+  // A web app can hand photos to WhatsApp but can't choose the chat, so the
+  // driver still picks the number in WhatsApp's own list.
+  var pt = null;
+  function ptCaption(r) { return r.reg || "NO REG"; }
+  function openPt(r) {
+    if (!pt || pt.id !== r.id) { ptClear(); pt = { id: r.id, files: [], urls: [] }; }
+    panelRow = r;
+    $("panelBody").innerHTML = '<h2 id="panelTitle">PT · ' + esc(r.reg || "NO REG") + (r.num ? " <small>#" + r.num + "</small>" : "") + "</h2>" +
+      '<p class="sub">Caption: <b>' + esc(ptCaption(r)) + "</b></p>" +
+      '<div class="pseg ptadd"><label><input type="file" accept="image/*" capture="environment" data-ptfile hidden>TAKE PHOTO</label>' +
+      '<label><input type="file" accept="image/*" multiple data-ptfile hidden>CHOOSE FROM GALLERY</label></div>' +
+      (pt.files.length ? '<div class="ptthumbs">' + pt.urls.map(function (u) { return '<img src="' + u + '" alt="">'; }).join("") + '</div><p class="hint">' + pt.files.length + " photo" + (pt.files.length === 1 ? "" : "s") + ' ready. <button type="button" class="link" data-ptclear>Start again</button></p>'
+        : '<p class="hint">No photos yet. Take them one by one, or pick them all from the gallery.</p>') +
+      '<div class="pbtns"><button type="button" data-close>Cancel</button><button type="button" class="save" data-ptsend' + (pt.files.length ? "" : " disabled") + ">Send on WhatsApp</button></div>" +
+      '<button type="button" class="link" data-ptmark>Tick PT without sending photos</button>';
+    if (!$("panel").open) $("panel").showModal();
+  }
+  function ptClear() { if (pt) pt.urls.forEach(function (u) { URL.revokeObjectURL(u); }); pt = null; }
+  function ptAdd(input) {
+    var r = panelRow; if (!pt || !r) return;
+    Array.prototype.forEach.call(input.files || [], function (f) { pt.files.push(f); pt.urls.push(URL.createObjectURL(f)); });
+    input.value = "";
+    openPt(r);
+  }
+  async function ptSend(r, btn) {
+    var caption = ptCaption(r), data = { files: pt.files, text: caption };
+    // The caption also goes on the clipboard: some iPhones drop text shared with photos.
+    try { await navigator.clipboard.writeText(caption); } catch (e) {}
+    if (!navigator.canShare || !navigator.canShare({ files: pt.files })) {
+      return toast("This phone can't pass photos to WhatsApp from the app. Send them from WhatsApp; the caption is copied.", true);
+    }
+    btn.disabled = true;
+    try { await navigator.share(data); }
+    catch (e) { btn.disabled = false; if (e.name !== "AbortError") toast("Couldn't open sharing: " + e.message, true); return; }
+    if (!r.pt_at) tapPick(r, "pt");
+    ptClear();
+    toast(caption + ": PT done");
+    $("panel").close();
+  }
   function tapPick(r, key, value) {
     var v = key === "intake" ? (r.intake === value ? "" : value) : key === "pt" ? (r.pt_at ? "" : "Done") : (r.pick_called === value ? "" : value);
     run("tap_pick", { p_booking: r.id, p_key: key, p_value: v }, r, function (x) {
@@ -680,6 +720,9 @@
     }
     if (t.dataset.word) { var p = t.dataset.word.split(":"); tapDrop(r, p[0], p[1]); return $("panel").close(); }
     if (t.dataset.pcall) { tapPick(r, "called", t.dataset.pcall); return $("panel").close(); }
+    if (t.dataset.ptsend !== undefined) return ptSend(r, t);
+    if (t.dataset.ptclear !== undefined) { ptClear(); return openPt(r); }
+    if (t.dataset.ptmark !== undefined) { if (!r.pt_at) tapPick(r, "pt"); ptClear(); return $("panel").close(); }
     if (t.dataset.removecar !== undefined) return askRemove(r);
     if (t.dataset.backcar !== undefined) return openPanel(r);
     if (t.dataset.removewhy) return removeCar(r, t.dataset.removewhy, t);
@@ -1756,7 +1799,7 @@
     if (r && t.dataset.open !== undefined) return openPanel(r);
     if (r && t.dataset.act) return tapDrop(r, t.dataset.act);
     if (r && t.dataset.pick) return tapPick(r, "intake", t.dataset.pick);
-    if (r && t.dataset.pt !== undefined) return tapPick(r, "pt");
+    if (r && t.dataset.pt !== undefined) return r.pt_at ? tapPick(r, "pt") : openPt(r);
     if (t.dataset.impkind) { S.imp = newImport(t.dataset.impkind); render(); return; }
     if (t.dataset.read !== undefined) return readImport();
     if (t.dataset.restart !== undefined) { S.imp = newImport(S.imp.kind); render(); return; }
@@ -1808,6 +1851,7 @@
       run("set_yard", { p_booking: r.id, p_yard: y }, r, function (x) { x.yard = y; x.yard_before_t = ""; });
       return;
     }
+    if (t.dataset.ptfile !== undefined) return ptAdd(t);
     if (t.dataset.file) { var f = t.files && t.files[0]; if (!f) return; S.imp[t.dataset.file + "File"] = f; S.imp.error = ""; render(); return; }
     if (t.dataset.alertpref !== undefined) {
       var P = Object.assign({ drops: true, picks: true, flights: true }, S.notify.prefs); P[t.dataset.alertpref] = t.checked;
