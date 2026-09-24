@@ -180,7 +180,7 @@
     var res = await Promise.all([
       sb.rpc("my_permissions"),
       sb.from("companies").select("*").eq("id", S.me.company_id).single(),
-      sb.from("staff").select("id, name, role, active, created_at").order("name"),
+      sb.from("staff").select("id, name, role, active, created_at, extra, removed_at").order("name"),
       loadSheets()
     ]);
     S.perms = res[0].data || {};
@@ -636,7 +636,7 @@
     $("panelBody").innerHTML = h;
     if (!$("panel").open) $("panel").showModal();
   }
-  $("panel").addEventListener("close", function () { panelRow = null; quick = null; render(); });
+  $("panel").addEventListener("close", function () { panelRow = null; quick = null; staffEdit = null; render(); });
   $("panel").addEventListener("click", function (e) {
     if (e.target === $("panel")) return $("panel").close();          // tap outside the sheet
     var t = e.target.closest("button"); if (!t) return;
@@ -646,6 +646,7 @@
     if (t.dataset.flightback !== undefined && quick) { quick.noFlight = false; drawQuickFlight(); return; }
     if (t.dataset.copy === "returns" || t.dataset.copy === "stats") { e.stopPropagation(); return putOnClipboard(copyText(t.dataset.copy)); }
     if (t.dataset.restore) return restoreCar(t);
+    if (staffEdit && (t.dataset.saveaccess !== undefined || t.dataset.roledefault !== undefined || t.dataset.savepin !== undefined || t.dataset.removestaff !== undefined)) return staffPanelAction(t);
     if (!panelRow) return;
     var r = S.rows.filter(function (x) { return x.id === panelRow.id; })[0] || panelRow;
     if (t.dataset.savepanel !== undefined) {
@@ -1191,8 +1192,69 @@
       '<div class="row-actions" style="margin:0"><button type="button" class="btn small" data-copy="' + esc(msg) + '">Copy message</button>' +
       '<a class="btn ghost small" href="https://wa.me/?text=' + encodeURIComponent(msg) + '" target="_blank" rel="noopener">WhatsApp</a></div></div>';
   }
+  // Mirrors can() in database part 3: what each role gets before any per-person change.
+  var ROLE_CAN = { sent: ["office", "manager", "bongo"], called: ["office", "manager"], clear: ["office", "manager", "terminal"], yard: ["office", "manager"],
+    summary: ["office", "manager"], log: ["office", "manager"], flights: ["office"], rtc: ["office", "manager", "bongo"], picksinfo: ["office", "manager", "terminal"],
+    import: ["office", "manager"], staff: ["office", "manager"], settings: ["manager"] };
+  var PERMS = [["sent", "DROPS: press SENT"], ["called", "DROPS: press CALLED and OVERSTAY"], ["clear", "DROPS: press CLEAR and COMPLAINT"], ["yard", "Set yards"],
+    ["note", "Write notes"], ["flights", "Enter and check flight numbers"], ["intake", "PICKS: Collected, No show, PT"], ["rtc", "PICKS: RTC"],
+    ["picksinfo", "PICKS: returns and stats"], ["summary", "Summary"], ["log", "Activity log and archive"], ["import", "Import, add and remove cars"],
+    ["staff", "Staff: add people, new links, switch off"], ["settings", "Settings"]];
+  function roleCan(role, a) { if (role === "owner") return true; var l = ROLE_CAN[a]; return l ? l.indexOf(role) !== -1 : role !== "view"; }
+  function personCan(p, a) { var x = p.extra || []; if (x.indexOf("-" + a) !== -1) return false; if (x.indexOf(a) !== -1) return true; return roleCan(p.role, a); }
+  function canManage(p) { return (S.me.role === "manager" || S.me.role === "owner") && p.id !== S.me.id && (p.role !== "owner" || S.me.role === "owner"); }
+  async function reloadStaff() {
+    var list = await sb.from("staff").select("id, name, role, active, created_at, extra, removed_at").order("name");
+    if (!list.error) { S.staff = {}; list.data.forEach(function (p) { S.staff[p.id] = p; }); }
+  }
+  var staffEdit = null;
+  function openStaffPanel(id) {
+    var p = S.staff[id]; if (!p) return;
+    staffEdit = id;
+    $("panelBody").innerHTML = '<h2 id="panelTitle">' + esc(p.name) + " <small>" + esc(ROLE_LABEL[p.role] || p.role) + "</small></h2>" +
+      '<label>WHAT ' + esc(p.name.toUpperCase()) + ' CAN DO</label><div class="acc">' + PERMS.map(function (x) {
+        var d = roleCan(p.role, x[0]);
+        return '<label class="chk"><input type="checkbox" data-perm="' + x[0] + '"' + (personCan(p, x[0]) ? " checked" : "") + "><span>" + esc(x[1]) +
+          "<small>" + esc(ROLE_LABEL[p.role] || p.role) + " default: " + (d ? "yes" : "no") + "</small></span></label>";
+      }).join("") + '</div><div class="pseg" style="margin-top:8px"><button type="button" data-saveaccess>SAVE ACCESS</button><button type="button" data-roledefault>ROLE DEFAULTS</button></div>' +
+      '<label for="spPin">SET A NEW PIN</label><div class="when2"><input id="spPin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password" placeholder="4 numbers"><button type="button" class="btn ghost" data-savepin>Set PIN</button></div>' +
+      '<p class="hint">Their link stays the same. Tell them the new PIN.</p>' +
+      '<button type="button" class="link rmcar" data-removestaff>Remove ' + esc(p.name) + '</button>' +
+      '<div class="pbtns"><button type="button" data-close>Close</button></div>';
+    if (!$("panel").open) $("panel").showModal();
+  }
+  async function staffPanelAction(t) {
+    var p = S.staff[staffEdit]; if (!p) return;
+    if (t.dataset.roledefault !== undefined) {
+      Array.prototype.forEach.call($("panelBody").querySelectorAll("[data-perm]"), function (c) { c.checked = roleCan(p.role, c.dataset.perm); });
+      return;
+    }
+    var r;
+    t.disabled = true;
+    if (t.dataset.saveaccess !== undefined) {
+      var extra = [];
+      Array.prototype.forEach.call($("panelBody").querySelectorAll("[data-perm]"), function (c) {
+        var a = c.dataset.perm, d = roleCan(p.role, a);
+        if (c.checked && !d) extra.push(a); else if (!c.checked && d) extra.push("-" + a);
+      });
+      r = await sb.rpc("set_staff_access", { p_staff: p.id, p_extra: extra });
+      if (!r.error) toast("Access saved for " + p.name + ". It applies next time they open the app.");
+    } else if (t.dataset.savepin !== undefined) {
+      var pin = $("spPin").value;
+      if (!/^\d{4}$/.test(pin)) { t.disabled = false; return toast("The PIN must be 4 numbers.", true); }
+      r = await sb.rpc("set_staff_pin", { p_staff: p.id, p_pin: pin });
+      if (!r.error) { $("spPin").value = ""; toast("New PIN set for " + p.name + "."); }
+    } else if (t.dataset.removestaff !== undefined) {
+      if (!confirm("Remove " + p.name + "? Their link and PIN stop working for good. Their name stays on everything they did.")) { t.disabled = false; return; }
+      r = await sb.rpc("remove_staff", { p_staff: p.id });
+      if (!r.error) { toast(p.name + " removed"); await reloadStaff(); $("panel").close(); render(); return; }
+    }
+    t.disabled = false;
+    if (r && r.error) return toast(r.error.message, true);
+    await reloadStaff();
+  }
   function renderStaff() {
-    var people = Object.keys(S.staff).map(function (k) { return S.staff[k]; }).sort(function (a, b) { return (b.active - a.active) || a.name.localeCompare(b.name); });
+    var people = Object.keys(S.staff).map(function (k) { return S.staff[k]; }).filter(function (p) { return !p.removed_at; }).sort(function (a, b) { return (b.active - a.active) || a.name.localeCompare(b.name); });
     return '<h2 class="title">Staff</h2>' + (S.issued ? issuedHtml(S.issued) + "<br>" : "") +
       '<form class="box" id="addStaff" style="padding:12px;margin-bottom:14px" novalidate><strong>Add a person</strong>' +
       '<label class="field">Name<input id="newName" maxlength="60" autocomplete="off"></label>' +
@@ -1200,7 +1262,8 @@
       '<button class="btn brand" id="addGo">Add and get link</button></form>' +
       '<div class="box">' + people.map(function (p) {
         return '<div class="rowline' + (p.active ? "" : " off") + '"><div class="grow"><strong>' + esc(p.name) + '</strong><div class="note">' + esc(ROLE_LABEL[p.role] || p.role) + (p.active ? "" : " · switched off") + "</div></div>" +
-          (p.id === S.me.id ? '<span class="note">You</span>' : '<button type="button" class="btn ghost small" data-reset="' + p.id + '">New link</button><button type="button" class="btn ghost small" data-onoff="' + p.id + '">' + (p.active ? "Switch off" : "Switch on") + "</button>") + "</div>";
+          (p.id === S.me.id ? '<span class="note">You</span>' : (canManage(p) ? '<button type="button" class="btn ghost small" data-manage="' + p.id + '">PIN and access</button>' : "") +
+            '<button type="button" class="btn ghost small" data-reset="' + p.id + '">New link</button><button type="button" class="btn ghost small" data-onoff="' + p.id + '">' + (p.active ? "Switch off" : "Switch on") + "</button>") + "</div>";
       }).join("") + "</div>";
   }
   async function staffAction(body, busyEl) {
@@ -1208,7 +1271,7 @@
     try {
       body.app_url = location.origin + "/";
       var r = await callFunction("manage-staff", body, true);
-      var list = await sb.from("staff").select("id, name, role, active, created_at").order("name");
+      var list = await sb.from("staff").select("id, name, role, active, created_at, extra, removed_at").order("name");
       if (!list.error) { S.staff = {}; list.data.forEach(function (p) { S.staff[p.id] = p; }); }
       return r;
     } catch (err) { toast(err.message, true); return null; }
@@ -1457,9 +1520,30 @@
   }
 
   // ── me ────────────────────────────────────
+  async function changePin() {
+    var old = $("pinOld").value, a = $("pinNew").value, b = $("pinNew2").value;
+    if (!/^\d{4}$/.test(old)) return toast("Enter your current 4-number PIN.", true);
+    if (!/^\d{4}$/.test(a)) return toast("The new PIN must be 4 numbers.", true);
+    if (a !== b) return toast("The two new PINs don't match.", true);
+    if (a === old) return toast("That's the PIN you have now.", true);
+    $("pinGo2").disabled = true;
+    var r = await sb.rpc("change_my_pin", { p_current: old, p_new: a });
+    $("pinGo2").disabled = false;
+    if (r.error) return toast(r.error.message, true);
+    var st = r.data && r.data.status;
+    if (st === "bad_pin") { $("pinOld").value = ""; return toast("Current PIN is wrong. " + r.data.left + " tries left before a 15-minute lock.", true); }
+    if (st === "locked") return toast("Too many wrong PINs. Try again after " + hhmm(r.data.until) + ".", true);
+    ["pinOld", "pinNew", "pinNew2"].forEach(function (id) { $(id).value = ""; });
+    toast("PIN changed. Use the new one next time you sign in.");
+  }
   function renderMe() {
     return '<h2 class="title">' + esc(S.me.name) + '</h2><p class="note">' + esc(ROLE_LABEL[S.me.role] || S.me.role) + " · " + esc(S.company.name) + "</p>" +
       notifyHtml() +
+      '<form class="box pinbox" id="pinChange" novalidate><strong>Change my PIN</strong><p class="note">Your link stays the same.</p>' +
+      '<label>Current PIN<input id="pinOld" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password"></label>' +
+      '<label>New PIN<input id="pinNew" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password"></label>' +
+      '<label>New PIN again<input id="pinNew2" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password"></label>' +
+      '<button class="btn brand" id="pinGo2">Change PIN</button></form>' +
       '<div class="row-actions"><button type="button" class="btn ghost" data-signout>Sign out</button><button type="button" class="btn ghost" data-forget>Sign out and remove my link</button></div>';
   }
 
@@ -1488,6 +1572,7 @@
     if (t.dataset.unarchive) return archiveSheet(t.dataset.unarchive, false);
     if (t.dataset.deletesheet) return deleteSheet(t.dataset.deletesheet);
     if (t.dataset.addcar !== undefined) { $("menu").close(); return openAddCar(); }
+    if (t.dataset.manage) return openStaffPanel(t.dataset.manage);
     if (t.dataset.removedlist !== undefined) { $("menu").close(); return openRemoved(); }
     if (t.dataset.notifyon !== undefined) return turnOnNotifications(t);
     if (t.dataset.notifyoff !== undefined) return turnOffNotifications(false);
@@ -1531,6 +1616,7 @@
   document.addEventListener("submit", async function (e) {
     if (e.target.id === "archSearch") { e.preventDefault(); return searchArchive(); }
     if (e.target.id === "addCarForm") { e.preventDefault(); return addCar(); }
+    if (e.target.id === "pinChange") { e.preventDefault(); return changePin(); }
     if (e.target.id === "quickForm") {
       e.preventDefault();
       if (quick && quick.noFlight) { var ct = $("collectTime").value; if (!/^\d{2}:\d{2}$/.test(ct)) { toast("Type the collection time.", true); return; } return saveQuickFlight("NO FLIGHT", ct); }
