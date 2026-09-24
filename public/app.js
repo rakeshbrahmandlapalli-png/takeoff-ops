@@ -660,7 +660,7 @@
   // Android's canShare() says yes to 12 and share() then quietly refuses, so
   // the answer isn't trusted: only iPhones and iPads send the lot in one go.
   // Whether the reg rides along with the photos. Remembered on this phone.
-  function ptAutoCaption() { try { return localStorage.getItem("pt_autocaption") === "1"; } catch (e) { return false; } }
+  function ptAutoCaption() { try { return localStorage.getItem("pt_autocaption") !== "0"; } catch (e) { return true; } }
   var PT_BATCH = 10;
   var BIG_SHARE = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   function ptBatch() {
