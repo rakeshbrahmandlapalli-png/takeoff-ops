@@ -764,6 +764,8 @@
     if (t.dataset.flightback !== undefined && quick) { quick.noFlight = false; drawQuickFlight(); return; }
     if (t.dataset.copy === "returns" || t.dataset.copy === "stats") { e.stopPropagation(); return putOnClipboard(copyText(t.dataset.copy)); }
     if (t.dataset.restore) return restoreCar(t);
+    if (t.dataset.gone) return removeGone([t.dataset.gone], t);
+    if (t.dataset.goneall !== undefined) return removeGone(Array.prototype.map.call($("panelBody").querySelectorAll("[data-gone]"), function (b) { return b.dataset.gone; }), t);
     if (staffEdit && (t.dataset.saveaccess !== undefined || t.dataset.roledefault !== undefined || t.dataset.savepin !== undefined || t.dataset.removestaff !== undefined)) return staffPanelAction(t);
     if (!panelRow) return;
     var r = S.rows.filter(function (x) { return x.id === panelRow.id; })[0] || panelRow;
@@ -1355,6 +1357,36 @@
     S.sheetId = r.data.sheet_id; S.view = "board"; S.filter = "all"; S.imp = newImport(I.kind);
     await loadRows(); render();
     toast("✓ " + r.data.added + " added, " + r.data.updated + " updated. On every phone now.");
+    // A re-import adds and updates but never takes a car away. Cars the booking
+    // site no longer lists (usually cancelled) are shown for someone to confirm.
+    var inFile = {}; rows.forEach(function (x) { if (x.ref) inFile[x.ref] = 1; });
+    // Overstays were carried in from older days, so they're never in today's file.
+    var gone = S.rows.filter(function (x) { return x.ref && !inFile[x.ref] && !x.overstay; });
+    if (gone.length) openGone(gone);
+  }
+  function openGone(gone) {
+    panelRow = null;
+    $("panelBody").innerHTML = '<h2 id="panelTitle">' + gone.length + (gone.length === 1 ? " car isn't" : " cars aren't") + " in this file any more</h2>" +
+      '<p class="sub">They were in an earlier import but the booking site no longer lists them. Usually that means cancelled. Check before removing.</p>' +
+      '<div class="rmlist">' + gone.map(function (r) {
+        return '<div><span><b>' + esc(r.reg || "NO REG") + "</b>" + (r.num ? " #" + r.num : "") + " " + esc(r.name) + "<small>Ref " + esc(r.ref) + (r.drop_at ? " · drop " + esc(dayShort(r.drop_at) + " " + hhmm(r.drop_at)) : "") + (r.return_at ? " · back " + esc(dayShort(r.return_at) + " " + hhmm(r.return_at)) : "") +
+          '</small></span><button type="button" data-gone="' + r.id + '">Remove as cancelled</button></div>';
+      }).join("") + "</div>" +
+      '<div class="pbtns"><button type="button" data-close>Keep them</button>' + (gone.length > 1 ? '<button type="button" class="save" data-goneall>Remove all ' + gone.length + " as cancelled</button>" : "") + "</div>";
+    if (!$("panel").open) $("panel").showModal();
+  }
+  async function removeGone(ids, btn) {
+    btn.disabled = true;
+    for (var i = 0; i < ids.length; i++) {
+      var x = await sb.rpc("remove_booking", { p_booking: ids[i], p_reason: "Cancelled" });
+      if (x.error) { btn.disabled = false; return toast(x.error.message, true); }
+      S.rows = S.rows.filter(function (y) { return y.id !== ids[i]; });
+      dropRemoved(ids[i]); S.removed.push(x.data);
+    }
+    toast(ids.length + (ids.length === 1 ? " car" : " cars") + " removed as cancelled");
+    var left = Array.prototype.map.call($("panelBody").querySelectorAll("[data-gone]"), function (b) { return b.dataset.gone; }).filter(function (id) { return ids.indexOf(id) === -1; });
+    if (!left.length) return $("panel").close();
+    openGone(S.rows.filter(function (y) { return left.indexOf(y.id) !== -1; }));
   }
 
   // ── staff ─────────────────────────────────
