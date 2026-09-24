@@ -1569,6 +1569,28 @@
   }
 
   // ── me ────────────────────────────────────
+  // One switch for the company's Discord channel; the links stay saved.
+  function discordSwitchHtml() {
+    if (!can("settings")) return "";
+    if (S.discord === undefined) { S.discord = null; sb.rpc("discord_status").then(function (r) { S.discord = r.error ? false : r.data; if (S.view === "me") render(); }); }
+    var D = S.discord;
+    if (D === false) return "";
+    var head = '<div class="box" style="padding:14px;margin-top:14px"><strong>Discord alerts</strong>';
+    if (!D) return head + '<p class="note">Checking…</p></div>';
+    if (!D.drops && !D.picks) return head + '<p class="note">Not set up. Add the channel links in Settings.</p></div>';
+    var where = [D.drops ? "DROPS" : "", D.picks ? "PICKS" : ""].filter(Boolean).join(" and ");
+    return head + '<p class="note">' + (D.paused ? "Off for everyone. The links are kept." : "On. Posting " + where + " alerts to Discord for the whole team.") + "</p>" +
+      '<div class="row-actions">' + (D.paused ? '<button type="button" class="btn brand" data-discordpause="0">Turn on Discord alerts</button>'
+        : '<button type="button" class="btn ghost" data-discordpause="1">Turn off Discord alerts</button><button type="button" class="btn ghost small" data-discordtest>Send a test</button>') + "</div></div>";
+  }
+  async function setDiscordPaused(btn, paused) {
+    if (paused && !confirm("Turn off Discord alerts for the whole team? Phone notifications carry on.")) return;
+    btn.disabled = true;
+    var r = await sb.rpc("set_discord_paused", { p_paused: paused });
+    btn.disabled = false;
+    if (r.error) return toast(r.error.message, true);
+    S.discord = r.data; toast(paused ? "Discord alerts off" : "Discord alerts on"); render();
+  }
   async function changePin() {
     var old = $("pinOld").value, a = $("pinNew").value, b = $("pinNew2").value;
     if (!/^\d{4}$/.test(old)) return toast("Enter your current 4-number PIN.", true);
@@ -1587,7 +1609,7 @@
   }
   function renderMe() {
     return '<h2 class="title">' + esc(S.me.name) + '</h2><p class="note">' + esc(ROLE_LABEL[S.me.role] || S.me.role) + " · " + esc(S.company.name) + "</p>" +
-      notifyHtml() +
+      notifyHtml() + discordSwitchHtml() +
       '<form class="box pinbox" id="pinChange" novalidate><strong>Change my PIN</strong><p class="note">Your link stays the same.</p>' +
       '<label>Current PIN<input id="pinOld" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password"></label>' +
       '<label>New PIN<input id="pinNew" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password"></label>' +
@@ -1627,6 +1649,7 @@
     if (t.dataset.notifyoff !== undefined) return turnOffNotifications(false);
     if (t.dataset.notifytest !== undefined) return sendTest(t, false);
     if (t.dataset.discordtest !== undefined) return sendTest(t, true);
+    if (t.dataset.discordpause) return setDiscordPaused(t, t.dataset.discordpause === "1");
     if (t.dataset.discordsave !== undefined) return saveDiscord(t, false);
     if (t.dataset.discordclear !== undefined) { if (confirm("Stop posting " + brandName() + " alerts to Discord?")) saveDiscord(t, true); return; }
     if (t.dataset.resetsettings !== undefined) { S.settingsDraft = Object.assign({}, TIMING_DEFAULT); render(); return; }
