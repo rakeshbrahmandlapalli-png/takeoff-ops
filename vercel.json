@@ -1,0 +1,57 @@
+{
+  "outputDirectory": "public",
+  "rewrites": [
+    {
+      "source": "/manifest.webmanifest",
+      "has": [
+        {
+          "type": "host",
+          "value": "parkingbay-ops.vercel.app"
+        }
+      ],
+      "destination": "/manifest-airport-parking-bay.webmanifest"
+    },
+    {
+      "source": "/manifest.webmanifest",
+      "has": [
+        {
+          "type": "host",
+          "value": "takeoff-ops.vercel.app"
+        }
+      ],
+      "destination": "/manifest-takeoff.webmanifest"
+    },
+    {
+      "source": "/manifest.webmanifest",
+      "destination": "/manifest-default.webmanifest"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/sw.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ]
+    }
+  ]
+}

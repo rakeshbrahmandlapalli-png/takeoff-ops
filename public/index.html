@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Parking Ops</title>
+<meta name="theme-color" content="#334155">
+<meta name="robots" content="noindex">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Parking Ops">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/default-apple.png">
+<link rel="icon" type="image/png" href="/icons/default-192.png">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="boot" id="boot">Loading…</div>
+
+<!-- first open: no personal link on this phone yet -->
+<section class="gate hidden" id="noLink">
+  <form class="gate-box" id="linkForm" novalidate>
+    <span class="brand">Parking Ops</span>
+    <h1>Open your personal link</h1>
+    <p>Ask the office for your link, then open it on this phone. You only need to do it once.</p>
+    <p>Opened the app from your Home Screen? Copy your link and paste it here.</p>
+    <input id="linkPaste" type="text" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Paste your link" aria-label="Personal link">
+    <button class="btn brand" id="linkGo">Continue</button>
+    <p class="err" id="linkErr" role="alert"></p>
+  </form>
+</section>
+
+<!-- personal link known: enter PIN -->
+<section class="gate hidden" id="pinGate">
+  <form class="gate-box" id="pinForm" novalidate>
+    <span class="brand">Parking Ops</span>
+    <h1>Enter your PIN</h1>
+    <p>The 4 numbers the office gave you with your link.</p>
+    <input id="pin" inputmode="numeric" autocomplete="one-time-code" maxlength="4" pattern="\d{4}" placeholder="• • • •" aria-label="PIN">
+    <button class="btn brand" id="pinGo">Sign in</button>
+    <p class="err" id="pinErr" role="alert"></p>
+    <button type="button" class="link" id="forget">Not your phone? Remove the link</button>
+  </form>
+</section>
+
+<!-- very first setup: creates the owner -->
+<section class="gate hidden" id="setupGate">
+  <form class="gate-box" id="setupForm" novalidate>
+    <span class="brand">Parking Ops</span>
+    <h1>First-time setup</h1>
+    <p>Creates the owner's sign-in. Only works once, with the setup code saved in Supabase.</p>
+    <label>Your name<input id="setupName" maxlength="60" autocomplete="name"></label>
+    <label>Setup code<input id="setupCode" type="password" autocomplete="off"></label>
+    <button class="btn brand" id="setupGo">Create owner</button>
+    <p class="err" id="setupErr" role="alert"></p>
+    <div class="issued hidden" id="setupDone"></div>
+  </form>
+</section>
+
+<div class="app hidden" id="app">
+  <header class="top">
+    <div class="bar">
+      <button type="button" class="tobrand" data-view="board" aria-label="Parking board">Parking Ops</button>
+      <select id="sheetPick" aria-label="Day sheet"></select>
+      <span class="pend" id="sync" aria-live="polite"></span>
+      <span class="who" id="who"></span>
+      <span class="when num" id="clock"></span>
+      <button type="button" class="rf" id="menuBtn" title="Menu" aria-label="Menu">&#9776;</button>
+      <button type="button" class="rf hidden" id="logBtn" title="Summary and activity" aria-label="Summary and activity">&#128220;</button>
+      <button type="button" class="rf hidden" id="rtBtn" title="Returns by day" aria-label="Returns by day">&#128197;</button>
+      <button type="button" class="rf hidden" id="psBtn" title="PICKS stats" aria-label="PICKS stats">&#128202;</button>
+      <button type="button" class="rf hidden" id="flBtn" title="Check flight times" aria-label="Check flight times">&#9992;</button>
+      <button type="button" class="rf" id="refreshBtn" title="Refresh" aria-label="Refresh">&#8635;</button>
+    </div>
+    <div id="boardHead">
+      <div class="tally" id="tally"></div>
+      <div class="tally cats hidden" id="catTally"></div>
+      <div class="tabs" role="group" aria-label="Show">
+        <button type="button" id="tabTodo" data-filter="todo">TO DO</button>
+        <button type="button" id="tabAll" data-filter="all">ALL</button>
+      </div>
+      <input type="search" id="q" placeholder="Search reg, name, number or note" autocomplete="off" aria-label="Search">
+      <div class="head" id="colHead"></div>
+    </div>
+    <div class="viewhead hidden" id="viewHead">
+      <button type="button" data-view="board">&lsaquo; Board</button><strong id="viewTitle"></strong>
+    </div>
+  </header>
+  <main id="main"></main>
+</div>
+
+<dialog id="panel" class="sheet" aria-labelledby="panelTitle"><div id="panelBody"></div></dialog>
+<dialog id="menu" class="sheet" aria-label="Menu"><div id="menuBody"></div></dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="/reader.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

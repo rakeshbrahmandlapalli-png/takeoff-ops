@@ -1,0 +1,6 @@
+.vercel
+.env*
+setup
+supabase
+*.md
+SECRET-*

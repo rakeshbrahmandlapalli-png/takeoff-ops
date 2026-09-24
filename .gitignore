@@ -1,0 +1,8 @@
+.vercel
+.env*
+
+.vercel
+.env*
+
+SECRET-*
+.git-old-history-backup-*/
