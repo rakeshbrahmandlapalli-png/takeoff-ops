@@ -802,16 +802,20 @@
       var p = r.return_at ? londonParts(new Date(r.return_at)) : null;
       var old = r.overstay || !p || (p.key < shift) || (p.key === shift && +p.time.slice(0, 2) < start);
       if (old) { over.due++; if (isSent) over.sent++; if (isDone) over.done++; }
-      else { var h = +p.time.slice(0, 2); due[h] = (due[h] || 0) + 1; if (isSent) sent[h] = (sent[h] || 0) + 1; if (isDone) done[h] = (done[h] || 0) + 1; }
+      else {
+        // Hours since the shift began: 06:00 on the next morning is the shift's last slot, not its first.
+        var later = Math.round((Date.parse(p.key) - Date.parse(shift)) / 86400000);
+        var h = later * 24 + +p.time.slice(0, 2) - start;
+        due[h] = (due[h] || 0) + 1; if (isSent) sent[h] = (sent[h] || 0) + 1; if (isDone) done[h] = (done[h] || 0) + 1;
+      }
       if (r.cleared_at) { var m = (now - new Date(r.cleared_at).getTime()) / 60000; if (m >= 0 && m <= 30) last30++; if (m >= 0 && m <= 60) last60++; }
     });
     var hours = [], t = { due: over.due, sent: over.sent, done: over.done };
-    for (var i = 0; i < 24; i++) {
-      var h = (start + i) % 24;
-      if (!due[h]) continue;
-      t.due += due[h]; t.sent += sent[h] || 0; t.done += done[h] || 0;
-      hours.push({ label: pad(h) + ":00–" + pad((h + 1) % 24) + ":00", due: due[h], sent: sent[h] || 0, done: done[h] || 0 });
-    }
+    Object.keys(due).map(Number).sort(function (a, b) { return a - b; }).forEach(function (i) {
+      var h = (start + i) % 24, nextDay = i >= 24 ? " (" + dayWord(addDaysKey(shift, Math.floor((start + i) / 24))) + ")" : "";
+      t.due += due[i]; t.sent += sent[i] || 0; t.done += done[i] || 0;
+      hours.push({ label: pad(h) + ":00–" + pad((h + 1) % 24) + ":00" + nextDay, due: due[i], sent: sent[i] || 0, done: done[i] || 0 });
+    });
     return { hours: hours, over: over, total: t, last30: last30, last60: last60 };
   }
   function openDropsStats() {
