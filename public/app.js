@@ -603,13 +603,46 @@
     panelRow = r;
     $("panelBody").innerHTML = '<h2 id="panelTitle">PT · ' + esc(r.reg || "NO REG") + (r.num ? " <small>#" + r.num + "</small>" : "") + "</h2>" +
       '<p class="sub">Caption: <b>' + esc(ptCaption(r)) + "</b></p>" +
-      '<div class="pseg ptadd"><label><input type="file" accept="image/*" capture="environment" data-ptfile hidden>TAKE PHOTO</label>' +
+      '<div class="pseg ptadd"><button type="button" data-ptcam>CAMERA</button>' +
       '<label><input type="file" accept="image/*" multiple data-ptfile hidden>CHOOSE FROM GALLERY</label></div>' +
+      '<label class="ptnative" id="ptNative"><input type="file" accept="image/*" capture="environment" data-ptfile hidden>Camera not working? Use the phone\'s camera (one photo at a time)</label>' +
       (pt.files.length ? '<div class="ptthumbs">' + pt.urls.map(function (u) { return '<img src="' + u + '" alt="">'; }).join("") + '</div><p class="hint">' + pt.files.length + " photo" + (pt.files.length === 1 ? "" : "s") + ' ready. <button type="button" class="link" data-ptclear>Start again</button></p>'
         : '<p class="hint">No photos yet. Take them one by one, or pick them all from the gallery.</p>') +
       '<div class="pbtns"><button type="button" data-close>Cancel</button><button type="button" class="save" data-ptsend' + (pt.files.length ? "" : " disabled") + ">Send on WhatsApp</button></div>" +
       '<button type="button" class="link" data-ptmark>Tick PT without sending photos</button>';
     if (!$("panel").open) $("panel").showModal();
+  }
+  // The camera stays open inside the app: one tap per photo, Done when finished.
+  // If the phone refuses (no permission, old browser) its own camera opens instead.
+  var camStream = null;
+  async function ptCamera(r) {
+    try {
+      camStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1440 } } });
+    } catch (e) {
+      toast(e && e.name === "NotAllowedError" ? "Camera not allowed. Allow it in the browser's site settings, or tap \"Use the phone's camera\"." : "The camera wouldn't start. Tap \"Use the phone's camera\" below.", true);
+      return;
+    }
+    $("panel").classList.add("cam");
+    $("panelBody").innerHTML = '<div class="camview"><video id="camVideo" autoplay playsinline muted></video><div class="camflash" id="camFlash"></div></div>' +
+      '<div class="cambar"><span class="camcount" id="camCount">' + camCountText() + '</span><button type="button" class="shutter" data-shutter aria-label="Take photo"></button><button type="button" class="camdone" data-camdone>Done</button></div>';
+    $("camVideo").srcObject = camStream;
+  }
+  function camCountText() { var n = pt ? pt.files.length : 0; return n + " photo" + (n === 1 ? "" : "s"); }
+  function camStop() {
+    if (camStream) camStream.getTracks().forEach(function (t) { t.stop(); });
+    camStream = null; $("panel").classList.remove("cam");
+  }
+  function ptShoot(r) {
+    var v = $("camVideo"); if (!v || !v.videoWidth || !pt) return;
+    var c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight;
+    c.getContext("2d").drawImage(v, 0, 0);
+    var f = $("camFlash"); if (f) { f.classList.remove("go"); void f.offsetWidth; f.classList.add("go"); }
+    c.toBlob(function (b) {
+      if (!b || !pt) return;
+      pt.files.push(new File([b], (r.reg || "car").replace(/\s+/g, "") + "-" + (pt.files.length + 1) + ".jpg", { type: "image/jpeg" }));
+      pt.urls.push(URL.createObjectURL(b));
+      var el = $("camCount"); if (el) el.textContent = camCountText();
+    }, "image/jpeg", 0.9);
   }
   function ptClear() { if (pt) pt.urls.forEach(function (u) { URL.revokeObjectURL(u); }); pt = null; }
   function ptAdd(input) {
@@ -686,7 +719,7 @@
     $("panelBody").innerHTML = h;
     if (!$("panel").open) $("panel").showModal();
   }
-  $("panel").addEventListener("close", function () { panelRow = null; quick = null; staffEdit = null; render(); });
+  $("panel").addEventListener("close", function () { camStop(); panelRow = null; quick = null; staffEdit = null; render(); });
   $("panel").addEventListener("click", function (e) {
     if (e.target === $("panel")) return $("panel").close();          // tap outside the sheet
     var t = e.target.closest("button"); if (!t) return;
@@ -720,6 +753,9 @@
     }
     if (t.dataset.word) { var p = t.dataset.word.split(":"); tapDrop(r, p[0], p[1]); return $("panel").close(); }
     if (t.dataset.pcall) { tapPick(r, "called", t.dataset.pcall); return $("panel").close(); }
+    if (t.dataset.ptcam !== undefined) return ptCamera(r);
+    if (t.dataset.shutter !== undefined) return ptShoot(r);
+    if (t.dataset.camdone !== undefined) { camStop(); return openPt(r); }
     if (t.dataset.ptsend !== undefined) return ptSend(r, t);
     if (t.dataset.ptclear !== undefined) { ptClear(); return openPt(r); }
     if (t.dataset.ptmark !== undefined) { if (!r.pt_at) tapPick(r, "pt"); ptClear(); return $("panel").close(); }
