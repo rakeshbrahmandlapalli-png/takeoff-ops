@@ -602,7 +602,7 @@
     if (!pt || pt.id !== r.id) { ptClear(); pt = { id: r.id, files: [], urls: [] }; }
     panelRow = r;
     $("panelBody").innerHTML = '<h2 id="panelTitle">PT · ' + esc(r.reg || "NO REG") + (r.num ? " <small>#" + r.num + "</small>" : "") + "</h2>" +
-      '<p class="sub">Caption: <b>' + esc(ptCaption(r)) + "</b></p>" +
+      '<p class="sub">When WhatsApp opens: long-press the caption box, tap <b>Paste</b> (<b>' + esc(ptCaption(r)) + "</b> is copied for you), then Send.</p>" +
       '<div class="pseg ptadd"><button type="button" data-ptcam>CAMERA</button>' +
       '<label><input type="file" accept="image/*" multiple data-ptfile hidden>CHOOSE FROM GALLERY</label></div>' +
       '<label class="ptnative" id="ptNative"><input type="file" accept="image/*" capture="environment" data-ptfile hidden>Camera not working? Use the phone\'s camera (one photo at a time)</label>' +
@@ -652,8 +652,10 @@
     openPt(r);
   }
   async function ptSend(r, btn) {
-    var caption = ptCaption(r), data = { files: pt.files, text: caption };
-    // The caption also goes on the clipboard: some iPhones drop text shared with photos.
+    // Photos only, no text: WhatsApp copies shared text onto EVERY photo, which
+    // stops it grouping them into one album. The reg goes on the clipboard and
+    // is pasted once into WhatsApp's caption box, as the team does by hand.
+    var caption = ptCaption(r), data = { files: pt.files };
     try { await navigator.clipboard.writeText(caption); } catch (e) {}
     if (!navigator.canShare || !navigator.canShare({ files: pt.files })) {
       return toast("This phone can't pass photos to WhatsApp from the app. Send them from WhatsApp; the caption is copied.", true);
