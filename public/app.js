@@ -483,7 +483,7 @@
     if (!picks || !sh) return;
     var n = catCounts(), set = !!sh.short_until;
     var cells = CATS.filter(function (c) { return set || c[0] === "same" || c[0] === "next"; }).map(function (c) {
-      return '<button type="button" data-cat="' + c[0] + '" class="' + c[0] + (S.catFilter === c[0] ? " on" : "") + '" aria-pressed="' + (S.catFilter === c[0]) + '"><span>' + c[1] + (c[0] === "short" ? " · TO " + dayWord(sh.short_until) : "") + '</span><b class="num">' + n[c[0]] + "</b></button>";
+      return '<button type="button" data-cat="' + c[0] + '" class="' + c[0] + (S.catFilter === c[0] ? " on" : "") + '" aria-pressed="' + (S.catFilter === c[0]) + '"><span>' + c[1] + '</span><b class="num">' + n[c[0]] + "</b></button>";
     }).join("");
     var pick = "";
     if (can("yard")) {
