@@ -212,8 +212,13 @@
     var now = londonParts(new Date()), end = (S.company && S.company.drops_day_end || "06:00:00").slice(0, 5);
     return now.time <= end ? addDaysKey(now.key, -1) : now.key;
   }
+  // A refresh keeps the sheet that was open; a fresh start of the app opens
+  // the current DROPS again.
+  function openSheetKey() { return "open_sheet_" + (S.company ? S.company.id : ""); }
   function pickDefaultSheet() {
     if (S.sheetId && sheet()) return;
+    var kept = null; try { kept = sessionStorage.getItem(openSheetKey()); } catch (e) {}
+    if (kept && S.sheets.some(function (s) { return s.id === kept; })) { S.sheetId = kept; return; }
     var key = currentShiftKey();
     var hit = S.sheets.filter(function (s) { return s.kind === "drops" && s.day === key; })[0] ||
               S.sheets.filter(function (s) { return s.kind === "drops" && s.day <= key; })[0] || S.sheets[0];
@@ -222,6 +227,7 @@
   async function loadRows() {
     if (!S.sheetId) { S.rows = []; return; }
     var sh = sheet();
+    try { if (sh && !sh.archived_at) sessionStorage.setItem(openSheetKey(), S.sheetId); } catch (e) {}
     var r = await sb.from("bookings").select("*").eq("sheet_id", S.sheetId).order(sh && sh.kind === "picks" ? "drop_at" : "return_at", { ascending: true, nullsFirst: false });
     if (r.error) { toast(r.error.message, true); return; }
     S.rows = (r.data || []).filter(function (x) { return !x.removed_at; });
