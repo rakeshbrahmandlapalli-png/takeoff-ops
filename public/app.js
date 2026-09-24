@@ -602,7 +602,8 @@
     if (!pt || pt.id !== r.id) { ptClear(); pt = { id: r.id, files: [], urls: [] }; }
     panelRow = r;
     $("panelBody").innerHTML = '<h2 id="panelTitle">PT · ' + esc(r.reg || "NO REG") + (r.num ? " <small>#" + r.num + "</small>" : "") + "</h2>" +
-      '<p class="sub">When WhatsApp opens: long-press the caption box, tap <b>Paste</b> (<b>' + esc(ptCaption(r)) + "</b> is copied for you), then Send.</p>" +
+      '<label class="chk ptauto"><input type="checkbox" data-ptauto' + (ptAutoCaption() ? " checked" : "") + "><span>Add <b>" + esc(ptCaption(r)) + "</b> to the photos automatically</span></label>" +
+      (ptAutoCaption() ? "" : '<p class="sub">When WhatsApp opens: long-press the caption box, tap <b>Paste</b> (<b>' + esc(ptCaption(r)) + "</b> is copied for you), then Send.</p>") +
       '<div class="pseg ptadd"><button type="button" data-ptcam>CAMERA</button>' +
       '<label><input type="file" accept="image/*" multiple data-ptfile hidden>CHOOSE FROM GALLERY</label></div>' +
       '<label class="ptnative" id="ptNative"><input type="file" accept="image/*" capture="environment" data-ptfile hidden>Camera not working? Use the phone\'s camera (one photo at a time)</label>' +
@@ -658,6 +659,8 @@
   // stops it grouping them into an album. The reg is on the clipboard to paste.
   // Android's canShare() says yes to 12 and share() then quietly refuses, so
   // the answer isn't trusted: only iPhones and iPads send the lot in one go.
+  // Whether the reg rides along with the photos. Remembered on this phone.
+  function ptAutoCaption() { try { return localStorage.getItem("pt_autocaption") === "1"; } catch (e) { return false; } }
   var PT_BATCH = 10;
   var BIG_SHARE = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   function ptBatch() {
@@ -679,7 +682,9 @@
       return toast("This phone can't pass photos to WhatsApp from the app. Send them from WhatsApp; the reg is copied.", true);
     }
     btn.disabled = true;
-    try { await navigator.share({ files: batch }); }
+    var data = { files: batch };
+    if (ptAutoCaption()) data.text = caption;
+    try { await navigator.share(data); }
     catch (e) {
       btn.disabled = false;
       // An iPhone that turns the whole set down drops to batches of 10 next time.
@@ -1916,6 +1921,7 @@
       return;
     }
     if (t.dataset.ptfile !== undefined) return ptAdd(t);
+    if (t.dataset.ptauto !== undefined) { try { localStorage.setItem("pt_autocaption", t.checked ? "1" : "0"); } catch (err) {} if (panelRow) openPt(panelRow); return; }
     if (t.dataset.file) { var f = t.files && t.files[0]; if (!f) return; S.imp[t.dataset.file + "File"] = f; S.imp.error = ""; render(); return; }
     if (t.dataset.alertpref !== undefined) {
       var P = Object.assign({ drops: true, picks: true, flights: true }, S.notify.prefs); P[t.dataset.alertpref] = t.checked;
