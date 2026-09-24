@@ -187,6 +187,9 @@
     S.company = res[1].data;
     applyBrand(S.company);
     S.staff = {}; (res[2].data || []).forEach(function (p) { S.staff[p.id] = p; });
+    // The product owner's own login: no board, just the Clients page.
+    S.platform = !!(S.company && S.company.slug === "platform");
+    if (S.platform) { S.view = "clients"; only("app"); render(); return; }
     loadQueue();
     pickDefaultSheet();
     await loadRows();
@@ -325,7 +328,7 @@
   // The header is the one the team already knows from the Sheet app: sheet
   // picker, who is signed in, and a row of icon buttons. The yard tally, TO DO /
   // ALL, search and column captions belong to the board only.
-  var VIEW_TITLE = { flights: "Flights", summary: "Summary and activity", import: "Import bookings", staff: "Staff", settings: "Settings", archive: "Archive", me: "Me" };
+  var VIEW_TITLE = { clients: "Clients", flights: "Flights", summary: "Summary and activity", import: "Import bookings", staff: "Staff", settings: "Settings", archive: "Archive", me: "Me" };
   var YARD_LABEL = { Y: "NB", S: "S YARD" };
   // The tally reads left to right as the Sheet's did; any yard not listed follows.
   var YARD_ORDER = ["Y", "S", "CP", "NY", "T"];
@@ -342,10 +345,11 @@
     $("clock").textContent = londonParts(new Date()).time;
     var shift = currentShiftKey();
     $("sheetPick").innerHTML = S.sheets.length || S.archiveSheet ? pickerHtml(shift) : "<option>No sheets yet</option>";
-    show("logBtn", can("summary") || can("log"));
-    show("flBtn", can("flights") && !picks);
-    show("rtBtn", can("picksinfo") && picks);
-    show("psBtn", can("picksinfo"));
+    show("sheetPick", !S.platform);
+    show("logBtn", !S.platform && (can("summary") || can("log")));
+    show("flBtn", !S.platform && can("flights") && !picks);
+    show("rtBtn", !S.platform && can("picksinfo") && picks);
+    show("psBtn", !S.platform && can("picksinfo"));
     show("boardHead", board);
     show("viewHead", !board);
     if (!board) $("viewTitle").textContent = VIEW_TITLE[S.view] || "";
@@ -371,11 +375,11 @@
   function render() {
     if (!S.me) return;
     renderChrome();
-    var fn = { board: renderBoard, flights: renderFlights, summary: renderSummary, import: renderImport, staff: renderStaff, settings: renderSettings, archive: renderArchive, me: renderMe }[S.view] || renderBoard;
+    var fn = { clients: renderClients, board: renderBoard, flights: renderFlights, summary: renderSummary, import: renderImport, staff: renderStaff, settings: renderSettings, archive: renderArchive, me: renderMe }[S.view] || renderBoard;
     $("main").innerHTML = fn();
     if (flashId) { var el = document.querySelector('[data-id="' + flashId + '"]'); if (el) { el.classList.add("flash"); setTimeout(function () { el.classList.remove("flash"); }, 1500); } flashId = null; }
   }
-  function go(view) { S.view = view; S.settingsDraft = null; if (view === "summary") S.activity = null; if ($("menu").open) $("menu").close(); render(); window.scrollTo(0, 0); }
+  function go(view) { if (S.platform && view !== "me") view = "clients"; S.view = view; S.settingsDraft = null; if (view === "summary") S.activity = null; if ($("menu").open) $("menu").close(); render(); window.scrollTo(0, 0); }
 
   // ── board ─────────────────────────────────
   // Same rules as the Sheet app, so nobody has to relearn what a count means.
@@ -1241,6 +1245,94 @@
       '<div class="row-actions" style="margin:0"><button type="button" class="btn small" data-copy="' + esc(msg) + '">Copy message</button>' +
       '<a class="btn ghost small" href="https://wa.me/?text=' + encodeURIComponent(msg) + '" target="_blank" rel="noopener">WhatsApp</a></div></div>';
   }
+  // ── Clients (product owner only, database part 19) ──
+  // Counts only: this page never sees a client's customers.
+  function renderClients() {
+    if (S.clients === undefined) { S.clients = null; loadClients(); }
+    var list = S.clients;
+    var h = '<div class="clienthead"><h2 class="title">Clients</h2><button type="button" class="btn brand" data-clientedit="new">Add a client</button></div>';
+    if (list === null) return h + '<p class="note">Loading…</p>';
+    if (list === false) return h + '<div class="msg">Couldn\'t load the clients. Refresh to try again.</div>';
+    if (!list.length) return h + '<p class="note">No clients yet.</p>';
+    return h + '<div class="clients">' + list.map(function (c) {
+      var b = c.brand || {}, host = b.host || "parking-ops.vercel.app";
+      var status = c.suspended_at ? '<span class="cstat off">Suspended</span>' : !c.has_owner ? '<span class="cstat wait">Waiting for owner</span>' : '<span class="cstat on">Active</span>';
+      var last = c.last_activity ? dayShort(c.last_activity) + " " + hhmm(c.last_activity) : "never";
+      var setup = "https://" + host + "/#setup=" + c.slug;
+      return '<div class="client' + (c.suspended_at ? " off" : "") + '"><div class="cl1"><span class="swatch" style="background:' + esc(b.colour || "#334155") + '"></span><strong>' + esc(c.name) + "</strong>" + status + "</div>" +
+        '<div class="cmeta">' + esc(c.slug) + " · " + esc(host) + " · yards " + esc((c.yards || []).join(", ")) + "</div>" +
+        '<div class="cnums"><div><b class="num">' + c.staff + "</b><span>staff</span></div><div><b class=\"num\">" + c.cars_7d + "</b><span>cars, last 7 days</span></div><div><b class=\"num\">" + c.sheets_7d + "</b><span>sheets, last 7 days</span></div><div><b>" + esc(last) + "</b><span>last activity</span></div></div>" +
+        '<div class="row-actions"><button type="button" class="btn ghost small" data-clientedit="' + c.id + '">Edit</button>' +
+        (!c.has_owner ? '<button type="button" class="btn ghost small" data-copy="' + esc(setup) + '">Copy setup link</button>' : "") +
+        '<button type="button" class="btn ghost small' + (c.suspended_at ? "" : " warn") + '" data-clientsuspend="' + c.id + '">' + (c.suspended_at ? "Resume" : "Suspend") + "</button></div></div>";
+    }).join("") + "</div>";
+  }
+  async function loadClients() {
+    var r = await sb.rpc("admin_clients");
+    S.clients = r.error ? false : r.data || [];
+    if (S.view === "clients") render();
+  }
+  function hexMix(hex, withHex, amt) {
+    var a = parseInt(hex.slice(1), 16), b = parseInt(withHex.slice(1), 16);
+    var ch = function (x, y) { return Math.round(x + (y - x) * amt); };
+    var r = ch(a >> 16 & 255, b >> 16 & 255), g = ch(a >> 8 & 255, b >> 8 & 255), bl = ch(a & 255, b & 255);
+    return "#" + ((1 << 24) + (r << 16) + (g << 8) + bl).toString(16).slice(1).toUpperCase();
+  }
+  function lightColour(hex) { var n = parseInt(hex.slice(1), 16); return (0.299 * (n >> 16 & 255) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) > 160; }
+  function openClient(id) {
+    var c = id === "new" ? null : (S.clients || []).filter(function (x) { return x.id === id; })[0];
+    var b = (c && c.brand) || {};
+    var f = function (key, label, val, attrs, hint) { return '<label for="' + key + '">' + label + '</label><input id="' + key + '" value="' + esc(val || "") + '" autocomplete="off" ' + (attrs || "") + ">" + (hint ? '<p class="hint">' + hint + "</p>" : ""); };
+    $("panelBody").innerHTML = '<h2 id="panelTitle">' + (c ? "Edit " + esc(c.name) : "Add a client") + '</h2><form id="clientForm" novalidate data-id="' + (c ? c.id : "") + '">' +
+      f("clName", "COMPANY NAME", c && c.name, 'maxlength="80"') +
+      f("clShort", "SHORT NAME FOR THE TOP BAR", b.short, 'maxlength="24"', "Leave empty to use the company name.") +
+      (c ? '<label>SHORT CODE</label><p class="sub">' + esc(c.slug) + " (fixed: their links are built from it)</p>"
+         : f("clSlug", "SHORT CODE", "", 'maxlength="40" autocapitalize="off" placeholder="e.g. airport-parking-bay"', "Lower-case letters, numbers and dashes. Can't be changed later.")) +
+      f("clYards", "YARDS", c ? (c.yards || []).join(", ") : "", 'autocapitalize="characters" placeholder="e.g. GS, MY, T"', "Codes separated by commas, 1 to 4 letters each. Add T for the terminal.") +
+      f("clEnd", "DROPS DAY ENDS AT", c ? String(c.drops_day_end || "06:00").slice(0, 5) : "06:00", 'type="time"') +
+      '<label for="clColour">COLOUR</label><div class="when2"><input id="clColour" type="color" value="' + esc(b.colour || "#334155") + '"><select id="clInk"><option value="#FFFFFF"' + (b.ink !== "#16181D" ? " selected" : "") + '>White text on it</option><option value="#16181D"' + (b.ink === "#16181D" ? " selected" : "") + ">Dark text on it</option></select></div>" +
+      f("clHost", "WEB ADDRESS", b.host, 'autocapitalize="off" placeholder="e.g. clientname-ops.vercel.app"', "Add the same address in Vercel (Settings, Domains) or it won't open.") +
+      '<div class="pbtns"><button type="button" data-close>Cancel</button><button class="save" id="clGo">' + (c ? "Save" : "Add client") + "</button></div></form>";
+    if (!$("panel").open) $("panel").showModal();
+    if (!c) {
+      $("clColour").addEventListener("input", function () { $("clInk").value = lightColour(this.value) ? "#16181D" : "#FFFFFF"; });
+      $("clName").addEventListener("input", function () { if (!$("clSlug").dataset.touched) $("clSlug").value = this.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40); });
+      $("clSlug").addEventListener("input", function () { this.dataset.touched = "1"; });
+      setTimeout(function () { $("clName").focus(); }, 50);
+    }
+  }
+  async function saveClient() {
+    var id = $("clientForm").dataset.id, colour = $("clColour").value.toUpperCase();
+    var was = id ? ((S.clients || []).filter(function (x) { return x.id === id; })[0] || {}).brand || {} : {};
+    var p = { id: id, name: $("clName").value, slug: $("clSlug") ? $("clSlug").value.trim() : "", drops_day_end: $("clEnd").value,
+      yards: $("clYards").value.split(/[\s,]+/).filter(Boolean),
+      brand: { short: $("clShort").value, colour: colour, ink: $("clInk").value, soft: hexMix(colour, "#FFFFFF", 0.88), text: hexMix(colour, "#000000", 0.35), host: $("clHost").value.trim().toLowerCase() } };
+    // Same colour as before: keep their hand-picked tints rather than recalculating.
+    if (was.colour && was.colour.toUpperCase() === colour) { p.brand.soft = was.soft || p.brand.soft; p.brand.text = was.text || p.brand.text; }
+    $("clGo").disabled = true;
+    var r = await sb.rpc("admin_save_client", { p: p });
+    $("clGo").disabled = false;
+    if (r.error) return toast(r.error.message, true);
+    await loadClients();
+    if (id) { toast("Saved"); return $("panel").close(); }
+    var host = (r.data.brand && r.data.brand.host) || "parking-ops.vercel.app", link = "https://" + host + "/#setup=" + r.data.slug;
+    $("panelBody").innerHTML = '<h2 id="panelTitle">' + esc(r.data.name) + " added</h2>" +
+      '<p class="sub">Next steps:</p><ol class="steps"><li>' + (r.data.brand && r.data.brand.host ? "In Vercel, add <b>" + esc(host) + "</b> under Settings, Domains." : "No web address set: they'll use parking-ops.vercel.app.") + "</li>" +
+      "<li>Open the setup link yourself, enter the name of their boss and the setup code, and send the boss the personal link and PIN it gives you. Don't send the setup code.</li></ol>" +
+      '<code class="setuplink">' + esc(link) + '</code><div class="pbtns"><button type="button" data-close>Done</button><button type="button" class="save" data-copy="' + esc(link) + '">Copy setup link</button></div>';
+  }
+  async function suspendClient(btn) {
+    var c = (S.clients || []).filter(function (x) { return x.id === btn.dataset.clientsuspend; })[0]; if (!c) return;
+    var on = !c.suspended_at;
+    if (!confirm(on ? "Suspend " + c.name + "? Everyone at " + c.name + " is locked out straight away. Nothing is deleted, and Resume lets them back in." : "Resume " + c.name + "? Their team can sign in again.")) return;
+    btn.disabled = true;
+    var r = await sb.rpc("admin_suspend_client", { p_id: c.id, p_suspend: on });
+    btn.disabled = false;
+    if (r.error) return toast(r.error.message, true);
+    toast(c.name + (on ? " suspended" : " resumed"));
+    loadClients();
+  }
+
   // Mirrors can() in database part 3: what each role gets before any per-person change.
   var ROLE_CAN = { sent: ["office", "manager", "bongo"], called: ["office", "manager"], clear: ["office", "manager", "terminal"], yard: ["office", "manager"],
     summary: ["office", "manager"], log: ["office", "manager"], flights: ["office"], rtc: ["office", "manager", "bongo"], picksinfo: ["office", "manager", "terminal"],
@@ -1609,7 +1701,7 @@
   }
   function renderMe() {
     return '<h2 class="title">' + esc(S.me.name) + '</h2><p class="note">' + esc(ROLE_LABEL[S.me.role] || S.me.role) + " · " + esc(S.company.name) + "</p>" +
-      notifyHtml() + discordSwitchHtml() +
+      (S.platform ? "" : notifyHtml() + discordSwitchHtml()) +
       '<form class="box pinbox" id="pinChange" novalidate><strong>Change my PIN</strong><p class="note">Your link stays the same.</p>' +
       '<label>Current PIN<input id="pinOld" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password"></label>' +
       '<label>New PIN<input id="pinNew" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password"></label>' +
@@ -1644,6 +1736,8 @@
     if (t.dataset.deletesheet) return deleteSheet(t.dataset.deletesheet);
     if (t.dataset.addcar !== undefined) { $("menu").close(); return openAddCar(); }
     if (t.dataset.manage) return openStaffPanel(t.dataset.manage);
+    if (t.dataset.clientedit && S.platform) return openClient(t.dataset.clientedit);
+    if (t.dataset.clientsuspend && S.platform) return suspendClient(t);
     if (t.dataset.removedlist !== undefined) { $("menu").close(); return openRemoved(); }
     if (t.dataset.notifyon !== undefined) return turnOnNotifications(t);
     if (t.dataset.notifyoff !== undefined) return turnOffNotifications(false);
@@ -1689,6 +1783,7 @@
     if (e.target.id === "archSearch") { e.preventDefault(); return searchArchive(); }
     if (e.target.id === "addCarForm") { e.preventDefault(); return addCar(); }
     if (e.target.id === "pinChange") { e.preventDefault(); return changePin(); }
+    if (e.target.id === "clientForm") { e.preventDefault(); return saveClient(); }
     if (e.target.id === "quickForm") {
       e.preventDefault();
       if (quick && quick.noFlight) { var ct = $("collectTime").value; if (!/^\d{2}:\d{2}$/.test(ct)) { toast("Type the collection time.", true); return; } return saveQuickFlight("NO FLIGHT", ct); }
@@ -1738,6 +1833,12 @@
 
   // ── menu ──────────────────────────────────
   function openMenu() {
+    if (S.platform) {
+      $("menuBody").innerHTML = "<h2>Parking Ops</h2><p class=\"sub\">" + esc(S.me.name) + " · product owner</p><div class=\"menu-list\">" +
+        [["clients", "Clients"], ["me", "Me · sign out"]].map(function (x) { return '<button type="button" data-view="' + x[0] + '"' + (S.view === x[0] ? ' aria-current="page"' : "") + ">" + x[1] + "</button>"; }).join("") +
+        '</div><div class="pbtns"><button type="button" data-closemenu>Close</button></div>';
+      return $("menu").showModal();
+    }
     var items = [["board", "Board", true], ["flights", "Flights", true], ["summary", "Summary and activity", can("summary") || can("log")], ["archive", "Archive: older days and search", can("log")],
       ["import", "Import bookings", can("import")], ["staff", "Staff", can("staff")], ["settings", "Settings", can("settings")], ["me", "Me · sign out", true]];
     var sh = sheet();
