@@ -1,0 +1,374 @@
+// TAKEOFF OPS — browser tests: the real app (public/) in Chromium, phone-sized,
+// against a pretend Supabase that behaves like the real one and records every
+// call. Nothing touches the live database.
+//
+//   cd checks/e2e && npm install playwright@1 && node run.mjs
+//   (Chromium: set CHROMIUM=/path/to/chrome if Playwright's own isn't installed)
+//
+// Every line prints PASS or FAIL; the run ends with the totals and exits 1 on
+// any failure. Run it before merging a change to public/.
+import { chromium } from "playwright";
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = process.env.APP_ROOT || path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../public");
+const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".png": "image/png", ".webmanifest": "application/manifest+json" };
+let passed = 0, failed = 0;
+const check = (name, cond, detail) => {
+  if (cond) passed++; else failed++;
+  console.log((cond ? "PASS " : "FAIL ") + name + (cond || detail === undefined ? "" : "   -> " + JSON.stringify(detail).slice(0, 300)));
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ── the app, served like Vercel does (/p/<token> → pt.html) ──
+const server = http.createServer((req, res) => {
+  let p = decodeURIComponent(req.url.split("?")[0]);
+  if (/^\/p\/[A-Za-z0-9_-]+$/.test(p)) p = "/pt.html";
+  if (p === "/") p = "/index.html";
+  if (p === "/manifest.webmanifest") p = "/manifest-default.webmanifest";
+  const f = path.join(ROOT, p);
+  if (!f.startsWith(ROOT) || !fs.existsSync(f)) { res.writeHead(404); return res.end("not found"); }
+  res.writeHead(200, { "Content-Type": TYPES[path.extname(f)] || "application/octet-stream" });
+  fs.createReadStream(f).pipe(res);
+});
+await new Promise((r) => server.listen(0, "127.0.0.1", r));
+const BASE = "http://127.0.0.1:" + server.address().port;
+
+// ── dates as the app sees them (London, the DROPS day runs to 06:00) ──
+const lon = (d) => Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false }).formatToParts(d).map((x) => [x.type, x.value]));
+const L = lon(new Date());
+const addDays = (key, n) => new Date(Date.parse(key + "T12:00:00Z") + n * 864e5).toISOString().slice(0, 10);
+let TONIGHT = L.year + "-" + L.month + "-" + L.day; if (+L.hour < 6) TONIGHT = addDays(TONIGHT, -1);
+const TOMORROW = addDays(TONIGHT, 1);
+const iso = (key, hhmm) => new Date(key + "T" + hhmm + ":00Z").toISOString();
+
+// ── a pretend Supabase with a tiny in-memory database ──
+function makeDb(opts = {}) {
+  const db = {
+    me: { id: "s1", name: "RAKESH", role: "owner", company_id: "c1" },
+    company: { id: "c1", name: "TAKEOFF", slug: "takeoff", yards: ["NB", "S"], drops_day_end: "06:00:00", brand: {}, time_zone: "Europe/London", pt_whatsapp: "447900000000", pt_method: opts.ptMethod || "photos", overstay_rate: 0 },
+    staff: [{ id: "s1", name: "RAKESH", role: "owner", active: true }, { id: "s2", name: "SUGU", role: "office", active: true }],
+    sheets: [
+      { id: "d0", company_id: "c1", kind: "drops", day: TONIGHT },
+      { id: "d1", company_id: "c1", kind: "drops", day: TOMORROW },
+      { id: "p0", company_id: "c1", kind: "picks", day: TONIGHT, short_until: addDays(TONIGHT, 3) },
+    ],
+    bookings: [
+      { id: "b1", sheet_id: "d0", kind: "drops", ref: "R1", reg: "EK14JPV", num: 1, name: "SENIOR MISS", make: "FORD", flight: "U22312", return_at: iso(TONIGHT, "21:45"), phone: "07868 615571", note: "" },
+      { id: "b2", sheet_id: "d0", kind: "drops", ref: "R2", reg: "CF75VLN", num: 2, name: "KHAIRA MS", make: "MG", flight: "U22368", return_at: iso(TONIGHT, "22:00"), phone: "7868615571 7868615571", note: "S/D" },
+      { id: "b3", sheet_id: "d0", kind: "drops", ref: "R3", reg: "DV59ACF", num: 3, name: "GREBOSZ MX", flight: "U22580", return_at: iso(TONIGHT, "22:15"), note: "", sent_at: iso(TONIGHT, "20:56"), sent_by: "s2", yard: "T" },
+      { id: "b4", sheet_id: "d1", kind: "drops", ref: "R4", reg: "DY16MYO", num: 2, name: "ATANASOV MX", flight: "W95393", return_at: iso(TOMORROW, "09:00"), note: "WRONG FLIGHT NUMBER" },
+      { id: "b5", sheet_id: "d1", kind: "drops", ref: "R5", reg: "EN11KOO", num: 4, name: "JANKO MS", make: "BMW", flight: "W43301", return_at: iso(TOMORROW, "06:15"), note: "" },
+      { id: "p1", sheet_id: "p0", kind: "picks", ref: "R4", reg: "DY16MYO", num: 1, name: "ATANASOV MX", drop_at: iso(TONIGHT, "14:00"), return_at: iso(addDays(TONIGHT, 1), "09:00"), intake: "", note: "" },
+      { id: "p2", sheet_id: "p0", kind: "picks", ref: "P2", reg: "AF63WWH", num: 2, name: "MASON", drop_at: iso(TONIGHT, "15:00"), return_at: iso(addDays(TONIGHT, 2), "10:00"), intake: "", note: "" },
+      { id: "p3", sheet_id: "p0", kind: "picks", ref: "P3", reg: "SF15LUA", num: 3, name: "KOLE", drop_at: iso(TONIGHT, "18:00"), return_at: iso(addDays(TONIGHT, 9), "10:00"), intake: "", note: "" },
+      { id: "p4", sheet_id: "p0", kind: "picks", ref: "P4", reg: "HJ12PGK", num: 4, name: "FEJ", drop_at: iso(TONIGHT, "20:00"), return_at: iso(addDays(TONIGHT, 1), "20:00"), intake: "Collected", intake_at: iso(TONIGHT, "19:48"), intake_by: "s2", note: "" },
+    ],
+    ptLinks: [], uploads: [], calls: [], down: false,
+  };
+  db.bookings.forEach((b) => { b.company_id = "c1"; });
+  return db;
+}
+const now = () => new Date().toISOString();
+function rpc(db, fn, a) {
+  const row = (id) => db.bookings.find((x) => x.id === id);
+  switch (fn) {
+    case "me": return db.me;
+    case "my_permissions": return Object.fromEntries(["sent", "called", "clear", "yard", "summary", "log", "flights", "rtc", "picksinfo", "import", "staff", "settings", "note", "intake"].map((k) => [k, true]));
+    case "tap_drop": {
+      const b = row(a.p_booking), f = { sent: "sent", called: "called", clear: "cleared" }[a.p_action];
+      b[f + "_at"] = a.p_on ? now() : null; b[f + "_by"] = a.p_on ? "s1" : null;
+      if (a.p_action === "called") b.called_word = a.p_on ? a.p_word || "Called" : "";
+      if (a.p_action === "clear") b.clear_word = a.p_on ? a.p_word || "Collected" : "";
+      return b;
+    }
+    case "tap_pick": {
+      const b = row(a.p_booking);
+      if (a.p_key === "intake") { b.intake = a.p_value; b.intake_at = a.p_value ? now() : null; b.intake_by = a.p_value ? "s1" : null; }
+      else if (a.p_key === "pt") { b.pt_at = a.p_value ? now() : null; b.pt_by = a.p_value ? "s1" : null; }
+      else { b.pick_called = a.p_value; b.pick_called_at = a.p_value ? now() : null; }
+      return b;
+    }
+    case "set_note": { const b = row(a.p_booking); b.note = a.p_note; return b; }
+    case "set_yard": { const b = row(a.p_booking); b.yard = a.p_yard; return b; }
+    case "set_flight": { const b = row(a.p_booking); b.flight = a.p_flight; return b; }
+    case "early_return": { const b = row(a.p_booking); b.moved_from = b.sheet_id; b.sheet_id = "d0"; b.early = true; b.early_at = now(); b.num = 105; return b; }
+    case "undo_early_return": { const b = row(a.p_booking); b.sheet_id = b.moved_from; b.moved_from = null; b.early = false; return b; }
+    case "pt_link_save": {
+      let l = db.ptLinks.find((x) => x.token === a.p_token);
+      if (!l) db.ptLinks.push(l = { token: a.p_token, booking_id: a.p_booking, paths: [], at: now() });
+      l.paths = [...new Set(l.paths.concat(a.p_paths))];
+      return a.p_token;
+    }
+    case "pt_photos_for": {
+      const me = row(a.p_booking);
+      return db.ptLinks.filter((l) => { const b = row(l.booking_id); return b && (b.id === me.id || b.ref === me.ref); }).map((l) => ({ token: l.token, n: l.paths.length, at: l.at, by: "RAKESH" }));
+    }
+    case "set_pt_method": db.company.pt_method = a.p_method; return a.p_method;
+    default: return null;
+  }
+}
+async function backend(ctx, db) {
+  await ctx.route("**/*.supabase.co/**", async (route) => {
+    const req = route.request(), u = new URL(req.url()), p = u.pathname;
+    const reply = (status, body) => route.fulfill({ status, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(body) });
+    if (req.method() === "OPTIONS") return route.fulfill({ status: 200, headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "*" } });
+    if (p.startsWith("/realtime/")) return route.abort();
+    if (p.startsWith("/auth/")) return reply(200, {});
+    if (db.down) return route.fulfill({ status: 503, contentType: "text/plain", body: "upstream connect error" });
+    if (p.startsWith("/rest/v1/rpc/")) {
+      const fn = p.slice(13), args = JSON.parse(req.postData() || "{}");
+      db.calls.push({ fn, args });
+      return reply(200, rpc(db, fn, args));
+    }
+    if (p.startsWith("/storage/v1/object/pt-photos/")) { db.uploads.push(p.slice(29)); return reply(200, { Key: "pt-photos/" + p.slice(29) }); }
+    if (p.startsWith("/functions/v1/pt-photos")) {
+      const l = db.ptLinks.find((x) => x.token === JSON.parse(req.postData()).token);
+      return l ? reply(200, { reg: "DY16MYO", company: "TAKEOFF", by: "RAKESH", created_at: l.at, photos: l.paths.map((x, i) => ({ url: BASE + "/icons/icon-192.png", download: BASE + "/icons/icon-192.png", name: "DY16MYO-0" + (i + 1) + ".jpg" })) }) : reply(404, { error: "These photos have expired or the link isn't right." });
+    }
+    const q = Object.fromEntries(u.searchParams);
+    if (p === "/rest/v1/companies") return reply(200, db.company);
+    if (p === "/rest/v1/staff") return reply(200, db.staff);
+    if (p === "/rest/v1/sheets") return reply(200, db.sheets);
+    if (p === "/rest/v1/bookings") {
+      let rows = db.bookings.filter((b) => !b.removed_at);
+      if (q.sheet_id && q.sheet_id.startsWith("eq.")) rows = rows.filter((b) => b.sheet_id === q.sheet_id.slice(3));
+      if (q.sheet_id && q.sheet_id.startsWith("neq.")) rows = rows.filter((b) => b.sheet_id !== q.sheet_id.slice(4));
+      if (q.id && q.id.startsWith("eq.")) rows = rows.filter((b) => b.id === q.id.slice(3));
+      if (q.or) { const m = q.or.match(/%([^%]+)%/); const t = m ? m[1].toUpperCase() : ""; rows = rows.filter((b) => [b.reg, b.ref, b.phone, b.name].join(" ").toUpperCase().replace(/\s+/g, "").includes(t)); }
+      if ((q.select || "").includes("sheets")) rows = rows.map((b) => ({ ...b, sheets: (({ day, kind }) => ({ day, kind }))(db.sheets.find((s) => s.id === b.sheet_id)) }));
+      if (req.headers()["accept"] === "application/vnd.pgrst.object+json") return reply(200, rows[0] || null);
+      return reply(200, rows);
+    }
+    return reply(200, []);
+  });
+  await ctx.route("https://wa.me/**", (r) => r.fulfill({ status: 200, contentType: "text/html", body: "WhatsApp" }));
+}
+const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+const JWT = b64({ alg: "HS256" }) + "." + b64({ sub: "u1", role: "authenticated", exp: 4102444800 }) + ".sig";
+async function phone(browser, db, { signedIn = true, ua, width = 390 } = {}) {
+  const ctx = await browser.newContext({ viewport: { width, height: 844 }, userAgent: ua, permissions: ["camera"] });
+  await backend(ctx, db);
+  await ctx.addInitScript(([jwt, signedIn]) => {
+    if (signedIn && !sessionStorage.getItem("seeded")) {
+      sessionStorage.setItem("seeded", "1");
+      localStorage.setItem("takeoff_link", "x".repeat(40));
+      localStorage.setItem("sb-oioqjfrlwrjovnouhusp-auth-token", JSON.stringify({ access_token: jwt, refresh_token: "r", expires_at: 4102444800, expires_in: 3600, token_type: "bearer", user: { id: "u1" } }));
+    }
+    window.__shares = [];
+    navigator.canShare = () => true;
+    navigator.share = async (d) => { window.__shares.push({ n: (d.files || []).length, names: (d.files || []).map((f) => f.name), types: (d.files || []).map((f) => f.type), text: d.text || "" }); };
+    try { navigator.clipboard.writeText = async () => {}; } catch (e) {}
+  }, [JWT, signedIn]);
+  const page = await ctx.newPage();
+  page.setDefaultTimeout(6000);
+  page.__errors = [];
+  page.on("pageerror", (e) => page.__errors.push(e.message));
+  page.on("dialog", (d) => d.accept());
+  ctx.on("page", (p) => { if (p !== page) p.close().catch(() => {}); });
+  return page;
+}
+const open = async (page) => { await page.goto(BASE + "/"); await page.waitForSelector("#main .row, #main .msg", { timeout: 8000 }); };
+const text = (page, sel) => page.locator(sel).first().innerText().catch(() => "");
+const noSideScroll = (page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
+const toast = (page) => page.evaluate(() => [...document.querySelectorAll(".toast")].map((t) => t.textContent).join(" | "));
+
+// Each section stands alone: if one breaks part-way, it's reported and the rest still run.
+async function scenario(fn) {
+  try { await fn(); } catch (e) { check("section finished without crashing", false, String(e.message || e).split("\n")[0]); }
+}
+
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined, args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] });
+
+// 1. first open, sign-in states
+await scenario(async () => {
+  const page = await phone(browser, makeDb(), { signedIn: false });
+  await page.goto(BASE + "/"); await sleep(800);
+  check("no personal link: shows the 'ask for your link' screen", await page.isVisible("#noLink"));
+});
+
+// 2. DROPS board
+await scenario(async () => {
+  const db = makeDb(), page = await phone(browser, db);
+  await open(page);
+  check("board opens on tonight's DROPS sheet", (await page.locator("#sheetPick option:checked").innerText()).includes("DROPS"));
+  check("tonight's cars are listed", await page.locator(".row").count() === 3, await page.locator(".row").count());
+  check("SENT shows the time and the first name of who pressed it", /SENT\s*\d\d:\d\d\s*SUGU/.test(await text(page, '.row[data-id="b3"] [data-act="sent"]')), await text(page, '.row[data-id="b3"] [data-act="sent"]'));
+  await page.click('.row[data-id="b1"] [data-act="sent"]'); await sleep(400);
+  check("tapping SENT reaches the server", db.calls.some((c) => c.fn === "tap_drop" && c.args.p_action === "sent" && c.args.p_booking === "b1"));
+  check("tapping SENT marks the button with my name", /RAKESH/.test(await text(page, '.row[data-id="b1"] [data-act="sent"]')));
+  await page.click('.row[data-id="b2"] [data-act="called"]'); await sleep(400);
+  check("CALLED moves the car into NEXT IN QUEUE", /NEXT IN QUEUE/.test(await page.locator("#main").innerText()) && (await page.locator("#main").innerText()).indexOf("CF75VLN") < (await page.locator("#main").innerText()).indexOf("COMING UP"));
+  await page.click('.row[data-id="b2"] [data-act="clear"]'); await sleep(400);
+  check("CLEAR alone keeps the car in TO DO (a car is done when SENT and CLEAR)", await page.locator('.row[data-id="b2"]').count() === 1);
+  await page.click('.row[data-id="b2"] [data-act="sent"]'); await sleep(400);
+  check("SENT + CLEAR takes the car out of TO DO", !(await page.locator('.row[data-id="b2"]').count()));
+  await page.click("#tabAll"); await sleep(200);
+  check("ALL still shows the cleared car", await page.locator('.row[data-id="b2"]').count() === 1);
+  check("no sideways scrolling on the board at phone width", await noSideScroll(page));
+  check("no errors on the board", page.__errors.length === 0, page.__errors);
+});
+
+// 3. search
+await scenario(async () => {
+  const db = makeDb(), page = await phone(browser, db);
+  await open(page);
+  await page.fill("#q", "EK14"); await sleep(600);
+  check("search finds a car on this sheet", await page.locator(".row").count() === 1 && /EK14JPV/.test(await page.locator("#main").innerText()));
+  await page.fill("#q", "EN11KOO"); await sleep(900);
+  check("search finds a car on another day", /ON OTHER DAYS/.test(await page.locator("#main").innerText()) && /EN11KOO/.test(await page.locator("#main").innerText()));
+  await page.click(".otherhit"); await sleep(800);
+  check("tapping the other-day result opens that sheet", (await page.locator("#sheetPick option:checked").innerText()).includes(TOMORROW.slice(8, 10).replace(/^0/, "")) && await page.locator('.row[data-id="b5"]').count() === 1);
+  await page.fill("#q", "ZZ99NOPE"); await sleep(900);
+  check("search for a car nowhere says so", /Not found on any sheet|Not on this sheet/.test(await page.locator("#main").innerText()));
+});
+
+// 4. car panel
+await scenario(async () => {
+  const db = makeDb(), page = await phone(browser, db);
+  await open(page);
+  await page.click('.row[data-id="b2"] .reg'); await sleep(300);
+  check("tapping the reg opens the car's panel", await page.isVisible("#panel"));
+  const tel = await page.getAttribute("#panelBody a.tel", "href").catch(() => "");
+  check("Call uses the first number when a booking has it twice", tel === "tel:07868615571", tel);
+  await page.fill("#noteText", "KEYS IN OFFICE"); await page.click("[data-savepanel]"); await sleep(500);
+  check("saving a note reaches the server", db.calls.some((c) => c.fn === "set_note" && c.args.p_note === "KEYS IN OFFICE"));
+  check("the note shows on the row", /KEYS IN OFFICE/.test(await text(page, '.row[data-id="b2"]')));
+  await page.click('.row[data-id="b1"] .reg'); await sleep(300);
+  check("no sideways scrolling in the car panel", await noSideScroll(page));
+});
+
+// 5. early return
+await scenario(async () => {
+  const db = makeDb(), page = await phone(browser, db);
+  await open(page);
+  await page.selectOption("#sheetPick", "d1"); await sleep(700);
+  await page.click('.row[data-id="b4"] [data-act="called"]'); await sleep(1500);
+  check("CALLED on tomorrow's car offers the early return and OK moves it", db.calls.some((c) => c.fn === "early_return"));
+  check("the app follows the car to tonight's sheet", (await page.locator("#sheetPick").inputValue()) === "d0");
+  check("the early car shows 'EARLY · booked …' on its own line", /EARLY · booked/.test(await text(page, '.row[data-id="b4"]')));
+  check("the flight number still shows on the early car", /W95393/.test(await text(page, '.row[data-id="b4"]')));
+  await page.click('.row[data-id="b4"] .reg'); await sleep(300);
+  check("the panel offers Undo", await page.locator("[data-undoearly]").count() === 1);
+  await page.click("[data-undoearly]"); await sleep(1200);
+  check("Undo puts it back on its booked day", db.calls.some((c) => c.fn === "undo_early_return") && (await page.locator("#sheetPick").inputValue()) === "d1");
+});
+
+// 6. PICKS board
+await scenario(async () => {
+  const db = makeDb(), page = await phone(browser, db);
+  await open(page);
+  await page.selectOption("#sheetPick", "p0"); await sleep(700);
+  const tiles = await page.locator("#catTally").innerText();
+  check("PICKS shows SHORT LEFT and LONG LEFT", /SHORT LEFT/.test(tiles) && /LONG LEFT/.test(tiles), tiles);
+  check("SHORT LEFT counts only short cars still LEFT (2)", /SHORT LEFT\s*2/.test(tiles), tiles);
+  check("LONG LEFT counts long cars still LEFT (1)", /LONG LEFT\s*1/.test(tiles), tiles);
+  await page.click('.row[data-id="p2"] [data-pick="Collected"]'); await sleep(400);
+  check("COLL reaches the server and shows my name", db.calls.some((c) => c.fn === "tap_pick" && c.args.p_value === "Collected") && /RAKESH/.test(await text(page, '.row[data-id="p2"] [data-pick="Collected"]')));
+  check("COLL lowers SHORT LEFT to 1", /SHORT LEFT\s*1/.test(await page.locator("#catTally").innerText()));
+  check("no sideways scrolling on PICKS", await noSideScroll(page));
+});
+
+// 7. PT three ways
+async function ptRun(method, shots) {
+  const db = makeDb({ ptMethod: method }), page = await phone(browser, db);
+  await open(page);
+  await page.selectOption("#sheetPick", "p0"); await sleep(700);
+  await page.click('.row[data-id="p1"] [data-pt]');
+  await page.waitForFunction(() => document.getElementById("camVideo") && document.getElementById("camVideo").videoWidth > 0, null, { timeout: 8000 });
+  for (let i = 0; i < shots; i++) await page.click("[data-shutter]");
+  await sleep(500); await page.click("[data-camdone]"); await sleep(1500);
+  return { db, page };
+}
+await scenario(async () => {
+  const { db, page } = await ptRun("photos", 12);
+  check("PT (photos): the camera took 12 photos", await page.locator(".ptthumbs img").count() === 12);
+  check("PT (photos): no sideways scrolling on the PT screen", await noSideScroll(page));
+  await page.click("[data-ptreg]"); await sleep(700);
+  await page.click("[data-ptshare]"); await sleep(500);
+  await page.click("[data-ptshare]"); await sleep(800);
+  const sh = await page.evaluate(() => window.__shares);
+  check("PT (photos): photos go 10 then 2, as photos only (no text)", sh.length === 2 && sh[0].n === 10 && sh[1].n === 2 && !sh[0].text, sh);
+  check("PT (photos): PT gets ticked", db.calls.some((c) => c.fn === "tap_pick" && c.args.p_key === "pt"));
+  await sleep(1500);
+  check("PT (photos): the app keeps a copy (12 uploaded, saved as one set)", db.uploads.length === 12 && db.ptLinks.length === 1 && db.ptLinks[0].paths.length === 12, { up: db.uploads.length, links: db.ptLinks.map((l) => l.paths.length) });
+  check("PT (photos): no errors", page.__errors.length === 0, page.__errors);
+});
+await scenario(async () => {
+  const { db, page } = await ptRun("pdf", 8);
+  await page.waitForSelector("[data-ptpdf]:not([disabled])", { timeout: 8000 });
+  check("PT (PDF): only the PDF button is offered", await page.locator("[data-ptreg]").count() === 0);
+  await page.click("[data-ptpdf]"); await sleep(800);
+  const sh = await page.evaluate(() => window.__shares);
+  check("PT (PDF): one share, one PDF named after the reg, reg as the message", sh.length === 1 && sh[0].n === 1 && sh[0].types[0] === "application/pdf" && /^DY16MYO-PT-8-photos\.pdf$/.test(sh[0].names[0]) && sh[0].text === "DY16MYO", sh);
+  check("PT (PDF): PT gets ticked", db.calls.some((c) => c.fn === "tap_pick" && c.args.p_key === "pt"));
+});
+await scenario(async () => {
+  const { db, page } = await ptRun("link", 5);
+  await page.waitForSelector("[data-ptlink]", { timeout: 10000 });
+  const href = await page.getAttribute("[data-ptlink]", "href");
+  check("PT (link): photos uploaded and saved as one link", db.uploads.length === 5 && db.ptLinks.length === 1 && db.ptLinks[0].paths.length === 5);
+  check("PT (link): WhatsApp opens on the PT number with the reg and the link", /^https:\/\/wa\.me\/447900000000\?text=DY16MYO.*%2Fp%2F[A-Za-z0-9_-]{24}/.test(href), href);
+  await page.click("[data-ptlink]"); await sleep(700);
+  check("PT (link): PT gets ticked", db.calls.some((c) => c.fn === "tap_pick" && c.args.p_key === "pt"));
+  // PT's page from the link
+  const token = db.ptLinks[0].token, viewer = await phone(browser, db, { signedIn: false });
+  await viewer.goto(BASE + "/p/" + token); await viewer.waitForSelector(".grid a", { timeout: 8000 });
+  check("PT's link page shows every photo", await viewer.locator(".grid a").count() === 5);
+  await viewer.goto(BASE + "/p/NOPEnopeNOPEnopeNOPEnope"); await sleep(1500);
+  check("a wrong link says so instead of a blank page", /expired|isn't right/.test(await viewer.locator("#grid").innerText()));
+  // the car's panel lists the photos, on PICKS and on its DROPS row
+  await page.click('.row[data-id="p1"] .reg'); await sleep(800);
+  check("the car's panel lists its PT photos", /5 photos/.test(await page.locator("#ptPhotos").innerText()));
+});
+
+// 8. Settings
+await scenario(async () => {
+  const db = makeDb(), page = await phone(browser, db);
+  await open(page);
+  await page.click("#menuBtn"); await sleep(300);
+  await page.click('#menuBody [data-view="settings"]'); await sleep(500);
+  const opts = await page.locator("[data-ptmethod] option").allInnerTexts();
+  check("Settings offers the three PT ways", opts.length === 3 && /PDF/.test(opts.join()) && /link/.test(opts.join()), opts);
+  await page.selectOption("[data-ptmethod]", "pdf"); await sleep(500);
+  check("choosing PDF saves it", db.company.pt_method === "pdf" && db.calls.some((c) => c.fn === "set_pt_method"));
+  check("no sideways scrolling in Settings", await noSideScroll(page));
+});
+
+// 9. Supabase down
+await scenario(async () => {
+  const db = makeDb(), page = await phone(browser, db);
+  await open(page); await sleep(2500);   // the board is kept on the phone
+  db.down = true;
+  await page.reload(); await sleep(3000);
+  check("server down: the app opens the last board instead of signing out", await page.isVisible("#app") && await page.locator(".row").count() === 3);
+  check("server down: the top bar says OFFLINE", /OFFLINE/.test(await text(page, "#sync")));
+  await page.click('.row[data-id="b1"] [data-act="sent"]'); await sleep(800);
+  check("server down: a tap still shows and waits to be sent", /TO SEND/.test(await text(page, "#sync")) && /SENT/.test(await text(page, '.row[data-id="b1"] [data-act="sent"]')));
+  db.down = false; await sleep(20000);
+  check("server back: the waiting tap reaches the server", db.calls.some((c) => c.fn === "tap_drop" && c.args.p_booking === "b1"));
+  check("server back: OFFLINE goes away", !/OFFLINE/.test(await text(page, "#sync")));
+});
+
+// 10. an unexpected error never kills the app
+await scenario(async () => {
+  const page = await phone(browser, makeDb());
+  await open(page);
+  await page.evaluate(() => setTimeout(() => { throw new Error("test boom"); }, 0)); await sleep(500);
+  check("an unexpected error shows a short message", /didn't work/.test(await toast(page)));
+  await page.click("#tabAll"); await sleep(200);
+  check("…and the app keeps working afterwards", await page.locator(".row").count() === 3);
+});
+
+// 11. small Android phone width
+await scenario(async () => {
+  const page = await phone(browser, makeDb(), { width: 360, ua: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36" });
+  await open(page);
+  check("360 px wide phone: no sideways scrolling on the board", await noSideScroll(page));
+});
+
+await browser.close(); server.close();
+console.log("\n" + passed + " passed, " + failed + " failed");
+process.exit(failed ? 1 : 0);
