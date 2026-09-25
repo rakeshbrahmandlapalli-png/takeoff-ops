@@ -1701,7 +1701,27 @@
         // Only speaks up when the settings would run past the monthly plan.
         (perDay > 1900 ? '<div class="alert">About ' + (perDay * 30).toLocaleString("en-GB") + " FlightRadar24 credits a month: more than the 60,000 plan.</div>" : "")) +
       '<div class="row-actions"><button type="button" class="btn ghost" data-resetsettings>Back to defaults</button><button type="button" class="btn brand" data-savesettings>Save</button></div></div>' +
-      discordHtml() + ptNumberHtml();
+      discordHtml() + ptNumberHtml() + backupHtml();
+  }
+  // Owner only: the company's own data, to keep a copy outside the app.
+  function backupHtml() {
+    if (!S.me || S.me.role !== "owner") return "";
+    return '<div class="box" style="padding:14px;margin-top:14px;max-width:560px"><strong>Backup</strong>' +
+      '<p class="note">A copy of everything is kept automatically every night for 14 days. To keep one of your own as well, download it and save it somewhere safe, like OneDrive. PINs, links and Discord links are not included.</p>' +
+      '<div class="row-actions"><button type="button" class="btn ghost" data-backup>Download a backup</button></div></div>';
+  }
+  async function downloadBackup(btn) {
+    btn.disabled = true;
+    var r = await sb.rpc("download_my_company");
+    btn.disabled = false;
+    if (r.error) return toast(r.error.message, true);
+    var blob = new Blob([JSON.stringify(r.data)], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = (S.company.slug || "company") + "-backup-" + londonParts(new Date()).key + ".json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+    toast("Backup downloaded: " + (r.data.bookings || []).length + " cars");
   }
   function ptNumberHtml() {
     var n = (S.company && S.company.pt_whatsapp) || "";
@@ -1891,6 +1911,7 @@
     // The link opens WhatsApp by itself; just remember it was sent.
     if (t.dataset.ptreg !== undefined) { if (pt) pt.regSent = true; setTimeout(function () { if (panelRow && pt) openPt(panelRow); }, 400); return; }
     if (t.dataset.savept !== undefined) return savePtNumber(t);
+    if (t.dataset.backup !== undefined) return downloadBackup(t);
     if (t.dataset.view) return go(t.dataset.view);
     if (t.id === "menuBtn") return openMenu();
     if (t.id === "logBtn") return go("summary");
