@@ -1096,19 +1096,22 @@
   function openPtPhotos(r) {
     var num = (S.company && S.company.pt_whatsapp) || "", reg = ptCaption(r), n = pt.items.length, prep = ptCount("prep"), sent = pt.sent || 0;
     var b = ptBatch(), pick = '<input type="file" accept="image/*" multiple data-ptfile hidden>';
-    // Two ways from here: every photo in one PDF (one tap), or the photos
-    // themselves (reg first, then 10 at a time on Android).
-    var pdfWay = n && !prep && !sent && !pt.regSent, pdf = pdfWay ? ptPdfState() : null;
-    var step1 = !n || prep ? "" : !pt.regSent
-      ? (pdfWay ? '<button type="button" class="btn brand ptgo" data-ptpdf' + (pdf.ready ? "" : " disabled data-keepoff") + ">" + esc(pdf.label) + "</button>" +
-          '<p class="hint">Every photo in one file, with ' + esc(reg) + " as the message. Pick the PT chat and Send; PT ticks itself.</p>" +
-          '<p class="hint ptor">or send them as photos' + (BIG_SHARE ? "" : ", 10 at a time") + ":</p>" : "") +
-        (num ? '<a class="btn ' + (pdfWay ? "ghost" : "brand") + ' ptgo" href="https://wa.me/' + esc(num) + "?text=" + encodeURIComponent(reg) + '" target="_blank" rel="noopener" data-ptreg>1 · SEND ' + esc(reg) + " TO PT</a>"
-             : '<button type="button" class="btn ' + (pdfWay ? "ghost" : "brand") + ' ptgo" data-ptregshare>1 · SEND ' + esc(reg) + " TO PT</button>")
+    // The way chosen in Settings: every photo in one PDF (one tap), or the
+    // photos themselves (reg first, then 10 at a time on Android). If the PDF
+    // can't be made on this phone, the photos way is there instead.
+    var pdfWay = ptWantsPdf() && n && !prep && !sent && !pt.regSent, pdf = pdfWay ? ptPdfState() : null;
+    if (pdf && pdf.failed) pdfWay = false;
+    var regBtn = num ? '<a class="btn brand ptgo" href="https://wa.me/' + esc(num) + "?text=" + encodeURIComponent(reg) + '" target="_blank" rel="noopener" data-ptreg>1 · SEND ' + esc(reg) + " TO PT</a>"
+      : '<button type="button" class="btn brand ptgo" data-ptregshare>1 · SEND ' + esc(reg) + " TO PT</button>";
+    var step1 = !n || prep ? ""
+      : pdfWay ? '<button type="button" class="btn brand ptgo" data-ptpdf' + (pdf.ready ? "" : " disabled data-keepoff") + ">" + esc(pdf.label) + "</button>" +
+          '<p class="hint">Every photo in one file, with ' + esc(reg) + " as the message. Pick the PT chat and Send; PT ticks itself.</p>"
+      : !pt.regSent ? regBtn
       : b ? '<button type="button" class="btn brand ptgo" data-ptshare>2 · ' + esc(ptShareLabel()) + "</button>" : "";
     // The send buttons come first, so they're never below a screenful of photos.
     var hint = '<p class="hint">' + (!n ? "" : prep ? "Getting " + prep + " photo" + (prep === 1 ? "" : "s") + " ready…"
-        : !pt.regSent ? "Photos: opens the PT chat with " + esc(reg) + " typed; Send, come back, then the photos."
+        : pdfWay ? ""
+        : !pt.regSent ? (ptWantsPdf() ? "The PDF couldn't be made, so send them as photos: " : "") + "opens the PT chat with " + esc(reg) + " typed; Send, come back, then the photos."
         : sent ? "Keep going: tap the button, pick the PT chat (top of the list), Send."
         : "Tap the button, pick the PT chat (top of the list), then Send. PT ticks itself.") + "</p>";
     $("panelBody").innerHTML = '<h2 id="panelTitle">PT · ' + esc(reg) + (r.num ? " <small>#" + r.num + "</small>" : "") + "</h2>" +
@@ -1240,10 +1243,11 @@
   // page share within a few seconds of the tap. Android takes 50 MB in one
   // share, so a very big set becomes parts (each one tap).
   var PDF_PART_MAX = 45 * 1048576;
+  function ptWantsPdf() { return !!(S.company && S.company.pt_method === "pdf"); }
   function ptPdfState() {
     var n = pt.items.filter(function (x) { return x.state === "local"; }).length, P = pt.pdf;
     if (!P || P.count !== n) { ptPdfMake(pt); return { ready: false, label: "Making the PDF…" }; }
-    if (P.error) return { ready: false, label: "PDF didn't work: send as photos" };
+    if (P.error) return { failed: true };
     return { ready: true, label: P.parts.length === 1 ? "SEND AS ONE PDF (1 TAP)" : "SEND PDF PART " + ((P.sent || 0) + 1) + " OF " + P.parts.length };
   }
   async function ptPdfMake(cur) {
@@ -2616,14 +2620,15 @@
       '<label class="field">Number<input id="ptNumber" type="tel" autocomplete="off" placeholder="07932 029349 or +44 7932 029349" value="' + esc(n ? "+" + n : "") + '"></label>' +
       '<div class="row-actions"><button type="button" class="btn brand" data-savept>Save number</button></div>' +
       '<label class="field" style="margin-top:14px">How PT gets the photos<select data-ptmethod>' +
-      '<option value="photos"' + (S.company.pt_method !== "link" ? " selected" : "") + ">In the WhatsApp chat: reg, then the photos</option>" +
+      '<option value="photos"' + (S.company.pt_method !== "link" && S.company.pt_method !== "pdf" ? " selected" : "") + ">In the WhatsApp chat: reg, then the photos (10 at a time on Android)</option>" +
+      '<option value="pdf"' + (S.company.pt_method === "pdf" ? " selected" : "") + ">As one PDF with all the photos (one tap)</option>" +
       '<option value="link"' + (S.company.pt_method === "link" ? " selected" : "") + ">As one link to all the photos (only once PT has agreed)</option></select></label></div>";
   }
   async function savePtMethod(sel) {
     var r = await sb.rpc("set_pt_method", { p_method: sel.value });
     if (r.error) { toast(r.error.message, true); return render(); }
     S.company.pt_method = r.data;
-    toast(r.data === "link" ? "PT photos now go as a link" : "PT photos now go in the WhatsApp chat");
+    toast(r.data === "link" ? "PT photos now go as a link" : r.data === "pdf" ? "PT photos now go as one PDF" : "PT photos now go in the WhatsApp chat");
   }
   async function savePtNumber(btn) {
     btn.disabled = true;
