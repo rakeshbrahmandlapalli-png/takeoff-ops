@@ -316,6 +316,7 @@ dialog.cam #panelBody{height:100%;display:flex;flex-direction:column;padding:0;}
 .pst4.tot{margin:2px 0 10px;}
 .pst4.tot i.dn{color:#137333;}
 .pst4.sec2{background:#fff2cc;}
+.pst4.shift{background:#e8f0fe;}
 .pst.sec{grid-template-columns:1fr;margin-top:12px;background:#fff2cc;border-radius:6px;border-bottom:0;}
 .field{display:flex;flex-direction:column;gap:6px;margin:10px 0;color:var(--ink-2);font-size:14px;}
 .field input,.field select{min-height:48px;padding:0 12px;border:1px solid #9AA0AA;border-radius:var(--r);font-size:16px;background:#fff;color:var(--ink);}

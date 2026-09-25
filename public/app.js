@@ -1037,6 +1037,8 @@
   // Overstays are older returns, so they get their own line, not an hour.
   function dropsStats() {
     var due = {}, sent = {}, done = {}, over = { due: 0, sent: 0, done: 0 }, last30 = 0, last60 = 0, now = Date.now();
+    // Morning shift 06:00–18:00, night shift 18:01–05:59, by the booked return time.
+    var morning = { due: 0, sent: 0, done: 0 }, night = { due: 0, sent: 0, done: 0 };
     var shift = (sheet() || {}).day, start = +((S.company && S.company.drops_day_end) || "06").slice(0, 2);
     S.rows.forEach(function (r) {
       var isSent = !!r.sent_at, isDone = !!r.cleared_at;
@@ -1048,6 +1050,8 @@
         var later = Math.round((Date.parse(p.key) - Date.parse(shift)) / 86400000);
         var h = later * 24 + +p.time.slice(0, 2) - start;
         due[h] = (due[h] || 0) + 1; if (isSent) sent[h] = (sent[h] || 0) + 1; if (isDone) done[h] = (done[h] || 0) + 1;
+        var mins = +p.time.slice(0, 2) * 60 + +p.time.slice(3, 5), sh2 = mins >= 360 && mins <= 1080 ? morning : night;
+        sh2.due++; if (isSent) sh2.sent++; if (isDone) sh2.done++;
       }
       if (r.cleared_at) { var m = (now - new Date(r.cleared_at).getTime()) / 60000; if (m >= 0 && m <= 30) last30++; if (m >= 0 && m <= 60) last60++; }
     });
@@ -1057,7 +1061,7 @@
       t.due += due[i]; t.sent += sent[i] || 0; t.done += done[i] || 0;
       hours.push({ label: pad(h) + ":00–" + pad((h + 1) % 24) + ":00" + nextDay, due: due[i], sent: sent[i] || 0, done: done[i] || 0 });
     });
-    return { hours: hours, over: over, total: t, last30: last30, last60: last60 };
+    return { hours: hours, over: over, total: t, morning: morning, night: night, last30: last30, last60: last60 };
   }
   function chargeTotals() {
     var t = { due: 0, dueCars: 0, cash: 0, card: 0, waived: 0 };
@@ -1080,6 +1084,8 @@
       D.hours.map(function (h) { return line(h.label, h); }).join("") +
       (D.over.due ? line("Overstays", D.over, " sec2") : "") +
       line("TOTAL", D.total, " tot") +
+      line("Morning 06:00–18:00", D.morning, " shift") + line("Night 18:01–05:59", D.night, " shift") +
+      (D.over.due ? '<div class="hint">Overstays are counted on their own, not in a shift.</div>' : "") +
       '<div class="pst4"><b>Collected, last 30 min</b><i class="num">' + D.last30 + '</i><i></i><i></i></div><div class="pst4"><b>Collected, last 60 min</b><i class="num">' + D.last60 + "</i><i></i><i></i></div>" +
       chargeLines().map(function (x, i) { return '<div class="pst4' + (i === 0 ? " owed" : "") + '"><b>' + esc(x[0]) + '</b><i></i><i></i><i class="num">' + x[1] + "</i></div>"; }).join("") +
       '<div class="pbtns"><button type="button" data-close>Close</button><button type="button" class="save" data-copy="stats">Copy</button></div>';
@@ -1135,7 +1141,9 @@
       var D = dropsStats();
       lines = ["DROPS BY HOUR — " + sheetName(), "", "Due back   Due   Sent   Collected"].concat(D.hours.map(function (h) { return h.label + "   " + h.due + "   " + h.sent + "   " + h.done; }),
         D.over.due ? ["Overstays   " + D.over.due + "   " + D.over.sent + "   " + D.over.done] : [],
-        ["TOTAL   " + D.total.due + "   " + D.total.sent + "   " + D.total.done, "", "Collected last 30 min   " + D.last30, "Collected last 60 min   " + D.last60],
+        ["TOTAL   " + D.total.due + "   " + D.total.sent + "   " + D.total.done, "",
+          "Morning 06:00–18:00   " + D.morning.due + "   " + D.morning.sent + "   " + D.morning.done,
+          "Night 18:01–05:59   " + D.night.due + "   " + D.night.sent + "   " + D.night.done, "", "Collected last 30 min   " + D.last30, "Collected last 60 min   " + D.last60],
         chargeLines().length ? [""].concat(chargeLines().map(function (x) { return x[0] + "   " + x[1]; })) : []);
     } else {
       var P = picksStats();
@@ -1302,11 +1310,13 @@
     if (sh && can("summary")) {
       if (sh.kind === "drops") {
         var d = S.rows;
-        var due = d.filter(function (r) { return /£/.test(r.note); });
+        var due = d.filter(function (r) { return /£/.test(r.note); }), D = dropsStats();
         h += '<h2 class="title">' + esc(sheetLabel(sh)) + '</h2><div class="stats"><div class="stat"><span>Cars back</span><strong class="num">' + d.filter(function (r) { return r.cleared_at; }).length + " / " + d.length +
           '</strong></div><div class="stat"><span>On the way</span><strong class="num">' + d.filter(function (r) { return r.sent_at && !r.cleared_at; }).length +
           '</strong></div><div class="stat"><span>Overstays</span><strong class="num">' + d.filter(function (r) { return r.overstay; }).length +
-          '</strong></div><div class="stat"><span>Complaints</span><strong class="num">' + d.filter(function (r) { return r.clear_word === "COMPLAINT" || /^!/.test(r.note); }).length + "</strong></div></div>" +
+          '</strong></div><div class="stat"><span>Complaints</span><strong class="num">' + d.filter(function (r) { return r.clear_word === "COMPLAINT" || /^!/.test(r.note); }).length +
+          '</strong></div><div class="stat"><span>Morning 06:00–18:00</span><strong class="num">' + D.morning.done + " / " + D.morning.due +
+          '</strong></div><div class="stat"><span>Night 18:01–05:59</span><strong class="num">' + D.night.done + " / " + D.night.due + "</strong></div></div>" +
           (due.length ? '<div class="section-label">Money due</div><div class="box">' + due.map(function (r) { return '<div class="rowline"><div class="grow"><strong>' + esc(r.reg) + "</strong> · " + esc(r.name) + '<div class="note">' + esc(r.note) + "</div></div></div>"; }).join("") + "</div>" : "");
       } else {
         var p = S.rows, hours = {};
