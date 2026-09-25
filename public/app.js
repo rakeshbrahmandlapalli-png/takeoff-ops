@@ -561,6 +561,14 @@
       label + (on && at ? '<small class="num">' + esc(hhmm(at)) + "</small>" : "") + "</button>";
   }
 
+  // The brand only ("SKODA KODIAQ SE IV PHEV SA BLUE" -> "SKODA"), for the row.
+  var TWO_WORD_MAKES = /^(LAND ROVER|RANGE ROVER|ALFA ROMEO|ASTON MARTIN|MERCEDES BENZ|ROLLS ROYCE|L ROVER|DS AUTOMOBILES)\b/i;
+  function makeOnly(m) {
+    var s = String(m || "").trim();
+    if (!s || /^[-\s.]*$/.test(s) || /^(unknown|tbc|n\/?a)\b/i.test(s)) return "";
+    var two = s.match(TWO_WORD_MAKES);
+    return two ? two[1] : s.split(/\s+/)[0];
+  }
   // ── overstay charges (database part 23) ──
   // Booked back before the DROPS day end (06:00): free until 12:00 that day,
   // then one day's rate at once and one more at every midnight.
@@ -624,7 +632,7 @@
     return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' +
       '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" + yardChip(r) +
       (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + '<span class="pin">' + esc(r.name) + "</span></div>" +
-      '<div class="l2 num" data-open><span class="l2a">' +
+      '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(makeOnly(r.make)) + "</span> · " : "") +
       (r.flight ? esc(r.flight) : can("flights") ? '<button type="button" class="addflight" data-addflight>+ FLIGHT</button>' : "—") + "</span>" +
       '<span class="l2b"> · ' + esc(booked) +
       (eta ? ' &rarr; <span class="eta' + (eta === "DELAY" ? " dly" : "") + (r.flight_status === "expected" ? " exp" : "") + '">' + esc(eta) + "</span>" : "") +
@@ -648,8 +656,8 @@
     return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' +
       '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" +
       (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + catTag(r) + '<span class="pin">' + esc(r.name) + "</span></div>" +
-      // Car and booking ref are in the car's panel (tap the reg): the row stays one clean line.
-      '<div class="l2 num" data-open><span class="l2a">drop ' + esc(hhmm(r.drop_at) || "—") + (r.pick_called ? ' · <span class="tag">' + esc(r.pick_called) + "</span> " + esc(hhmm(r.pick_called_at)) : "") + "</span></div>" +
+      // Just the make on the row; the full car and booking ref are in the car's panel.
+      '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(makeOnly(r.make)) + "</span> · " : "") + "drop " + esc(hhmm(r.drop_at) || "—") + (r.pick_called ? ' · <span class="tag">' + esc(r.pick_called) + "</span> " + esc(hhmm(r.pick_called_at)) : "") + "</span></div>" +
       noteLine(r) + "</div>" +
       '<div class="acts">' + b("Collected", "k", "COLL") + b("No Show", "n", "NO SHOW") + b("RTC", "r", "RTC", "rtc") +
       actBtn(r, "data-pt", "p", "PT", !!r.pt_at, r.pt_at, can("intake")) + "</div></div>";
