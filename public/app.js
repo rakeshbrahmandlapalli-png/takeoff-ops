@@ -437,13 +437,14 @@
   function visibleRows() {
     var q = S.q.trim().toUpperCase().replace(/^#/, "").replace(/\s+/g, "");
     return S.rows.filter(function (r) {
+      // A search looks at the whole sheet: a car already done must still be findable from TO DO.
+      if (q) return [r.reg, r.num, r.flight, r.name, r.phone, r.note, r.ref, r.make].join("").toUpperCase().replace(/\s+/g, "").indexOf(q) !== -1;
       if (S.filter === "todo" && !outstanding(r)) return false;
       if (S.catFilter && !inCat(r, S.catFilter)) return false;
       if (S.yardFilter) {
         if (r.kind === "picks" ? (r.intake || "LEFT") !== S.yardFilter : (S.yardFilter === "-" ? r.yard || r.cleared_at : r.yard !== S.yardFilter || r.cleared_at)) return false;
       }
-      if (!q) return true;
-      return [r.reg, r.num, r.flight, r.name, r.phone, r.note, r.ref].join("").toUpperCase().replace(/\s+/g, "").indexOf(q) !== -1;
+      return true;
     }).sort(function (a, b) {
       var x = orderAt(a), y = orderAt(b);
       return x < y ? -1 : x > y ? 1 : (a.num || 0) - (b.num || 0);
@@ -473,6 +474,7 @@
     $("tabTodo").setAttribute("aria-pressed", S.filter === "todo");
     $("tabAll").setAttribute("aria-pressed", S.filter === "all");
     if (document.activeElement !== $("q")) $("q").value = S.q;
+    show("qClear", !!S.q);
     $("colHead").innerHTML = '<span class="hl">' + (picks ? "CAR · CUSTOMER" : "CAR · FLIGHT") + '</span><span class="hr">' +
       (picks ? "<span>COLL</span><span>NO SHOW</span><span>RTC</span><span>PT</span>" : "<span>SENT</span><span>CALLED</span><span>CLEAR</span>") + "</span>";
   }
@@ -494,7 +496,35 @@
     $("catTally").innerHTML = cells + pick;
   }
 
-  function renderBoard() {
+  function renderBoard() { return renderSheet() + otherDaysHtml(); }
+  // ── search: other days ──
+  // Three characters or more also look at every other sheet (not removed cars),
+  // so a reg typed on today's board finds it on yesterday's or on PICKS.
+  var otherTimer = null;
+  function searchWords() { var raw = (S.q || "").trim(); return { raw: raw.replace(/[^A-Za-z0-9 '-]/g, "").trim(), tight: raw.replace(/[^A-Za-z0-9]/g, "").toUpperCase() }; }
+  function searchOtherDays() {
+    clearTimeout(otherTimer);
+    var w = searchWords();
+    if (w.tight.length < 3) { S.other = null; return; }
+    otherTimer = setTimeout(async function () {
+      var key = w.tight + "|" + S.sheetId;
+      var r = await sb.from("bookings").select("id, sheet_id, kind, reg, name, make, overstay, cleared_at, intake, sheets(day, kind)")
+        .neq("sheet_id", S.sheetId).is("removed_at", null)
+        .or('reg.ilike."%' + w.tight + '%",ref.ilike."%' + w.tight + '%",phone.ilike."%' + w.tight + '%"' + (w.raw.length >= 3 ? ',name.ilike."%' + w.raw + '%"' : ""))
+        .order("updated_at", { ascending: false }).limit(20);
+      var now = searchWords(); if (now.tight + "|" + S.sheetId !== key) return;   // typed on since
+      S.other = r.error ? null : (r.data || []).sort(function (a, b) { return ((b.sheets || {}).day || "") < ((a.sheets || {}).day || "") ? -1 : 1; });
+      if (S.view === "board") $("main").innerHTML = renderBoard();
+    }, 350);
+  }
+  function otherDaysHtml() {
+    if (!S.q || !S.other || !S.other.length) return "";
+    return '<div class="sec">ON OTHER DAYS <b class="num">' + S.other.length + "</b></div>" + S.other.map(function (r) {
+      var sh = r.sheets || {}, st = r.kind === "picks" ? (r.intake || "LEFT") : r.cleared_at ? "DONE" : r.overstay ? "OVERSTAY" : "OUT";
+      return '<button type="button" class="otherhit" data-othersheet="' + r.sheet_id + '" data-otherreg="' + esc(r.reg) + '"><b>' + esc(r.reg || "NO REG") + "</b><span>" + esc(r.name) + (r.make ? " · " + esc(r.make) : "") + "</span><i>" + esc(sheetLabel({ day: sh.day || "", kind: sh.kind || r.kind })) + " · " + st + "</i></button>";
+    }).join("");
+  }
+  function renderSheet() {
     var sh = sheet();
     if (!sh) return '<div class="msg">No day sheets yet.' + (can("import") ? ' Open <b>☰ → Import</b> to create one from the booking site\'s download.' : " The office will import today's bookings.") + "</div>";
     var rows = visibleRows();
@@ -1950,6 +1980,8 @@
     if (t.dataset.clientedit && S.platform) return openClient(t.dataset.clientedit);
     if (t.dataset.clientsuspend && S.platform) return suspendClient(t);
     if (t.dataset.clientowner && S.platform) return askClientOwner(t.dataset.clientowner);
+    if (t.id === "qClear") { S.q = ""; S.other = null; $("q").value = ""; show("qClear", false); $("main").innerHTML = renderBoard(); $("q").focus(); return; }
+    if (t.dataset.othersheet) { var oq = t.dataset.otherreg; S.other = null; await openArchived(t.dataset.othersheet, oq); searchOtherDays(); window.scrollTo(0, 0); return; }
     if (t.dataset.removedlist !== undefined) { $("menu").close(); return openRemoved(); }
     if (t.dataset.notifyon !== undefined) return turnOnNotifications(t);
     if (t.dataset.notifyoff !== undefined) return turnOffNotifications(false);
@@ -2009,11 +2041,11 @@
     if (got) { S.issued = got; render(); window.scrollTo(0, 0); }
   });
   document.addEventListener("input", function (e) {
-    if (e.target.id === "q") { S.q = e.target.value; $("main").innerHTML = renderBoard(); }
+    if (e.target.id === "q") { S.q = e.target.value; show("qClear", !!S.q); searchOtherDays(); $("main").innerHTML = renderBoard(); }
   });
   document.addEventListener("change", async function (e) {
     var t = e.target;
-    if (t.id === "sheetPick") { S.sheetId = t.value; S.q = ""; S.yardFilter = ""; S.catFilter = ""; S.view = "board"; S.runs = null; await loadRows(); render(); window.scrollTo(0, 0); return; }
+    if (t.id === "sheetPick") { S.sheetId = t.value; S.q = ""; S.other = null; S.yardFilter = ""; S.catFilter = ""; S.view = "board"; S.runs = null; await loadRows(); render(); window.scrollTo(0, 0); return; }
     if (t.dataset.yard !== undefined) {
       var r = rowOf(t); if (!r) return;
       var y = t.value;
