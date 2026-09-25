@@ -862,15 +862,63 @@
   }
   // Full camera photos are 4-8 MB; 3000 px is sharper than anyone zooms into
   // and a lot quicker to upload on mobile data.
-  async function ptShrink(b) {
+  // Gallery photos: made upload size and stamped with when they were taken.
+  async function ptShrink(b, reg) {
     try {
-      var im = await createImageBitmap(b), k = PT_MAX / Math.max(im.width, im.height);
-      if (k >= 1 && b.type === "image/jpeg" && b.size < 1500000) { if (im.close) im.close(); return b; }
-      k = Math.min(1, k);
+      var when = await ptTakenAt(b);
+      var im = await createImageBitmap(b), k = Math.min(1, PT_MAX / Math.max(im.width, im.height));
       var c = document.createElement("canvas"); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
-      c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); if (im.close) im.close();
+      var g = c.getContext("2d"); g.drawImage(im, 0, 0, c.width, c.height); if (im.close) im.close();
+      ptStamp(g, c.width, c.height, when, reg);
       return await new Promise(function (ok) { c.toBlob(function (x) { ok(x || b); }, "image/jpeg", PT_Q); });
     } catch (e) { return b; }
+  }
+  // Date, time and reg burnt into the bottom corner of the photo, so it stays
+  // with the photo in WhatsApp, downloads and the app's copy.
+  function ptStampText(when, reg) {
+    var t = new Date(when).toLocaleString("en-GB", { timeZone: TZ, day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).replace(",", "");
+    return t + (reg ? " · " + reg : "");
+  }
+  function ptStamp(g, w, h, when, reg) {
+    try {
+      var text = ptStampText(when, reg), size = Math.max(14, Math.round(Math.min(w, h) * 0.045)), pad = Math.round(size * 0.45);
+      g.font = "700 " + size + "px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+      var tw = g.measureText(text).width, bw = tw + pad * 2, bh = size + pad * 2;
+      g.fillStyle = "rgba(0,0,0,.55)"; g.fillRect(w - bw - pad, h - bh - pad, bw, bh);
+      g.fillStyle = "#fff"; g.textBaseline = "middle"; g.fillText(text, w - bw, h - pad - bh / 2);
+    } catch (e) {}
+  }
+  // When a gallery photo was taken: the camera's own date in the photo (EXIF
+  // DateTimeOriginal, UK local time); failing that, the file's date.
+  async function ptTakenAt(f) {
+    var fallback = f.lastModified || Date.now();
+    try {
+      if (!/jpe?g/i.test(f.type || f.name || "")) return fallback;
+      var v = new DataView(await f.slice(0, 131072).arrayBuffer());
+      if (v.getUint16(0) !== 0xFFD8) return fallback;
+      for (var o = 2; o + 4 < v.byteLength;) {
+        var mk = v.getUint16(o), len = v.getUint16(o + 2);
+        if (mk === 0xFFE1 && v.getUint32(o + 4) === 0x45786966) return ptExifDate(v, o + 10) || fallback;
+        if ((mk & 0xFF00) !== 0xFF00) break;
+        o += 2 + len;
+      }
+    } catch (e) {}
+    return fallback;
+  }
+  function ptExifDate(v, t) {
+    var le = v.getUint16(t) === 0x4949, u16 = function (p) { return v.getUint16(p, le); }, u32 = function (p) { return v.getUint32(p, le); };
+    function find(ifd, tag) { var n = u16(ifd); for (var i = 0; i < n; i++) { var e = ifd + 2 + i * 12; if (u16(e) === tag) return e; } return 0; }
+    var ifd0 = t + u32(t + 4), ex = find(ifd0, 0x8769), e = ex ? find(t + u32(ex + 8), 0x9003) : 0;
+    if (!e) e = find(ifd0, 0x0132);
+    if (!e) return 0;
+    var at = t + u32(e + 8), str = "";
+    for (var i = 0; i < 19; i++) str += String.fromCharCode(v.getUint8(at + i));
+    var m = str.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})$/); if (!m) return 0;
+    // The camera's clock is UK local time: find the moment that shows that in London.
+    var guess = Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+    var shown = new Date(guess).toLocaleString("en-GB", { timeZone: TZ, hour: "2-digit", hour12: false });
+    var off = (+shown % 24 - +m[4] + 24) % 24; if (off > 12) off -= 24;
+    return guess - off * 3600000;
   }
   function ptPump(r) {
     var cur = pt; if (!cur) return;
@@ -884,7 +932,7 @@
   }
   async function ptUpload(r, cur, x) {
     try {
-      var b = x.ready ? x.file : await ptShrink(x.file);
+      var b = x.ready ? x.file : await ptShrink(x.file, cur.reg);
       if (!x.url) { x.url = await ptThumbOf(b); var im0 = $("panelBody").querySelector('[data-pti="' + (x.n - 1) + '"]'); if (im0 && x.url) im0.src = x.url; }
       var ext = b.type === "image/png" ? "png" : b.type === "image/jpeg" ? "jpg" : (x.file.name.split(".").pop() || "jpg").toLowerCase();
       x.path = S.me.company_id + "/" + r.id + "/" + cur.token + "/" + String(x.n).padStart(2, "0") + "." + ext;
@@ -984,7 +1032,8 @@
     var f = $("camFlash"); if (f) { f.classList.remove("go"); void f.offsetWidth; f.classList.add("go"); }
     var k = Math.min(1, PT_MAX / Math.max(v.videoWidth, v.videoHeight));
     var c = document.createElement("canvas"); c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
-    c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+    var g = c.getContext("2d"); g.drawImage(v, 0, 0, c.width, c.height);
+    ptStamp(g, c.width, c.height, Date.now(), pt.reg);
     var cur = pt, thumb = ptThumb(c, c.width, c.height);
     c.toBlob(function (b) {
       if (!b || pt !== cur) return;
@@ -1049,7 +1098,7 @@
     cur.prepping = true;
     var x;
     while ((x = cur.items.filter(function (y) { return y.state === "prep"; })[0])) {
-      x.file = await ptShrink(x.file); x.url = x.url || await ptThumbOf(x.file); x.state = "local";
+      x.file = await ptShrink(x.file, cur.reg); x.url = x.url || await ptThumbOf(x.file); x.state = "local";
       if (pt !== cur) return;
     }
     cur.prepping = false;
