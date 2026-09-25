@@ -799,6 +799,15 @@
         x.clear_word = on ? (word || "Collected") : ""; x.cleared_at = on ? nowIso() : null; x.cleared_by = on ? S.me.id : null;
       }
     });
+    // CALLED on a car booked back on a later day: they're coming back early,
+    // so offer to move it onto tonight's sheet there and then.
+    if (action === "called" && on && !word && canEarly(r)) {
+      var sh = S.sheets.filter(function (x) { return x.id === r.sheet_id; })[0];
+      setTimeout(function () {
+        if (confirm((r.reg || "This car") + " is booked back " + sheetLabel(sh) + ". Coming back early?\n\nOK moves it to tonight's sheet (" + sheetLabel({ kind: "drops", day: currentShiftKey() }) + ")."))
+          earlyMove(r, { disabled: false }, false, true);
+      }, 50);
+    }
   }
   // PT: photos taken in the app's camera (quickest) or picked from the gallery.
   // Two ways to get them to PT, chosen in Settings (companies.pt_method):
@@ -1297,19 +1306,24 @@
   // ── early returns (database part 29) ──
   // Booked back on a later day but coming back tonight: the car moves onto the
   // sheet for the shift running now, marked EARLY. Undo puts it back.
+  function canEarly(r) {
+    if (r.kind !== "drops" || r.early || r.cleared_at || !can("called")) return false;
+    var here = S.sheets.filter(function (x) { return x.id === r.sheet_id; })[0];
+    return !!here && here.day > currentShiftKey();
+  }
   function earlyHtml(r) {
     if (!can("called") || r.cleared_at) return "";
-    var here = S.sheets.filter(function (x) { return x.id === r.sheet_id; })[0], today = currentShiftKey();
+    var today = currentShiftKey();
     if (r.early) {
       var from = S.sheets.filter(function (x) { return x.id === r.moved_from; })[0];
       return '<button type="button" class="link" data-undoearly>Undo early return' + (from ? " (back to " + esc(sheetLabel(from)) + ")" : "") + "</button>";
     }
-    if (!here || here.day <= today) return "";
+    if (!canEarly(r)) return "";
     return '<button type="button" class="btn ghost ptgo" data-early>EARLY RETURN · move to ' + esc(sheetLabel({ kind: "drops", day: today })) + "</button>" +
       '<p class="hint">Booked back ' + esc(dayShort(r.return_at) + " " + hhmm(r.return_at)) + ". Use this when they ring to come back sooner.</p>";
   }
-  async function earlyMove(r, btn, undo) {
-    if (!undo && !confirm("Move " + (r.reg || "this car") + " to tonight's sheet as an early return?")) return;
+  async function earlyMove(r, btn, undo, asked) {
+    if (!undo && !asked && !confirm("Move " + (r.reg || "this car") + " to tonight's sheet as an early return?")) return;
     btn.disabled = true;
     var x = await sb.rpc(undo ? "undo_early_return" : "early_return", { p_booking: r.id });
     btn.disabled = false;
