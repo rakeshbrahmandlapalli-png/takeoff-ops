@@ -697,201 +697,113 @@
       }
     });
   }
-  // PT: photos go to WhatsApp with the reg as the caption, then PT is ticked.
-  // A web app can hand photos to WhatsApp but can't choose the chat, so the
-  // driver still picks the number in WhatsApp's own list.
-  var pt = null;
+  // PT: the photos are taken with the phone's own camera (sharpest), picked here
+  // all at once, and uploaded at full quality while the driver waits. Then
+  // WhatsApp opens once on the PT chat with the reg and a link to every photo.
+  // No batches of 10, and WhatsApp never shrinks them. PT ticks on that tap.
+  var pt = null, PT_MAX = 3000, PT_AT_ONCE = 3;
   function ptCaption(r) { return r.reg || "NO REG"; }
+  function ptToken() {
+    var b = new Uint8Array(18); crypto.getRandomValues(b);
+    return btoa(String.fromCharCode.apply(null, b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function ptLink() { return location.origin + "/p/" + pt.token; }
+  function ptMessage(r) { var n = ptCount("done"); return ptCaption(r) + " – " + n + " PT photo" + (n === 1 ? "" : "s") + ": " + ptLink(); }
+  function ptCount(state) { return pt ? pt.items.filter(function (x) { return !state || x.state === state; }).length : 0; }
   function openPt(r) {
-    if (!pt || pt.id !== r.id) { ptClear(); pt = { id: r.id, files: [], urls: [] }; }
+    if (!pt || pt.id !== r.id) { ptClear(); pt = { id: r.id, token: ptToken(), items: [], saved: 0 }; }
     panelRow = r;
-    var num = (S.company && S.company.pt_whatsapp) || "", reg = ptCaption(r);
+    var num = (S.company && S.company.pt_whatsapp) || "", n = pt.items.length, ready = ptReady();
+    var pick = '<input type="file" accept="image/*" multiple data-ptfile hidden>';
     $("panelBody").innerHTML = '<h2 id="panelTitle">PT · ' + esc(r.reg || "NO REG") + (r.num ? " <small>#" + r.num + "</small>" : "") + "</h2>" +
-      // Step 1: the reg as its own message, so WhatsApp keeps the photos as albums.
-      '<div class="ptstep' + (pt.regSent ? " done" : "") + '"><b>1</b>' +
-      (num ? '<a class="btn ' + (pt.regSent ? "ghost" : "brand") + '" href="https://wa.me/' + esc(num) + "?text=" + encodeURIComponent(reg) + '" target="_blank" rel="noopener" data-ptreg>' + (pt.regSent ? "✓ Sent " : "Send ") + esc(reg) + " to WhatsApp</a>"
-        : '<button type="button" class="btn ' + (pt.regSent ? "ghost" : "brand") + '" data-ptregshare>' + (pt.regSent ? "✓ Sent " : "Send ") + esc(reg) + " to WhatsApp</button>") +
-      "</div>" + (pt.regSent ? (pt.files.length && !pt.sent ? '<p class="hint">Back from WhatsApp? Tap <b>' + esc(ptSendLabel()) + "</b> below and pick the PT chat.</p>" : "") : '<p class="hint">Opens the chat with ' + esc(reg) + " typed. Tap Send, then come back here for the photos.</p>") +
-      '<div class="ptstep"><b>2</b><span>Photos</span></div>' +
-      '<div class="pseg ptadd"><button type="button" data-ptcam>CAMERA</button>' +
-      '<label><input type="file" accept="image/*" multiple data-ptfile hidden>CHOOSE FROM GALLERY</label></div>' +
-      '<label class="ptnative" id="ptNative"><input type="file" accept="image/*" capture="environment" data-ptfile hidden>Camera not working? Use the phone\'s camera (one photo at a time)</label>' +
-      (pt.files.length ? '<div class="ptthumbs">' + pt.urls.map(function (u, i) { return '<img src="' + u + '" alt=""' + (i < (pt.sent || 0) ? ' class="sent"' : "") + ">"; }).join("") + '</div><p class="hint">' + pt.files.length + " photo" + (pt.files.length === 1 ? "" : "s") + ' ready. <button type="button" class="link" data-ptclear>Start again</button></p>'
-        : '<p class="hint">No photos yet. Take them one by one, or pick them all from the gallery.</p>') +
-      (pt.sent ? '<p class="ptprog"><b>' + pt.sent + " of " + pt.files.length + " sent.</b> Keep going until all are sent. PT ticks itself after the last batch.</p>" : "") +
-      '<div class="pbtns"><button type="button" data-close>Cancel</button><button type="button" class="save" data-ptsend' + (pt.files.length ? "" : " disabled") + ">" + ptSendLabel() + "</button></div>" +
+      (n ? "" : '<p class="sub">Take the photos with the phone\'s camera first, then choose them all here in one go.</p>') +
+      '<label class="btn ' + (n ? "ghost" : "brand") + ' ptpick">' + pick + (n ? "+ Add more photos" : "CHOOSE PHOTOS") + "</label>" +
+      (n ? "" : '<label class="ptnative"><input type="file" accept="image/*" capture="environment" data-ptfile hidden>Or take one now with the camera</label>') +
+      (n ? '<div class="ptthumbs" id="ptThumbs">' + pt.items.map(function (x, i) { return '<img src="' + x.url + '" alt="" data-pti="' + i + '" class="' + x.state + '">'; }).join("") + "</div>" : "") +
+      '<p class="hint" id="ptStatus">' + ptStatusText() + "</p>" +
+      (ready ? (num
+          ? '<a class="btn brand ptgo" href="https://wa.me/' + esc(num) + "?text=" + encodeURIComponent(ptMessage(r)) + '" target="_blank" rel="noopener" data-ptlink>SEND TO PT ON WHATSAPP</a>'
+          : '<button type="button" class="btn brand ptgo" data-ptlinkshare>SEND TO PT ON WHATSAPP</button>')
+        : n ? '<button type="button" class="btn brand ptgo" disabled>' + (ptCount("fail") ? "Some photos didn't upload" : "Uploading…") + "</button>" : "") +
+      (ptCount("fail") && !ptCount("wait") && !ptCount("up") ? '<button type="button" class="btn ghost ptgo" data-ptretry>Try again (' + ptCount("fail") + ")</button>" : "") +
+      '<div class="pbtns"><button type="button" data-close>Close</button>' + (n ? '<button type="button" data-ptclear>Start again</button>' : "") + "</div>" +
       '<button type="button" class="link" data-ptmark>Tick PT without sending photos</button>';
     if (!$("panel").open) $("panel").showModal();
   }
-  // The camera stays open inside the app: one tap per photo, Done when finished.
-  // If the phone refuses (no permission, old browser) its own camera opens instead.
-  var camStream = null, camShot = null, camBusy = false, camTorch = false;
-  function camLight(on) {
-    var track = camStream && camStream.getVideoTracks()[0]; if (!track) return Promise.resolve();
-    return track.applyConstraints({ advanced: [{ torch: on }] });
+  function ptReady() { return !!pt && pt.items.length > 0 && ptCount("done") === pt.items.length && pt.saved === pt.items.length; }
+  function ptStatusText() {
+    if (!pt || !pt.items.length) return "";
+    var n = pt.items.length, d = ptCount("done"), f = ptCount("fail");
+    if (ptReady()) return "✓ " + n + " photo" + (n === 1 ? "" : "s") + " uploaded. Tap Send, then Send again in WhatsApp.";
+    if (f && d + f === n) return d + " of " + n + " uploaded. " + f + " didn't upload: check the signal and try again.";
+    return "Uploading " + (d + 1 > n ? n : d + 1) + " of " + n + "… keep this screen open.";
   }
-  async function camToggleTorch() {
-    var want = !camTorch;
-    try { await camLight(want); camTorch = want; }
-    catch (e) { return toast("This phone won't let the app use its light. Use \"Use the phone's camera\" for flash.", true); }
-    var b = $("camTorch"); if (b) { b.textContent = "⚡ FLASH " + (camTorch ? "ON" : "OFF"); b.classList.toggle("on", camTorch); b.setAttribute("aria-pressed", camTorch); }
+  // Update the thumbnails and the button in place while uploading, or redraw
+  // the panel once everything's in.
+  function ptRefresh() {
+    if (!pt || !$("panel").open || !panelRow || panelRow.id !== pt.id) return;
+    if (ptReady() || (!ptCount("wait") && !ptCount("up"))) return openPt(panelRow);
+    pt.items.forEach(function (x, i) { var im = $("panelBody").querySelector('[data-pti="' + i + '"]'); if (im) im.className = x.state; });
+    var s = $("ptStatus"); if (s) s.textContent = ptStatusText();
   }
-  async function ptCamera(r) {
-    try {
-      camStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 30 } } });
-    } catch (e) {
-      toast(e && e.name === "NotAllowedError" ? "Camera not allowed. Allow it in the browser's site settings, or tap \"Use the phone's camera\"." : "The camera wouldn't start. Tap \"Use the phone's camera\" below.", true);
-      return;
-    }
-    $("panel").classList.add("cam");
-    $("panelBody").innerHTML = '<div class="camview"><video id="camVideo" autoplay playsinline muted></video><div class="camflash" id="camFlash"></div><div class="camring" id="camRing"></div><button type="button" class="camtorch hidden" id="camTorch" data-camtorch aria-pressed="false">⚡ FLASH OFF</button></div>' +
-      '<div class="cambar"><span class="camcount" id="camCount">' + camCountText() + '</span><button type="button" class="shutter" data-shutter aria-label="Take photo"></button><button type="button" class="camdone" data-camdone id="camDone">' + camDoneText() + "</button></div>";
-    $("camVideo").srcObject = camStream;
-    // Keep the picture sharp as the phone moves round the car.
-    var track = camStream.getVideoTracks()[0], caps = track && track.getCapabilities ? track.getCapabilities() : {};
-    if (caps.focusMode && caps.focusMode.indexOf("continuous") !== -1) track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(function () {});
-    // The phone's light, for dark corners of the terminal. Stays on while shooting.
-    camTorch = false;
-    if (caps.torch) show("camTorch", true);
-    // Speed first: a photo is the live picture grabbed instantly, which at Full HD
-    // or more is sharp. Only a phone whose live picture is small uses the camera's
-    // still photo, which is sharper but takes a second or two each time.
-    camShot = null;
-    var sv = track && track.getSettings ? track.getSettings() : {};
-    if (track && window.ImageCapture && Math.min(sv.width || 0, sv.height || 0) < 1080) {
-      try {
-        var ic = new ImageCapture(track), pc = await ic.getPhotoCapabilities().catch(function () { return null; });
-        var opts = pc && pc.imageWidth && pc.imageWidth.max ? { imageWidth: pc.imageWidth.max, imageHeight: pc.imageHeight.max } : {};
-        var vw = (track.getSettings && track.getSettings().width) || 0;
-        if (!opts.imageWidth || Math.max(opts.imageWidth, opts.imageHeight) >= vw) camShot = function () { return ic.takePhoto(opts).catch(function () { return ic.takePhoto(); }); };
-      } catch (e) { camShot = null; }
-    }
+  function ptAdd(input) {
+    var r = panelRow; if (!pt || !r) return;
+    Array.prototype.forEach.call(input.files || [], function (f) {
+      pt.items.push({ file: f, url: URL.createObjectURL(f), state: "wait", n: pt.items.length + 1 });
+    });
+    input.value = "";
+    openPt(r); ptPump(r);
   }
-  // Tap the picture to focus on that spot (where the phone allows it).
-  function camFocus(e) {
-    var v = $("camVideo"), track = camStream && camStream.getVideoTracks()[0]; if (!v || !track) return;
-    var caps = track.getCapabilities ? track.getCapabilities() : {}; if (!caps.pointsOfInterest && !caps.focusMode) return;
-    var b = v.getBoundingClientRect(), x = (e.clientX - b.left) / b.width, y = (e.clientY - b.top) / b.height;
-    var c = { pointsOfInterest: [{ x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) }] };
-    if (caps.focusMode && caps.focusMode.indexOf("continuous") !== -1) c.focusMode = "continuous";
-    track.applyConstraints({ advanced: [c] }).catch(function () {});
-    var ring = $("camRing"); if (ring) { ring.style.left = (e.clientX - b.left) + "px"; ring.style.top = (e.clientY - b.top) + "px"; ring.classList.remove("go"); void ring.offsetWidth; ring.classList.add("go"); }
-  }
-  $("panel").addEventListener("pointerdown", function (e) { if (e.target && e.target.id === "camVideo") camFocus(e); });
-  function camDoneText() { return pt && pt.files.length ? "Send ›" : "Done"; }
-  function camCountText() { var n = pt ? pt.files.length : 0; return n + " photo" + (n === 1 ? "" : "s"); }
-  function camStop() {
-    if (camStream) camStream.getTracks().forEach(function (t) { t.stop(); });
-    camStream = null; camShot = null; camBusy = false; camTorch = false; $("panel").classList.remove("cam");
-  }
-  function ptKeep(r, b) {
-    if (!b || !pt) return;
-    pt.files.push(new File([b], (r.reg || "car").replace(/\s+/g, "") + "-" + (pt.files.length + 1) + (b.type === "image/png" ? ".png" : ".jpg"), { type: b.type || "image/jpeg" }));
-    pt.urls.push(URL.createObjectURL(b));
-    var el = $("camCount"); if (el) el.textContent = camCountText();
-    var d = $("camDone"); if (d) d.textContent = camDoneText();
-  }
-  // Full-size stills are 4-8 MB; ten of those can make Android drop the app
-  // while WhatsApp is open. 3200 px is still sharper than WhatsApp's HD.
-  var PT_MAX = 3200;
+  // Full camera photos are 4-8 MB; 3000 px is sharper than anyone zooms into
+  // and a lot quicker to upload on mobile data.
   async function ptShrink(b) {
     try {
       var im = await createImageBitmap(b), k = PT_MAX / Math.max(im.width, im.height);
-      if (k >= 1 && b.type === "image/jpeg") { im.close && im.close(); return b; }
+      if (k >= 1 && b.type === "image/jpeg") { if (im.close) im.close(); return b; }
       k = Math.min(1, k);
       var c = document.createElement("canvas"); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
-      c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); im.close && im.close();
+      c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); if (im.close) im.close();
       return await new Promise(function (ok) { c.toBlob(function (x) { ok(x || b); }, "image/jpeg", 0.9); });
     } catch (e) { return b; }
   }
-  function ptGrab(r) {
-    var v = $("camVideo"); if (!v || !v.videoWidth) return;
-    var c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight;
-    c.getContext("2d").drawImage(v, 0, 0);
-    c.toBlob(function (b) { ptKeep(r, b); }, "image/jpeg", 0.92);
-  }
-  async function ptShoot(r) {
-    var v = $("camVideo"); if (!v || !v.videoWidth || !pt || camBusy) return;
-    var f = $("camFlash"); if (f) { f.classList.remove("go"); void f.offsetWidth; f.classList.add("go"); }
-    if (!camShot) return ptGrab(r);
-    camBusy = true;
-    var sh = $("panelBody").querySelector("[data-shutter]"); if (sh) sh.disabled = true;
-    try { ptKeep(r, await ptShrink(await camShot())); }
-    catch (e) { camShot = null; ptGrab(r); }
-    // Some phones turn the light off to take a still; put it back on.
-    if (camTorch) camLight(true).catch(function () {});
-    camBusy = false; if (sh) sh.disabled = false;
-  }
-  // Done on the camera carries straight on: the reg to the PT chat first, and
-  // once that's sent, the photos (the tap on Done opens the share itself).
-  function ptNext(r) {
-    openPt(r);
-    if (!pt || !pt.files.length) return;
-    var num = (S.company && S.company.pt_whatsapp) || "";
-    if (!pt.regSent && num) {
-      pt.regSent = true;
-      window.open("https://wa.me/" + num + "?text=" + encodeURIComponent(ptCaption(r)), "_blank", "noopener");
-      return openPt(r);
+  function ptPump(r) {
+    var cur = pt; if (!cur) return;
+    while (ptCount("up") < PT_AT_ONCE) {
+      var x = cur.items.filter(function (y) { return y.state === "wait"; })[0]; if (!x) break;
+      x.state = "up"; ptUpload(r, cur, x);
     }
-    if (pt.regSent) { var b = $("panelBody").querySelector("[data-ptsend]"); if (b) ptSend(r, b); }
+    if (!ptCount("wait") && !ptCount("up") && ptCount("done") > cur.saved) ptSave(r, cur);
   }
-  function ptClear() { if (pt) pt.urls.forEach(function (u) { URL.revokeObjectURL(u); }); pt = null; }
-  function ptAdd(input) {
-    var r = panelRow; if (!pt || !r) return;
-    Array.prototype.forEach.call(input.files || [], function (f) { pt.files.push(f); pt.urls.push(URL.createObjectURL(f)); });
-    input.value = "";
-    openPt(r);
+  async function ptUpload(r, cur, x) {
+    try {
+      var b = await ptShrink(x.file), ext = b.type === "image/png" ? "png" : b.type === "image/jpeg" ? "jpg" : (x.file.name.split(".").pop() || "jpg").toLowerCase();
+      x.path = S.me.company_id + "/" + r.id + "/" + cur.token + "/" + String(x.n).padStart(2, "0") + "." + ext;
+      var up = await sb.storage.from("pt-photos").upload(x.path, b, { contentType: b.type || "image/jpeg" });
+      // "Already exists" on a retry means the first try got there after all.
+      x.state = !up.error || /exist|duplicate/i.test(up.error.message || "") ? "done" : "fail";
+      if (x.state === "fail") x.err = up.error.message;
+    } catch (e) { x.state = "fail"; x.err = e.message; }
+    if (pt !== cur) return;
+    ptRefresh(); ptPump(r);
   }
-  // Android browsers hand at most 10 photos to another app at a time, so a big
-  // set goes in batches of 10 (a phone that takes more gets the lot at once).
-  // Photos go with no text: WhatsApp copies shared text onto EVERY photo, which
-  // stops it grouping them into an album. The reg is on the clipboard to paste.
-  // Android's canShare() says yes to 12 and share() then quietly refuses, so
-  // the answer isn't trusted: only iPhones and iPads send the lot in one go.
-  var PT_BATCH = 10;
-  var BIG_SHARE = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  function ptBatch() {
-    if (!pt) return null;
-    var left = pt.files.slice(pt.sent || 0);
-    if (!left.length) return null;
-    return BIG_SHARE ? left : left.slice(0, PT_BATCH);
+  async function ptSave(r, cur) {
+    var paths = cur.items.filter(function (x) { return x.state === "done"; }).map(function (x) { return x.path; });
+    var res = await sb.rpc("pt_link_save", { p_token: cur.token, p_booking: r.id, p_paths: paths });
+    if (pt !== cur) return;
+    if (res.error) { toast("Couldn't make the link: " + res.error.message, true); return openPt(r); }
+    cur.saved = paths.length;
+    if (ptCount("fail")) { var f = cur.items.filter(function (x) { return x.state === "fail"; })[0]; if (f && f.err) toast("Upload failed: " + f.err, true); }
+    ptRefresh();
   }
-  function ptSendLabel() {
-    var b = ptBatch(); if (!b || b.length === pt.files.length) return "Send on WhatsApp";
-    var from = (pt.sent || 0) + 1;
-    return "Send photos " + from + "–" + (from + b.length - 1) + " of " + pt.files.length;
-  }
-  async function ptSend(r, btn) {
-    var caption = ptCaption(r), batch = ptBatch();
-    if (!batch) return;
-    try { await navigator.clipboard.writeText(caption); } catch (e) {}
-    if (!navigator.canShare || !navigator.canShare({ files: batch })) {
-      return toast("This phone can't pass photos to WhatsApp from the app. Send them from WhatsApp; the reg is copied.", true);
-    }
-    btn.disabled = true;
-    // Tick PT as the photos go to WhatsApp, not after: Android often reloads the
-    // app while WhatsApp is open, and the tick would be lost with it. The tick is
-    // saved on the phone straight away, so it survives that. Undone if the very
-    // first share is cancelled.
-    var ticked = false;
-    if (!r.pt_at) { tapPick(r, "pt"); ticked = true; }
-    // Photos only: text shared with them lands on every photo and breaks the album.
-    try { await navigator.share({ files: batch }); }
-    catch (e) {
-      btn.disabled = false;
-      if (ticked && !pt.sent && r.pt_at) tapPick(r, "pt");
-      // An iPhone that turns the whole set down drops to batches of 10 next time.
-      if (BIG_SHARE && batch.length > PT_BATCH) { BIG_SHARE = false; toast("Too many photos in one go for this phone. Sending in batches of 10 instead.", true); return openPt(r); }
-      if (e.name !== "AbortError") toast("Couldn't open sharing: " + e.message, true);
-      return;
-    }
-    pt.sent = (pt.sent || 0) + batch.length;
-    if (pt.sent < pt.files.length) { toast(pt.sent + " of " + pt.files.length + " sent. Now send the next batch."); return openPt(r); }
+  function ptRetry(r) { pt.items.forEach(function (x) { if (x.state === "fail") x.state = "wait"; }); openPt(r); ptPump(r); }
+  // WhatsApp is open with the message: PT is done.
+  function ptSent(r) {
+    r = S.rows.filter(function (x) { return x.id === r.id; })[0] || r;
     if (!r.pt_at) tapPick(r, "pt");
-    ptClear();
-    toast(caption + ": all photos sent, PT done");
-    $("panel").close();
+    toast(ptCaption(r) + ": PT link sent, PT ticked");
+    setTimeout(function () { ptClear(); if ($("panel").open) $("panel").close(); }, 300);
   }
+  function ptClear() { if (pt) pt.items.forEach(function (x) { URL.revokeObjectURL(x.url); }); pt = null; }
   function tapPick(r, key, value) {
     var v = key === "intake" ? (r.intake === value ? "" : value) : key === "pt" ? (r.pt_at ? "" : "Done") : (r.pick_called === value ? "" : value);
     run("tap_pick", { p_booking: r.id, p_key: key, p_value: v }, r, function (x) {
@@ -961,7 +873,7 @@
     $("panelBody").innerHTML = h;
     if (!$("panel").open) $("panel").showModal();
   }
-  $("panel").addEventListener("close", function () { camStop(); panelRow = null; quick = null; staffEdit = null; render(); });
+  $("panel").addEventListener("close", function () { panelRow = null; quick = null; staffEdit = null; render(); });
   $("panel").addEventListener("click", function (e) {
     if (e.target === $("panel")) return $("panel").close();          // tap outside the sheet
     var t = e.target.closest("button"); if (!t) return;
@@ -999,15 +911,11 @@
     }
     if (t.dataset.word) { var p = t.dataset.word.split(":"); tapDrop(r, p[0], p[1]); return $("panel").close(); }
     if (t.dataset.pcall) { tapPick(r, "called", t.dataset.pcall); return $("panel").close(); }
-    if (t.dataset.ptcam !== undefined) return ptCamera(r);
-    if (t.dataset.shutter !== undefined) return ptShoot(r);
-    if (t.dataset.camtorch !== undefined) return camToggleTorch();
-    if (t.dataset.camdone !== undefined) { camStop(); return ptNext(r); }
-    if (t.dataset.ptsend !== undefined) return ptSend(r, t);
-    if (t.dataset.ptregshare !== undefined) {
-      // No PT number set: share the reg and let them pick the chat.
+    if (t.dataset.ptretry !== undefined) return ptRetry(r);
+    if (t.dataset.ptlinkshare !== undefined) {
+      // No PT number in Settings: share the message and pick the chat.
       if (!navigator.share) return toast("Set the PT WhatsApp number in Settings.", true);
-      navigator.share({ text: ptCaption(r) }).then(function () { if (pt) pt.regSent = true; openPt(r); }).catch(function () {});
+      navigator.share({ text: ptMessage(r) }).then(function () { ptSent(r); }).catch(function () {});
       return;
     }
     if (t.dataset.ptclear !== undefined) { ptClear(); return openPt(r); }
@@ -2219,7 +2127,8 @@
     if (t.dataset.copy) { try { await navigator.clipboard.writeText(t.dataset.copy); toast("Copied"); } catch (err) { toast("Couldn't copy: select the link and copy it", true); } return; }
     if (!S.me) return;
     // The link opens WhatsApp by itself; just remember it was sent.
-    if (t.dataset.ptreg !== undefined) { if (pt) pt.regSent = true; setTimeout(function () { if (panelRow && pt) openPt(panelRow); }, 400); return; }
+    // The link opens WhatsApp by itself; PT is done.
+    if (t.dataset.ptlink !== undefined) { if (panelRow) ptSent(panelRow); return; }
     if (t.dataset.savept !== undefined) return savePtNumber(t);
     if (t.dataset.backup !== undefined) return downloadBackup(t);
     if (t.dataset.saverate !== undefined) return saveOverstayRate(t);
@@ -2264,10 +2173,7 @@
     if (r && t.dataset.pick) return tapPick(r, "intake", t.dataset.pick);
     if (r && t.dataset.pt !== undefined) {
       if (r.pt_at) return tapPick(r, "pt");
-      // Straight into the camera; the PT screen is behind it if the camera won't start.
-      openPt(r);
-      if (!pt.files.length && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ptCamera(r);
-      return;
+      return openPt(r);
     }
     if (t.dataset.impkind) { S.imp = newImport(t.dataset.impkind); render(); return; }
     if (t.dataset.read !== undefined) return readImport();

@@ -2,6 +2,10 @@
   "outputDirectory": "public",
   "rewrites": [
     {
+      "source": "/p/:token",
+      "destination": "/pt.html"
+    },
+    {
       "source": "/manifest.webmanifest",
       "has": [
         {
