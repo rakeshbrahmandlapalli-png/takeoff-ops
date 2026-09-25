@@ -1422,7 +1422,7 @@
     Array.prototype.forEach.call(document.querySelectorAll("span.brand, .tobrand"), function (el) {
       var isGateScreen = el.closest(".gate") !== null;
       el.textContent = isGateScreen ? name : short;
-      if (el.classList.contains("tobrand")) el.setAttribute("aria-label", name + " board");
+      if (el.classList.contains("tobrand")) el.setAttribute("aria-label", name + " menu");
     });
 
     if (b.colour) {
