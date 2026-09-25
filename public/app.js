@@ -426,10 +426,15 @@
     if (!sh.short_until) return "";
     return d <= sh.short_until ? "short" : "long";
   }
-  function inCat(r, cat) { var c = catOf(r); return cat === "short" ? c === "same" || c === "next" || c === "short" : c === cat; }
+  // SHORT LEFT / LONG LEFT on the board: the cars of that group still LEFT (not collected, no show or RTC).
+  var LEFT_CATS = [["shortleft", "SHORT LEFT", "short"], ["longleft", "LONG LEFT", "long"]];
+  function inCat(r, cat) {
+    if (cat === "shortleft" || cat === "longleft") return (r.intake || "LEFT") === "LEFT" && inCat(r, cat === "shortleft" ? "short" : "long");
+    var c = catOf(r); return cat === "short" ? c === "same" || c === "next" || c === "short" : c === cat;
+  }
   function catCounts() {
-    var n = { same: 0, next: 0, short: 0, long: 0 };
-    S.rows.forEach(function (r) { CATS.forEach(function (c) { if (inCat(r, c[0])) n[c[0]]++; }); });
+    var n = { same: 0, next: 0, short: 0, long: 0, shortleft: 0, longleft: 0 };
+    S.rows.forEach(function (r) { CATS.concat(LEFT_CATS).forEach(function (c) { if (inCat(r, c[0])) n[c[0]]++; }); });
     return n;
   }
   function dayWord(key) { var d = +key.slice(8, 10); return pad(d) + ordinal(d); }
@@ -484,8 +489,10 @@
     show("catTally", picks);
     if (!picks || !sh) return;
     var n = catCounts(), set = !!sh.short_until;
-    var cells = CATS.filter(function (c) { return set || c[0] === "same" || c[0] === "next"; }).map(function (c) {
-      return '<button type="button" data-cat="' + c[0] + '" class="' + c[0] + (S.catFilter === c[0] ? " on" : "") + '" aria-pressed="' + (S.catFilter === c[0]) + '"><span>' + c[1] + '</span><b class="num">' + n[c[0]] + "</b></button>";
+    // Board strip: SHORT LEFT, LONG LEFT, SHORT, LONG (SAME DAY and NEXT DAY stay in the stats panel).
+    var strip = set ? LEFT_CATS.concat(CATS.slice(2)) : LEFT_CATS.slice(0, 1);
+    var cells = strip.map(function (c) {
+      return '<button type="button" data-cat="' + c[0] + '" class="' + (c[2] || c[0]) + (S.catFilter === c[0] ? " on" : "") + '" aria-pressed="' + (S.catFilter === c[0]) + '"><span>' + c[1] + '</span><b class="num">' + n[c[0]] + "</b></button>";
     }).join("");
     var pick = "";
     if (can("yard")) {
@@ -2231,7 +2238,7 @@
       var sh0 = sheet(), val = t.value || null; t.blur();
       var rr = await sb.rpc("set_short_until", { p_sheet: sh0.id, p_day: val });
       if (rr.error) { toast(/set_short_until/.test(rr.error.message) ? "Short dates need database part 6 first." : rr.error.message, true); }
-      else { Object.assign(sh0, rr.data); if (!val && (S.catFilter === "short" || S.catFilter === "long")) S.catFilter = ""; }
+      else { Object.assign(sh0, rr.data); if (!val && /^(short|long)/.test(S.catFilter)) S.catFilter = ""; }
       render(); return;
     }
     if (t.dataset.impdate !== undefined) return buildPreview(t.value);
