@@ -542,7 +542,7 @@
         .filter(function (g) { return g.rows.length; });
     }
     if (!S.rows.length) return '<div class="msg">No cars on this sheet.</div>';
-    if (!rows.length) return '<div class="msg">' + (S.filter === "todo" && !S.q && !S.yardFilter ? "Nothing outstanding." : "Nothing matches.") + "</div>";
+    if (!rows.length) return '<div class="msg">' + (S.filter === "todo" && !S.q && !S.yardFilter ? "Nothing outstanding." : S.q ? (S.other && S.other.length ? "Not on this sheet. Found on another day below." : searchWords().tight.length >= 3 && S.other ? "Not found on any sheet." : "Not on this sheet.") : "Nothing matches.") + "</div>";
     var draw = sh.kind === "picks" ? pickRow : dropRow;
     return groups.map(function (g) {
       return (g.title ? '<div class="sec' + g.cls + '">' + g.title + ' <b class="num">' + g.rows.length + "</b>" + (g.note ? "<span>" + g.note + "</span>" : "") + "</div>" : "") + g.rows.map(draw).join("");
