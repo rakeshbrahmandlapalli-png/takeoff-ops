@@ -624,7 +624,7 @@
     return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' +
       '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" + yardChip(r) +
       (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + '<span class="pin">' + esc(r.name) + "</span></div>" +
-      '<div class="l2 num" data-open><span class="l2a"><span class="mk">' + esc(r.make) + "</span>" + (r.make ? " · " : "") +
+      '<div class="l2 num" data-open><span class="l2a">' +
       (r.flight ? esc(r.flight) : can("flights") ? '<button type="button" class="addflight" data-addflight>+ FLIGHT</button>' : "—") + "</span>" +
       '<span class="l2b"> · ' + esc(booked) +
       (eta ? ' &rarr; <span class="eta' + (eta === "DELAY" ? " dly" : "") + (r.flight_status === "expected" ? " exp" : "") + '">' + esc(eta) + "</span>" : "") +
@@ -648,8 +648,8 @@
     return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' +
       '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" +
       (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + catTag(r) + '<span class="pin">' + esc(r.name) + "</span></div>" +
-      '<div class="l2 num" data-open><span class="l2a"><span class="mk">' + esc(r.make) + "</span>" + (r.make ? " · " : "") + esc(r.ref) + "</span>" +
-      '<span class="l2b">drop ' + esc(hhmm(r.drop_at) || "—") + (r.pick_called ? ' · <span class="tag">' + esc(r.pick_called) + "</span> " + esc(hhmm(r.pick_called_at)) : "") + "</span></div>" +
+      // Car and booking ref are in the car's panel (tap the reg): the row stays one clean line.
+      '<div class="l2 num" data-open><span class="l2a">drop ' + esc(hhmm(r.drop_at) || "—") + (r.pick_called ? ' · <span class="tag">' + esc(r.pick_called) + "</span> " + esc(hhmm(r.pick_called_at)) : "") + "</span></div>" +
       noteLine(r) + "</div>" +
       '<div class="acts">' + b("Collected", "k", "COLL") + b("No Show", "n", "NO SHOW") + b("RTC", "r", "RTC", "rtc") +
       actBtn(r, "data-pt", "p", "PT", !!r.pt_at, r.pt_at, can("intake")) + "</div></div>";
@@ -792,6 +792,20 @@
 
   // ── car panel ─────────────────────────────
   var panelRow = null;
+  // Booking files give UK mobiles as 447…, 7… or 07…; without the + or the 0
+  // the phone can't dial them. Anything else is dialled as written.
+  function dialable(p) {
+    var d = String(p || "").replace(/[^\d+]/g, "");
+    if (/^44\d{10}$/.test(d)) return "+" + d;
+    if (/^7\d{9}$/.test(d)) return "0" + d;
+    return d;
+  }
+  function phoneLabel(p) {
+    var d = dialable(p);
+    if (/^\+447\d{9}$/.test(d)) return "+44 " + d.slice(3, 7) + " " + d.slice(7);
+    if (/^07\d{9}$/.test(d)) return d.slice(0, 5) + " " + d.slice(5);
+    return String(p);
+  }
   function openPanel(r) {
     panelRow = r;
     var drops = r.kind === "drops";
@@ -808,7 +822,7 @@
     }
     var h = '<h2 id="panelTitle">' + esc(r.reg || "NO REG") + (r.num ? " <small>#" + r.num + "</small>" : "") + "</h2>" +
       '<p class="sub">' + esc(sheetLabel(sheet() || { day: "", kind: r.kind })) + "</p>" +
-      (r.phone ? '<a class="tel" href="tel:' + esc(r.phone.replace(/[^\d+]/g, "")) + '">Call ' + esc(r.phone) + "</a>" : "") +
+      (r.phone ? '<a class="tel" href="tel:' + esc(dialable(r.phone)) + '">Call ' + esc(phoneLabel(r.phone)) + "</a>" : "") +
       '<div class="det">' + det.map(function (x) { return "<div><b>" + x[0] + "</b><span>" + x[1] + "</span></div>"; }).join("") + "</div>";
     if (drops && can("yard")) {
       h += '<label>YARD</label><div class="pseg yard">' + (S.company.yards || []).map(function (y) {
