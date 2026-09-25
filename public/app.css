@@ -376,3 +376,14 @@ dialog.cam{width:100vw!important;max-width:100vw!important;height:100dvh!importa
 .ptstep.done > b{background:#137333;}
 .ptstep > .btn{flex:1;text-decoration:none;}
 .ptstep > span{font-weight:700;font-size:14px;}
+.l2 .tag.due{color:#fff;background:#b42318;padding:0 5px;border-radius:4px;}
+.l2 .tag.pd{color:#137333;background:#e6f4ea;padding:0 5px;border-radius:4px;}
+.chgbox{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:10px 12px;border-radius:7px;background:#fce8e6;color:#8c1d18;}
+.chgbox b{font-size:17px;}
+.chgbox span{font-size:13px;}
+.chgbox.pd{background:#e6f4ea;color:#137333;}
+.chgbox .link{min-height:0;margin-left:auto;}
+.chgpay{margin-top:8px;}
+.chgpay input{flex:0 0 92px!important;min-width:0;}
+.chgpay button{flex:1;min-width:0;height:46px;border:1px solid #c4c7cc;border-radius:7px;background:#fff;color:#202124;font-weight:700;font-size:13px;}
+.pst4.owed b,.pst4.owed i{color:#b42318;font-weight:700;}

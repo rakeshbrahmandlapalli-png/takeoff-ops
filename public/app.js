@@ -269,7 +269,7 @@
     clearTimeout(redraw); redraw = setTimeout(function () { if ((S.view === "board" || S.view === "flights") && !$("panel").open && !yardOpen()) render(); }, 150);
   }
   var flashId = null;
-  var TAP_FIELDS = ["yard", "sent_at", "called_at", "called_word", "cleared_at", "clear_word", "intake", "pt_at", "pick_called", "note"];
+  var TAP_FIELDS = ["yard", "sent_at", "called_at", "called_word", "cleared_at", "clear_word", "intake", "pt_at", "pick_called", "note", "charge_method"];
 
   // ── saving: optimistic, queued, retried ───
   function queueKey() { return "takeoff_queue_" + (S.me ? S.me.id : ""); }
@@ -561,6 +561,51 @@
       label + (on && at ? '<small class="num">' + esc(hhmm(at)) + "</small>" : "") + "</button>";
   }
 
+  // ── overstay charges (database part 23) ──
+  // Booked back before the DROPS day end (06:00): free until 12:00 that day.
+  // Booked back at 06:00 or later: free until 23:59 that day. Then one day's
+  // rate at once, and one more at every midnight. Counted to CLEAR, or to now.
+  function overstayDue(r) {
+    var rate = +(S.company && S.company.overstay_rate) || 0;
+    if (!rate || r.kind !== "drops" || !r.return_at) return null;
+    var ret = londonParts(new Date(r.return_at)), end = londonParts(r.cleared_at ? new Date(r.cleared_at) : new Date());
+    var dayEnd = ((S.company.drops_day_end) || "06:00").slice(0, 5);
+    var later = Math.round((Date.parse(end.key) - Date.parse(ret.key)) / 86400000), days;
+    if (later < 0) days = 0;
+    else if (ret.time < dayEnd) days = later === 0 ? (end.time > "12:00" ? 1 : 0) : 1 + later;
+    else days = later;
+    return days > 0 ? { days: days, amount: days * rate } : null;
+  }
+  function money(n) { n = +n || 0; return "£" + (n % 1 ? n.toFixed(2) : n); }
+  function chargeTag(r) {
+    if (r.charge_method) return ' · <span class="tag pd">' + (r.charge_method === "waived" ? "WAIVED" : money(r.charge_amount) + " " + r.charge_method.toUpperCase()) + "</span>";
+    var d = overstayDue(r);
+    return d ? ' · <span class="tag due">' + money(d.amount) + " DUE</span>" : "";
+  }
+  function chargePanelHtml(r) {
+    var d = overstayDue(r);
+    if (!d && !r.charge_method) return "";
+    var h = "<label>OVERSTAY CHARGE</label>";
+    if (r.charge_method) {
+      h += '<div class="chgbox pd"><b>' + (r.charge_method === "waived" ? "Waived " + money(r.charge_amount) : money(r.charge_amount) + " paid by " + r.charge_method) + "</b><span>" +
+        esc(staffName(r.charge_by)) + (r.charge_at ? " · " + esc(dayShort(r.charge_at) + " " + hhmm(r.charge_at)) : "") + "</span>" +
+        (can("clear") ? '<button type="button" class="link" data-chargeundo>Undo</button>' : "") + "</div>";
+      return h;
+    }
+    h += '<div class="chgbox"><b>' + money(d.amount) + " due</b><span>" + d.days + (d.days === 1 ? " day" : " days") + " × " + money(S.company.overstay_rate) + (r.cleared_at ? "" : " · so far, still going up") + "</span></div>";
+    if (can("clear")) h += '<div class="when2 chgpay"><input id="chgAmount" type="number" inputmode="decimal" min="0" step="0.01" value="' + d.amount + '" aria-label="Amount">' +
+      '<button type="button" data-charge="cash">CASH</button><button type="button" data-charge="card">CARD</button><button type="button" data-charge="waived">WAIVE</button></div>';
+    return h;
+  }
+  function recordCharge(r, method) {
+    var amt = method === "" ? null : parseFloat(($("chgAmount") || {}).value);
+    if (method && (isNaN(amt) || amt < 0)) return toast("Check the amount.", true);
+    if (method === "waived") { var d = overstayDue(r); amt = d ? d.amount : amt; }
+    run("set_overstay_paid", { p_booking: r.id, p_amount: amt, p_method: method }, r, function (x) {
+      x.charge_amount = method ? amt : null; x.charge_method = method; x.charge_at = method ? nowIso() : null; x.charge_by = method ? S.me.id : null;
+    });
+    toast(method === "" ? "Charge cleared" : method === "waived" ? "Waived" : money(amt) + " " + method + " recorded");
+  }
   function dropRow(r) {
     var cmpl = r.clear_word === "COMPLAINT", bang = /^!/.test(r.note), overWord = r.called_word === "Overstay";
     var canc = r.flight_status === "cancelled", over = r.overstay || overWord;
@@ -581,7 +626,7 @@
       (r.flight_status === "landed" ? ' <span class="tag ld">LANDED</span>' : "") +
       (canc ? ' · <span class="tag cx">CANCELLED</span>' : "") +
       (over ? ' · <span class="tag ov">OVERSTAY</span>' : "") +
-      (cmpl ? ' · <span class="tag cm">COMPLAINT</span>' : "") + "</span></div>" + noteLine(r) + "</div>" +
+      (cmpl ? ' · <span class="tag cm">COMPLAINT</span>' : "") + chargeTag(r) + "</span></div>" + noteLine(r) + "</div>" +
       '<div class="acts">' +
       actBtn(r, 'data-act="sent"', "s", "SENT", !!r.sent_at, r.sent_at, can("sent")) +
       actBtn(r, 'data-act="called"', "c" + (overWord ? " ov" : ""), overWord ? "OVERSTAY" : "CALLED", !!r.called_at, r.called_at, can("called")) +
@@ -779,6 +824,7 @@
       extra += '<button type="button" data-pcall="New Booking" class="' + (r.pick_called === "New Booking" ? "on nb" : "") + '">NEW BOOKING</button>';
     }
     if (extra) h += '<label>MARK AS</label><div class="pseg">' + extra + "</div>";
+    if (drops) h += chargePanelHtml(r);
     if (can("import")) h += '<button type="button" class="link rmcar" data-removecar>Remove this car (no show, cancelled)</button>';
     h += '<div class="pbtns"><button type="button" data-close>Close</button>' + (can("note") || can("flights") ? '<button type="button" class="save" data-savepanel>Save</button>' : "") + "</div>";
     $("panelBody").innerHTML = h;
@@ -832,6 +878,8 @@
     }
     if (t.dataset.ptclear !== undefined) { ptClear(); return openPt(r); }
     if (t.dataset.ptmark !== undefined) { if (!r.pt_at) tapPick(r, "pt"); ptClear(); return $("panel").close(); }
+    if (t.dataset.charge) { recordCharge(r, t.dataset.charge); return openPanel(r); }
+    if (t.dataset.chargeundo !== undefined) { recordCharge(r, ""); return openPanel(r); }
     if (t.dataset.removecar !== undefined) return askRemove(r);
     if (t.dataset.backcar !== undefined) return openPanel(r);
     if (t.dataset.removewhy) return removeCar(r, t.dataset.removewhy, t);
@@ -974,6 +1022,19 @@
     });
     return { hours: hours, over: over, total: t, last30: last30, last60: last60 };
   }
+  function chargeTotals() {
+    var t = { due: 0, dueCars: 0, cash: 0, card: 0, waived: 0 };
+    S.rows.forEach(function (r) {
+      if (r.charge_method) { t[r.charge_method] = (t[r.charge_method] || 0) + (+r.charge_amount || 0); return; }
+      var d = overstayDue(r); if (d) { t.due += d.amount; t.dueCars++; }
+    });
+    return t;
+  }
+  function chargeLines() {
+    if (!(+(S.company && S.company.overstay_rate))) return [];
+    var t = chargeTotals();
+    return [["Overstay: still owed (" + t.dueCars + ")", money(t.due)], ["Overstay paid: cash", money(t.cash)], ["Overstay paid: card", money(t.card)], ["Overstay waived", money(t.waived)]];
+  }
   function openDropsStats() {
     var D = dropsStats();
     function line(label, x, cls) { return '<div class="pst4' + (cls || "") + '"><b' + (cls ? "" : ' class="num"') + ">" + label + '</b><i class="num">' + x.due + '</i><i class="num">' + x.sent + '</i><i class="num' + (x.done ? " dn" : "") + '">' + x.done + "</i></div>"; }
@@ -983,6 +1044,7 @@
       (D.over.due ? line("Overstays", D.over, " sec2") : "") +
       line("TOTAL", D.total, " tot") +
       '<div class="pst4"><b>Collected, last 30 min</b><i class="num">' + D.last30 + '</i><i></i><i></i></div><div class="pst4"><b>Collected, last 60 min</b><i class="num">' + D.last60 + "</i><i></i><i></i></div>" +
+      chargeLines().map(function (x, i) { return '<div class="pst4' + (i === 0 ? " owed" : "") + '"><b>' + esc(x[0]) + '</b><i></i><i></i><i class="num">' + x[1] + "</i></div>"; }).join("") +
       '<div class="pbtns"><button type="button" data-close>Close</button><button type="button" class="save" data-copy="stats">Copy</button></div>';
     panelRow = null; if (!$("panel").open) $("panel").showModal();
   }
@@ -1036,7 +1098,8 @@
       var D = dropsStats();
       lines = ["DROPS BY HOUR — " + sheetName(), "", "Due back   Due   Sent   Collected"].concat(D.hours.map(function (h) { return h.label + "   " + h.due + "   " + h.sent + "   " + h.done; }),
         D.over.due ? ["Overstays   " + D.over.due + "   " + D.over.sent + "   " + D.over.done] : [],
-        ["TOTAL   " + D.total.due + "   " + D.total.sent + "   " + D.total.done, "", "Collected last 30 min   " + D.last30, "Collected last 60 min   " + D.last60]);
+        ["TOTAL   " + D.total.due + "   " + D.total.sent + "   " + D.total.done, "", "Collected last 30 min   " + D.last30, "Collected last 60 min   " + D.last60],
+        chargeLines().length ? [""].concat(chargeLines().map(function (x) { return x[0] + "   " + x[1]; })) : []);
     } else {
       var P = picksStats();
       lines = ["PICKS STATS — " + sheetName(), "", "Hour   Scheduled   Completed"].concat(P.hours.map(function (h) { return h.label + "   " + h.sched + "   " + h.done; }),
@@ -1751,7 +1814,21 @@
         // Only speaks up when the settings would run past the monthly plan.
         (perDay > 1900 ? '<div class="alert">About ' + (perDay * 30).toLocaleString("en-GB") + " FlightRadar24 credits a month: more than the 60,000 plan.</div>" : "")) +
       '<div class="row-actions"><button type="button" class="btn ghost" data-resetsettings>Back to defaults</button><button type="button" class="btn brand" data-savesettings>Save</button></div></div>' +
-      discordHtml() + ptNumberHtml() + backupHtml();
+      discordHtml() + ptNumberHtml() + overstayRateHtml() + backupHtml();
+  }
+  function overstayRateHtml() {
+    var rate = +(S.company && S.company.overstay_rate) || 0;
+    return '<div class="box" style="padding:14px;margin-top:14px;max-width:560px"><strong>Overstay charges</strong>' +
+      '<p class="note">Booked back before ' + esc(((S.company.drops_day_end) || "06:00").slice(0, 5)) + ": free until 12:00 that day. Booked back later: free until 23:59 that day. Then one day's rate at once, and one more every midnight. 0 switches charging off." + (rate ? " Now: <b>" + money(rate) + " a day</b>." : " Now: <b>off</b>.") + "</p>" +
+      '<label class="field">Daily rate (£)<input id="ovRate" type="number" inputmode="decimal" min="0" step="0.5" value="' + rate + '"></label>' +
+      '<div class="row-actions"><button type="button" class="btn brand" data-saverate>Save rate</button></div></div>';
+  }
+  async function saveOverstayRate(btn) {
+    btn.disabled = true;
+    var r = await sb.rpc("set_overstay_rate", { p_rate: parseFloat($("ovRate").value) || 0 });
+    btn.disabled = false;
+    if (r.error) return toast(r.error.message, true);
+    S.company.overstay_rate = r.data; toast(r.data ? "Saved: " + money(r.data) + " a day" : "Overstay charges off"); render();
   }
   // Owner only: the company's own data, to keep a copy outside the app.
   function backupHtml() {
@@ -1962,6 +2039,7 @@
     if (t.dataset.ptreg !== undefined) { if (pt) pt.regSent = true; setTimeout(function () { if (panelRow && pt) openPt(panelRow); }, 400); return; }
     if (t.dataset.savept !== undefined) return savePtNumber(t);
     if (t.dataset.backup !== undefined) return downloadBackup(t);
+    if (t.dataset.saverate !== undefined) return saveOverstayRate(t);
     if (t.dataset.view) return go(t.dataset.view);
     if (t.id === "menuBtn") return openMenu();
     if (t.id === "logBtn") return go("summary");
