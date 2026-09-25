@@ -224,6 +224,7 @@ dialog.cam #panelBody{height:100%;display:flex;flex-direction:column;padding:0;}
 .camcount{font-size:14px;font-weight:600;}
 .shutter{width:72px;height:72px;border-radius:50%;border:4px solid #fff;background:#fff;box-shadow:inset 0 0 0 3px #000;}
 .shutter:active{background:#d0d0d0;}
+.shutter:disabled{opacity:.5;}
 .camdone{justify-self:end;height:44px;padding:0 18px;border:0;border-radius:7px;background:#fff;color:#000;font-weight:700;font-size:15px;}
 .ptthumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px;}
 .ptthumbs img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;border:1px solid #dadce0;}

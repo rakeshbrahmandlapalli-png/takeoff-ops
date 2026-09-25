@@ -725,10 +725,10 @@
   }
   // The camera stays open inside the app: one tap per photo, Done when finished.
   // If the phone refuses (no permission, old browser) its own camera opens instead.
-  var camStream = null;
+  var camStream = null, camShot = null, camBusy = false;
   async function ptCamera(r) {
     try {
-      camStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1440 } } });
+      camStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 4096 }, height: { ideal: 3072 } } });
     } catch (e) {
       toast(e && e.name === "NotAllowedError" ? "Camera not allowed. Allow it in the browser's site settings, or tap \"Use the phone's camera\"." : "The camera wouldn't start. Tap \"Use the phone's camera\" below.", true);
       return;
@@ -737,23 +737,47 @@
     $("panelBody").innerHTML = '<div class="camview"><video id="camVideo" autoplay playsinline muted></video><div class="camflash" id="camFlash"></div></div>' +
       '<div class="cambar"><span class="camcount" id="camCount">' + camCountText() + '</span><button type="button" class="shutter" data-shutter aria-label="Take photo"></button><button type="button" class="camdone" data-camdone>Done</button></div>';
     $("camVideo").srcObject = camStream;
+    // Keep the picture sharp as the phone moves round the car.
+    var track = camStream.getVideoTracks()[0], caps = track && track.getCapabilities ? track.getCapabilities() : {};
+    if (caps.focusMode && caps.focusMode.indexOf("continuous") !== -1) track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(function () {});
+    // A real photo from the camera (full size, the phone's own processing) where the
+    // browser can take one; otherwise a frame from the preview.
+    camShot = null;
+    if (track && window.ImageCapture) {
+      try {
+        var ic = new ImageCapture(track), pc = await ic.getPhotoCapabilities().catch(function () { return null; });
+        var opts = pc && pc.imageWidth && pc.imageWidth.max ? { imageWidth: pc.imageWidth.max, imageHeight: pc.imageHeight.max } : {};
+        var vw = (track.getSettings && track.getSettings().width) || 0;
+        if (!opts.imageWidth || Math.max(opts.imageWidth, opts.imageHeight) >= vw) camShot = function () { return ic.takePhoto(opts).catch(function () { return ic.takePhoto(); }); };
+      } catch (e) { camShot = null; }
+    }
   }
   function camCountText() { var n = pt ? pt.files.length : 0; return n + " photo" + (n === 1 ? "" : "s"); }
   function camStop() {
     if (camStream) camStream.getTracks().forEach(function (t) { t.stop(); });
-    camStream = null; $("panel").classList.remove("cam");
+    camStream = null; camShot = null; camBusy = false; $("panel").classList.remove("cam");
   }
-  function ptShoot(r) {
-    var v = $("camVideo"); if (!v || !v.videoWidth || !pt) return;
+  function ptKeep(r, b) {
+    if (!b || !pt) return;
+    pt.files.push(new File([b], (r.reg || "car").replace(/\s+/g, "") + "-" + (pt.files.length + 1) + (b.type === "image/png" ? ".png" : ".jpg"), { type: b.type || "image/jpeg" }));
+    pt.urls.push(URL.createObjectURL(b));
+    var el = $("camCount"); if (el) el.textContent = camCountText();
+  }
+  function ptGrab(r) {
+    var v = $("camVideo"); if (!v || !v.videoWidth) return;
     var c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight;
     c.getContext("2d").drawImage(v, 0, 0);
+    c.toBlob(function (b) { ptKeep(r, b); }, "image/jpeg", 0.95);
+  }
+  async function ptShoot(r) {
+    var v = $("camVideo"); if (!v || !v.videoWidth || !pt || camBusy) return;
     var f = $("camFlash"); if (f) { f.classList.remove("go"); void f.offsetWidth; f.classList.add("go"); }
-    c.toBlob(function (b) {
-      if (!b || !pt) return;
-      pt.files.push(new File([b], (r.reg || "car").replace(/\s+/g, "") + "-" + (pt.files.length + 1) + ".jpg", { type: "image/jpeg" }));
-      pt.urls.push(URL.createObjectURL(b));
-      var el = $("camCount"); if (el) el.textContent = camCountText();
-    }, "image/jpeg", 0.9);
+    if (!camShot) return ptGrab(r);
+    camBusy = true;
+    var sh = $("panelBody").querySelector("[data-shutter]"); if (sh) sh.disabled = true;
+    try { ptKeep(r, await camShot()); }
+    catch (e) { camShot = null; ptGrab(r); }
+    camBusy = false; if (sh) sh.disabled = false;
   }
   function ptClear() { if (pt) pt.urls.forEach(function (u) { URL.revokeObjectURL(u); }); pt = null; }
   function ptAdd(input) {
