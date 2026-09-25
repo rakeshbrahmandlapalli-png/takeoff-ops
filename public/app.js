@@ -1096,20 +1096,27 @@
   function openPtPhotos(r) {
     var num = (S.company && S.company.pt_whatsapp) || "", reg = ptCaption(r), n = pt.items.length, prep = ptCount("prep"), sent = pt.sent || 0;
     var b = ptBatch(), pick = '<input type="file" accept="image/*" multiple data-ptfile hidden>';
+    // Two ways from here: every photo in one PDF (one tap), or the photos
+    // themselves (reg first, then 10 at a time on Android).
+    var pdfWay = n && !prep && !sent && !pt.regSent, pdf = pdfWay ? ptPdfState() : null;
     var step1 = !n || prep ? "" : !pt.regSent
-      ? (num ? '<a class="btn brand ptgo" href="https://wa.me/' + esc(num) + "?text=" + encodeURIComponent(reg) + '" target="_blank" rel="noopener" data-ptreg>1 · SEND ' + esc(reg) + " TO PT</a>"
-             : '<button type="button" class="btn brand ptgo" data-ptregshare>1 · SEND ' + esc(reg) + " TO PT</button>")
+      ? (pdfWay ? '<button type="button" class="btn brand ptgo" data-ptpdf' + (pdf.ready ? "" : " disabled data-keepoff") + ">" + esc(pdf.label) + "</button>" +
+          '<p class="hint">Every photo in one file, with ' + esc(reg) + " as the message. Pick the PT chat and Send; PT ticks itself.</p>" +
+          '<p class="hint ptor">or send them as photos' + (BIG_SHARE ? "" : ", 10 at a time") + ":</p>" : "") +
+        (num ? '<a class="btn ' + (pdfWay ? "ghost" : "brand") + ' ptgo" href="https://wa.me/' + esc(num) + "?text=" + encodeURIComponent(reg) + '" target="_blank" rel="noopener" data-ptreg>1 · SEND ' + esc(reg) + " TO PT</a>"
+             : '<button type="button" class="btn ' + (pdfWay ? "ghost" : "brand") + ' ptgo" data-ptregshare>1 · SEND ' + esc(reg) + " TO PT</button>")
       : b ? '<button type="button" class="btn brand ptgo" data-ptshare>2 · ' + esc(ptShareLabel()) + "</button>" : "";
+    // The send buttons come first, so they're never below a screenful of photos.
+    var hint = '<p class="hint">' + (!n ? "" : prep ? "Getting " + prep + " photo" + (prep === 1 ? "" : "s") + " ready…"
+        : !pt.regSent ? "Photos: opens the PT chat with " + esc(reg) + " typed; Send, come back, then the photos."
+        : sent ? "Keep going: tap the button, pick the PT chat (top of the list), Send."
+        : "Tap the button, pick the PT chat (top of the list), then Send. PT ticks itself.") + "</p>";
     $("panelBody").innerHTML = '<h2 id="panelTitle">PT · ' + esc(reg) + (r.num ? " <small>#" + r.num + "</small>" : "") + "</h2>" +
+      (n && (pt.regSent || sent) ? '<div class="ptsteps"><span class="' + (pt.regSent ? "ok" : "") + '">' + (pt.regSent ? "✓" : "1") + " Reg</span><span class=\"" + (sent && sent >= n ? "ok" : "") + '">' + (sent >= n && n ? "✓" : "2") + " Photos " + sent + "/" + n + "</span></div>" : "") +
+      step1 + hint +
       (sent ? "" : '<button type="button" class="btn ' + (n ? "ghost" : "brand") + ' ptgo" data-ptcam>' + (n ? "+ TAKE MORE" : "TAKE PHOTOS") + "</button>" +
         '<label class="btn ghost ptpick">' + pick + (n ? "+ Add from gallery" : "Choose from gallery") + "</label>") +
-      (n ? '<div class="ptsteps"><span class="' + (pt.regSent ? "ok" : "") + '">' + (pt.regSent ? "✓" : "1") + " Reg</span><span class=\"" + (sent && sent >= n ? "ok" : "") + '">' + (sent >= n && n ? "✓" : "2") + " Photos " + sent + "/" + n + "</span></div>" : "") +
       (n ? '<div class="ptthumbs">' + pt.items.map(function (x, i) { return ptImg(x, i < sent ? ' class="sent"' : x.state === "prep" ? ' class="wait"' : ""); }).join("") + "</div>" : "") +
-      '<p class="hint">' + (!n ? "" : prep ? "Getting " + prep + " photo" + (prep === 1 ? "" : "s") + " ready…"
-        : !pt.regSent ? "Opens the PT chat with " + esc(reg) + " typed. Tap Send in WhatsApp, then come back here."
-        : sent ? "Keep going: tap the button, pick the PT chat (top of the list), Send."
-        : "Tap the button, pick the PT chat (top of the list), then Send. PT ticks itself.") + "</p>" +
-      step1 +
       '<div class="pbtns"><button type="button" data-close>Close</button>' + (n ? '<button type="button" data-ptclear>Start again</button>' : "") + "</div>" +
       '<button type="button" class="link" data-ptmark>Tick PT without sending photos</button>';
     if (!$("panel").open) $("panel").showModal();
@@ -1223,6 +1230,110 @@
     if (bkPending(pt)) ptStore(); else ptForget(pt.id);
     ptClear();
     toast(ptCaption(r) + ": all photos sent, PT done");
+    $("panel").close();
+  }
+
+  // ── PT as one PDF ──
+  // Every photo on its own page, full quality: the JPEGs go into the PDF as
+  // they are (no re-compressing), so it's quick and sharp. Made in the
+  // background as soon as the photos are ready, because Chrome only lets a
+  // page share within a few seconds of the tap. Android takes 50 MB in one
+  // share, so a very big set becomes parts (each one tap).
+  var PDF_PART_MAX = 45 * 1048576;
+  function ptPdfState() {
+    var n = pt.items.filter(function (x) { return x.state === "local"; }).length, P = pt.pdf;
+    if (!P || P.count !== n) { ptPdfMake(pt); return { ready: false, label: "Making the PDF…" }; }
+    if (P.error) return { ready: false, label: "PDF didn't work: send as photos" };
+    return { ready: true, label: P.parts.length === 1 ? "SEND AS ONE PDF (1 TAP)" : "SEND PDF PART " + ((P.sent || 0) + 1) + " OF " + P.parts.length };
+  }
+  async function ptPdfMake(cur) {
+    var items = cur.items.filter(function (x) { return x.state === "local"; });
+    if (cur.pdfMaking === items.length) return;
+    cur.pdfMaking = items.length;
+    var P = { count: items.length, parts: [], sent: 0 };
+    try {
+      var jpgs = [];
+      for (var i = 0; i < items.length; i++) jpgs.push(await ptJpegBytes(items[i].file));
+      var group = [], size = 0;
+      jpgs.forEach(function (j) { if (group.length && size + j.bytes.length > PDF_PART_MAX) { P.parts.push(group); group = []; size = 0; } group.push(j); size += j.bytes.length; });
+      if (group.length) P.parts.push(group);
+      var reg = (cur.reg || "car").replace(/\s+/g, "");
+      P.parts = P.parts.map(function (g, k) {
+        var name = reg + "-PT-" + items.length + "-photos" + (P.parts.length > 1 ? "-part" + (k + 1) : "") + ".pdf";
+        return new File([ptPdfBlob(g, reg + " PT photos")], name, { type: "application/pdf" });
+      });
+    } catch (e) { oopsLog(e); P.error = true; }
+    if (pt !== cur || cur.pdfMaking !== items.length) return;
+    cur.pdfMaking = 0; cur.pdf = P;
+    if ($("panel").open && panelRow && panelRow.id === cur.id && !$("camVideo")) openPt(panelRow);
+  }
+  // The photo as JPEG bytes with its size (anything else is turned into a JPEG).
+  async function ptJpegBytes(b) {
+    var bytes = new Uint8Array(await b.arrayBuffer()), d = jpegSize(bytes);
+    if (d) return { bytes: bytes, w: d.w, h: d.h, c: d.c };
+    var im = await createImageBitmap(b), c = document.createElement("canvas"); c.width = im.width; c.height = im.height;
+    c.getContext("2d").drawImage(im, 0, 0); if (im.close) im.close();
+    var j = await new Promise(function (ok) { c.toBlob(ok, "image/jpeg", PT_Q); });
+    bytes = new Uint8Array(await j.arrayBuffer()); d = jpegSize(bytes);
+    return { bytes: bytes, w: d.w, h: d.h, c: d.c };
+  }
+  function jpegSize(b) {
+    if (b[0] !== 0xFF || b[1] !== 0xD8) return null;
+    for (var i = 2; i + 9 < b.length;) {
+      if (b[i] !== 0xFF) { i++; continue; }
+      var m = b[i + 1];
+      if (m === 0xFF) { i++; continue; }
+      if (m === 0x01 || (m >= 0xD0 && m <= 0xD8)) { i += 2; continue; }
+      if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) return { h: (b[i + 5] << 8) | b[i + 6], w: (b[i + 7] << 8) | b[i + 8], c: b[i + 9] };
+      i += 2 + ((b[i + 2] << 8) | b[i + 3]);
+    }
+    return null;
+  }
+  // A plain PDF: one A4-wide page per photo, the photo filling the page.
+  function ptPdfBlob(jpgs, title) {
+    var enc = new TextEncoder(), parts = [], pos = 0, offs = [], kids = [];
+    function add(x) { var b = typeof x === "string" ? enc.encode(x) : x; parts.push(b); pos += b.length; }
+    function start(n) { offs[n] = pos; add(n + " 0 obj\n"); }
+    add("%PDF-1.4\n");
+    jpgs.forEach(function (j, i) {
+      var page = 4 + i * 3, cont = page + 1, img = page + 2, W = 595, H = Math.round(595 * j.h / j.w);
+      var cs = j.c === 1 ? "/DeviceGray" : j.c === 4 ? "/DeviceCMYK /Decode [1 0 1 0 1 0 1 0]" : "/DeviceRGB";
+      start(page); add("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + W + " " + H + "] /Resources << /XObject << /Im0 " + img + " 0 R >> >> /Contents " + cont + " 0 R >>\nendobj\n");
+      var body = "q " + W + " 0 0 " + H + " 0 0 cm /Im0 Do Q";
+      start(cont); add("<< /Length " + body.length + " >>\nstream\n" + body + "\nendstream\nendobj\n");
+      start(img); add("<< /Type /XObject /Subtype /Image /Width " + j.w + " /Height " + j.h + " /ColorSpace " + cs + " /BitsPerComponent 8 /Filter /DCTDecode /Length " + j.bytes.length + " >>\nstream\n");
+      add(j.bytes); add("\nendstream\nendobj\n");
+      kids.push(page + " 0 R");
+    });
+    start(1); add("<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+    start(2); add("<< /Type /Pages /Kids [" + kids.join(" ") + "] /Count " + kids.length + " >>\nendobj\n");
+    start(3); add("<< /Title (" + String(title).replace(/[()\\]/g, "") + ") /Producer (TakeOff) >>\nendobj\n");
+    var size = 4 + jpgs.length * 3, xref = pos, x = "xref\n0 " + size + "\n0000000000 65535 f \n";
+    for (var n = 1; n < size; n++) x += String(offs[n]).padStart(10, "0") + " 00000 n \n";
+    add(x + "trailer\n<< /Size " + size + " /Root 1 0 R /Info 3 0 R >>\nstartxref\n" + xref + "\n%%EOF\n");
+    return new Blob(parts, { type: "application/pdf" });
+  }
+  async function ptSharePdf(r, btn) {
+    var P = pt && pt.pdf; if (!P || P.error || !P.parts.length) return;
+    var file = P.parts[P.sent || 0]; if (!file) return;
+    var data = { files: [file], text: ptCaption(r) + (P.parts.length > 1 ? " (" + ((P.sent || 0) + 1) + " of " + P.parts.length + ")" : "") };
+    if (!navigator.canShare || !navigator.canShare({ files: [file] })) return toast("This phone can't pass a PDF to WhatsApp from the app. Send them as photos instead.", true);
+    btn.disabled = true;
+    var row = S.rows.filter(function (x) { return x.id === r.id; })[0] || r, ticked = false;
+    if (!row.pt_at) { tapPick(row, "pt"); ticked = true; }
+    try { await navigator.share(data); }
+    catch (e) {
+      btn.disabled = false;
+      if (ticked && !P.sent && row.pt_at) tapPick(row, "pt");
+      if (e.name !== "AbortError") toast("Couldn't open sharing: " + e.message, true);
+      return;
+    }
+    P.sent = (P.sent || 0) + 1;
+    if (P.sent < P.parts.length) { toast("Part " + P.sent + " of " + P.parts.length + " sent. Now the next part."); return openPt(r); }
+    pt.sent = pt.items.length; pt.regSent = true;
+    if (bkPending(pt)) ptStore(); else ptForget(pt.id);
+    ptClear();
+    toast(ptCaption(r) + ": PDF sent, PT done");
     $("panel").close();
   }
 
@@ -1466,6 +1577,7 @@
       ptClear(); return openPt(r);
     }
     if (t.dataset.ptshare !== undefined) return ptShare(r, t);
+    if (t.dataset.ptpdf !== undefined) return ptSharePdf(r, t);
     if (t.dataset.ptregshare !== undefined) {
       // No PT number in Settings: share the reg and pick the chat.
       if (!navigator.share) return toast("Set the PT WhatsApp number in Settings.", true);
