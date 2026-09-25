@@ -563,9 +563,11 @@
       (S.company.yards || []).map(function (y) { return "<option" + (y === r.yard ? " selected" : "") + ' value="' + esc(y) + '">' + esc(y) + "</option>"; }).join("") + "</select>";
   }
   function noteLine(r) { return r.note ? '<div class="l3' + (/^!/.test(r.note) ? " bang" : "") + '">' + esc(r.note.replace(/^!\s*/, "")) + "</div>" : ""; }
-  function actBtn(r, attrs, cls, label, on, at, allowed) {
+  // A pressed button shows the time and the first name of whoever pressed it.
+  function actBtn(r, attrs, cls, label, on, at, allowed, who) {
+    var name = on && at ? staffName(who).trim().split(/\s+/)[0] : "";
     return '<button type="button" class="' + cls + (on ? " on" : "") + (label.length > 7 ? " lng" : "") + '" ' + attrs + (allowed ? "" : " disabled") + ">" +
-      label + (on && at ? '<small class="num">' + esc(hhmm(at)) + "</small>" : "") + "</button>";
+      label + (on && at ? '<small class="num">' + esc(hhmm(at)) + "</small>" : "") + (name ? '<em class="by">' + esc(name) + "</em>" : "") + "</button>";
   }
 
   // The brand only ("SKODA KODIAQ SE IV PHEV SA BLUE" -> "SKODA"), for the row.
@@ -655,9 +657,9 @@
       (over ? ' · <span class="tag ov">OVERSTAY</span>' : "") +
       (cmpl ? ' · <span class="tag cm">COMPLAINT</span>' : "") + chargeTag(r) + "</span></div>" + noteLine(r) + "</div>" +
       '<div class="acts">' +
-      actBtn(r, 'data-act="sent"', "s", "SENT", !!r.sent_at, r.sent_at, can("sent")) +
-      actBtn(r, 'data-act="called"', "c" + (overWord ? " ov" : ""), overWord ? "OVERSTAY" : "CALLED", !!r.called_at, r.called_at, can("called")) +
-      actBtn(r, 'data-act="clear"', "x" + (cmpl ? " cm" : ""), cmpl ? "COMPLAINT" : "CLEAR", !!r.cleared_at, r.cleared_at, can("clear")) +
+      actBtn(r, 'data-act="sent"', "s", "SENT", !!r.sent_at, r.sent_at, can("sent"), r.sent_by) +
+      actBtn(r, 'data-act="called"', "c" + (overWord ? " ov" : ""), overWord ? "OVERSTAY" : "CALLED", !!r.called_at, r.called_at, can("called"), r.called_by) +
+      actBtn(r, 'data-act="clear"', "x" + (cmpl ? " cm" : ""), cmpl ? "COMPLAINT" : "CLEAR", !!r.cleared_at, r.cleared_at, can("clear"), r.cleared_by) +
       "</div></div>";
   }
 
@@ -666,7 +668,7 @@
   function pickRow(r) {
     var bang = /^!/.test(r.note);
     var cls = r.intake === "Collected" ? " coll" : r.intake === "No Show" ? " nosh" : r.intake === "RTC" ? " rtc" : bang ? " cmpl" : "";
-    function b(v, c, label, perm) { return actBtn(r, 'data-pick="' + v + '"', c, label, r.intake === v, r.intake_at, can("intake") && (!perm || can(perm))); }
+    function b(v, c, label, perm) { return actBtn(r, 'data-pick="' + v + '"', c, label, r.intake === v, r.intake_at, can("intake") && (!perm || can(perm)), r.intake_by); }
     return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' +
       '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" +
       (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + catTag(r) + '<span class="pin">' + esc(r.name) + "</span></div>" +
@@ -674,7 +676,7 @@
       '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(makeOnly(r.make)) + "</span> · " : "") + "drop " + esc(hhmm(r.drop_at) || "—") + (r.pick_called ? ' · <span class="tag">' + esc(r.pick_called) + "</span> " + esc(hhmm(r.pick_called_at)) : "") + "</span></div>" +
       noteLine(r) + "</div>" +
       '<div class="acts">' + b("Collected", "k", "COLL") + b("No Show", "n", "NO SHOW") + b("RTC", "r", "RTC", "rtc") +
-      actBtn(r, "data-pt", "p", "PT", !!r.pt_at, r.pt_at, can("intake")) + "</div></div>";
+      actBtn(r, "data-pt", "p", "PT", !!r.pt_at, r.pt_at, can("intake"), r.pt_by) + "</div></div>";
   }
 
   function rowOf(el) { var c = el.closest("[data-id]"); return c ? S.rows.filter(function (r) { return r.id === c.dataset.id; })[0] : null; }
