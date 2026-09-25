@@ -616,7 +616,7 @@
     if (w.tight.length < 3) { S.other = null; return; }
     otherTimer = setTimeout(async function () {
       var key = w.tight + "|" + S.sheetId;
-      var r = await sb.from("bookings").select("id, sheet_id, kind, reg, name, make, overstay, cleared_at, intake, sheets(day, kind)")
+      var r = await sb.from("bookings").select("id, sheet_id, kind, reg, name, make, overstay, cleared_at, intake, sheets!bookings_sheet_id_fkey(day, kind)")
         .neq("sheet_id", S.sheetId).is("removed_at", null)
         .or('reg.ilike."%' + w.tight + '%",ref.ilike."%' + w.tight + '%",phone.ilike."%' + w.tight + '%"' + (w.raw.length >= 3 ? ',name.ilike."%' + w.raw + '%"' : ""))
         .order("updated_at", { ascending: false }).limit(20);
@@ -2362,7 +2362,7 @@
     S.arch.q = raw;
     if (tight.length < 3) { toast("Type at least 3 letters or numbers.", true); return; }
     $("archGo").disabled = true;
-    var r = await sb.from("bookings").select("id, sheet_id, kind, reg, name, ref, drop_at, return_at, sheets(day, kind)")
+    var r = await sb.from("bookings").select("id, sheet_id, kind, reg, name, ref, drop_at, return_at, sheets!bookings_sheet_id_fkey(day, kind)")
       .or('reg.ilike."%' + tight + '%",ref.ilike."%' + tight + '%",name.ilike."%' + q + '%"').order("updated_at", { ascending: false }).limit(50);
     if (r.error) { toast(r.error.message, true); $("archGo").disabled = false; return; }
     S.arch.results = r.data.sort(function (a, b) { return ((b.sheets || {}).day || "") < ((a.sheets || {}).day || "") ? -1 : 1; });

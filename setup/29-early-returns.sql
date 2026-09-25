@@ -14,7 +14,10 @@
 
 alter table bookings add column if not exists early boolean not null default false;
 alter table bookings add column if not exists early_at timestamptz;
-alter table bookings add column if not exists moved_from uuid references sheets(id) on delete set null;
+-- Plain column, no second link to sheets: two links made "the booking's
+-- sheet" ambiguous for the app's searches (sheets(day, kind)).
+alter table bookings add column if not exists moved_from uuid;
+alter table bookings drop constraint if exists bookings_moved_from_fkey;
 create index if not exists bookings_moved_from_idx on bookings(moved_from) where moved_from is not null;
 
 create or replace function early_return(p_booking uuid)
