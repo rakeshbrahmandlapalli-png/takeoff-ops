@@ -1262,7 +1262,8 @@
       '<div class="stats"><div class="stat"><span>Flights</span><strong class="num">' + rows.length + '</strong></div><div class="stat"><span>Landed</span><strong class="num">' + n("landed") +
       '</strong></div><div class="stat"><span>Delayed or late</span><strong class="num">' + (n("delayed") + n("expected")) + '</strong></div><div class="stat"><span>Cancelled</span><strong class="num">' + n("cancelled") +
       '</strong></div></div><p class="note">Timetable last checked: ' + last("schedule") + "<br>Live positions last checked: " + last("live") + "</p>" +
-      (can("flights") ? '<div class="row-actions"><button type="button" class="btn small" data-checkflights>Check flights now</button></div>' : "") +
+      (can("flights") ? '<div class="row-actions"><button type="button" class="btn small" data-filltimes>Fill &amp; check scheduled times</button><button type="button" class="btn small" data-checkflights>Check flights now</button></div>' +
+        '<p class="note">Fill &amp; check: the airport timetable (AeroDataBox) for this sheet only: fills missing scheduled times and updates changed ones. No FlightRadar credits.</p>' : "") +
       "</div>" + missingHtml();
     return h + (rows.length ? rows.map(function (r) {
       return '<div class="row' + (r.flight_status === "cancelled" || r.flight_status === "delayed" ? " late" : r.flight_status === "landed" ? " done" : "") + '" data-id="' + r.id + '"><div class="left" data-open><div class="l1"><span class="reg">' + esc(r.flight) + '</span><span class="dn">' + esc(r.reg) + '</span><span class="pin">' + esc(r.name) + "</span></div>" +
@@ -1285,6 +1286,25 @@
     var r = await sb.from("flight_runs").select("at, source, trigger, result").order("at", { ascending: false }).limit(20);
     S.runs = r.error ? [] : r.data;
     if (S.view === "flights") render();
+  }
+  async function fillTimes(btn) {
+    var sh = sheet();
+    if (!sh || sh.kind !== "drops") return toast("Choose a DROPS sheet first.", true);
+    if (btn) btn.disabled = true;
+    toast("Checking the timetable…");
+    try {
+      var s = (await callFunction("flights", { action: "timetable", day: sh.day }, true)).schedule || {};
+      var bits = [];
+      if (s.skipped) bits.push(s.skipped);
+      bits.push((s.filled || 0) + " filled", (s.moved || 0) + " changed");
+      if (s.cancelled) bits.push(s.cancelled + " cancelled");
+      if (s.expected) bits.push(s.expected + " running late");
+      if (s.notfound) bits.push(s.notfound + " not found (check flight no.)");
+      if (s.error) bits.push("Problem: " + s.error);
+      toast(s.skipped ? s.skipped : bits.join(" · "), !!(s.error || s.skipped));
+      S.runs = null; await loadRows(); render();
+    } catch (err) { toast(err.message, true); }
+    finally { if (btn) btn.disabled = false; }
   }
   async function checkFlights(btn) {
     if (btn) btn.disabled = true;
@@ -2104,6 +2124,7 @@
     if (t.id === "psBtn") return (sheet() || {}).kind === "drops" ? openDropsStats() : openPicksStats();
     if (t.id === "refreshBtn") { t.disabled = true; await loadSheets(); await loadRows(); S.runs = null; S.activity = null; render(); t.disabled = false; flush(); return; }
     if (t.dataset.checkflights !== undefined) return checkFlights(t);
+    if (t.dataset.filltimes !== undefined) return fillTimes(t);
     if (t.dataset.savesettings !== undefined) return saveSettings(t);
     if (t.dataset.archopen) return openArchived(t.dataset.archopen, t.dataset.archq);
     if (t.dataset.archivesheet) return archiveSheet(t.dataset.archivesheet, true);

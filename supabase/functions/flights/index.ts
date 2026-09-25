@@ -17,11 +17,14 @@
 //     and only arrivals into our airport. A flight due within the hour with
 //     no aircraft in the air is marked DELAY.
 //
-// Called two ways (POST JSON):
+// Called three ways (POST JSON):
 //   { action: "timer" }  by the database timer every 10 min, with the x-timer
 //                        header. Decides for itself whether a check is due.
 //   { action: "check" }  by the office's "Check now" button, with their sign-in.
 //                        Needs the "flights" permission; at most every 3 min.
+//   { action: "timetable", day }  by "Fill & check scheduled times": the
+//                        AeroDataBox half only, for the sheet on screen (no
+//                        FR24 credits). Same permission; at most every 2 min.
 //
 // Secrets (Edge Functions → Secrets): FR24_TOKEN, AERODATABOX_KEY. Either can
 // be missing; that half is skipped and the Flights screen says so.
@@ -202,7 +205,7 @@ async function checkSchedule(admin: SupabaseClient, c: Company, days: string[], 
   const key = Deno.env.get("AERODATABOX_KEY");
   if (!key) return { skipped: "No AeroDataBox key yet" };
   const now = new Date(), tz = c.time_zone;
-  const tally = { filled: 0, moved: 0, expected: 0, landed: 0, cancelled: 0, sheets: 0, error: "" };
+  const tally = { filled: 0, moved: 0, expected: 0, landed: 0, cancelled: 0, notfound: 0, sheets: 0, error: "" };
 
   for (const day of days) {
     const { data: sheet } = await admin.from("sheets").select("id").eq("company_id", c.id).eq("kind", "drops").eq("day", day).maybeSingle();
@@ -236,6 +239,7 @@ async function checkSchedule(admin: SupabaseClient, c: Company, days: string[], 
       const k = canon(b.flight), booked = b.return_at ? new Date(b.return_at) : null;
       const runs = arrivals.filter((a) => a.keys.includes(k));
       const flag = (note: string) => {
+        tally.notfound++;
         if (!b.flight_status && !b.sched_at && b.flight_note !== note) patchOf(changes, b).flight_note = note;
       };
       if (!runs.length) { flag(NOT_FOUND); continue; }
@@ -423,7 +427,7 @@ Deno.serve(async (req) => {
       return reply(200, { results });
     }
 
-    if (body.action === "check") {
+    if (body.action === "check" || body.action === "timetable") {
       const asCaller = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, {
         auth: { persistSession: false }, global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
       });
@@ -431,6 +435,14 @@ Deno.serve(async (req) => {
       if (!companyId) return reply(401, { error: "Sign in again." });
       if (allowed !== true) return reply(403, { error: "Only the office can check flights." });
       const { data: c } = await admin.from("companies").select("*").eq("id", companyId).single();
+      if (body.action === "timetable") {
+        const day = String(body.day ?? "");
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return reply(400, { error: "Choose a DROPS sheet first." });
+        if (!Deno.env.get("AERODATABOX_KEY")) return reply(200, { schedule: { skipped: "No AeroDataBox key yet" } });
+        const lastT = await lastRun(admin, c as Company, "schedule");
+        if (lastT && lastT.getTime() > Date.now() - 2 * MIN) return reply(429, { error: "Timetable checked under 2 min ago. Try again in a minute." });
+        return reply(200, { schedule: await checkSchedule(admin, c as Company, [day], "button") });
+      }
       const last = await lastRun(admin, c as Company, "live");
       if (last && last.getTime() > Date.now() - BUTTON_GAP_MIN * MIN) {
         return reply(429, { error: `Checked ${Math.max(0, Math.round((Date.now() - last.getTime()) / MIN))} min ago. Try again in a few minutes (each check uses paid credits).` });
