@@ -757,7 +757,8 @@
       (flightToCheck(r) ? ' · <span class="tag ck">CHECK FLIGHT NO.</span>' : "") +
       (canc ? ' · <span class="tag cx">CANCELLED</span>' : "") +
       (over ? ' · <span class="tag ov">OVERSTAY</span>' : "") +
-      (r.early ? ' · <span class="tag ea">EARLY · was ' + esc(r.return_at ? dayWord(londonParts(new Date(r.return_at)).key) + " " + hhmm(r.return_at) : "later") + "</span>" : "") +
+      // Short on the row so the flight number still fits; the booked day is under BACK in the panel.
+      (r.early ? ' · <span class="tag ea" title="Booked back ' + esc(r.return_at ? dayShort(r.return_at) + " " + hhmm(r.return_at) : "later") + '">EARLY</span>' : "") +
       (cmpl ? ' · <span class="tag cm">COMPLAINT</span>' : "") + chargeTag(r) + "</span></div>" + noteLine(r) + "</div>" +
       '<div class="acts">' +
       actBtn(r, 'data-act="sent"', "s", "SENT", !!r.sent_at, r.sent_at, can("sent"), r.sent_by) +
