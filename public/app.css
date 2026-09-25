@@ -332,6 +332,7 @@ dialog.cam #panelBody{height:100%;display:flex;flex-direction:column;padding:0;}
 .steps{display:grid;gap:10px;}
 @media(min-width:900px){.steps{grid-template-columns:1fr 1fr;}}
 .drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:140px;padding:16px;border:2px dashed var(--line);border-radius:var(--r);background:#fff;text-align:center;}
+.imphint{margin:4px 0 0;}
 .drop.filled{border-style:solid;border-color:var(--ok);background:var(--ok-soft);}
 .drop label{display:inline-flex;align-items:center;min-height:44px;padding:0 16px;border-radius:var(--r);background:var(--surface);border:1px solid var(--line);font-weight:700;cursor:pointer;}
 .drop input{position:absolute;width:1px;height:1px;opacity:0;}
