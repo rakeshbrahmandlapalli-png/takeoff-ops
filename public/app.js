@@ -53,6 +53,16 @@
     return fetch(input, Object.assign({}, init, { signal: ctrl.signal })).finally(function () { clearTimeout(timer); });
   }
   function isNetwork(err) { return !navigator.onLine || /Failed to fetch|NetworkError|Load failed|AbortError|aborted|network/i.test(String((err && (err.message || err.name)) || err)); }
+  // The server itself in trouble (outage, overload, timeout), as opposed to a
+  // real "no": worth waiting and trying again, never a reason to drop a tap
+  // or sign anyone out.
+  function isDown(res) {
+    var err = res && res.error !== undefined ? res.error : res, st = res && res.status !== undefined ? +res.status : 0;
+    if (!err) return false;
+    if (isNetwork(err)) return true;
+    st = st || +err.status || +err.statusCode || 0;
+    return st >= 500 || st === 429 || st === 408 || /upstream|timed? ?out|unavailable|bad gateway|gateway|temporarily|overloaded|too many|ECONN|fetch failed/i.test(String(err.message || err.hint || ""));
+  }
   function isAuth(err) { return !!err && (err.status === 401 || err.code === "PGRST301" || /JWT expired|invalid jwt|refresh token|Auth session missing/i.test(String(err.message || ""))); }
 
   // The app can't do anything without its database library: say so and offer
@@ -188,12 +198,16 @@
     var again = document.createElement("button"); again.className = "btn"; again.textContent = "Try again";
     again.onclick = function () { location.reload(); }; $("boot").appendChild(again);
   }
-  async function loadAppInner() {
-    only("boot"); $("boot").textContent = "Loading…";
+  async function loadAppInner(quiet) {
+    if (!quiet) { only("boot"); $("boot").textContent = "Loading…"; }
     var me = await sb.rpc("me");
     if (me.error) {
-      if (isNetwork(me.error)) { $("boot").innerHTML = "Can't reach the server. Check your signal.<br><br>"; var again = document.createElement("button"); again.className = "btn"; again.textContent = "Try again"; again.onclick = loadApp; $("boot").appendChild(again); return; }
-      toast(me.error.message, true); await sb.auth.signOut(); return showSignIn();
+      // Only a real sign-in problem signs out. Anything else (no signal, the
+      // server down) opens the last board this phone had, if there is one.
+      if (isAuth(me.error)) { toast(me.error.message, true); await sb.auth.signOut(); return showSignIn(); }
+      if (openFromSnap()) return;
+      $("boot").innerHTML = (isDown(me) ? "Can't reach the server just now. Check your signal, or it may be down for a few minutes." : "Couldn't load: " + esc(me.error.message)) + "<br><br>";
+      var again = document.createElement("button"); again.className = "btn"; again.textContent = "Try again"; again.onclick = loadApp; $("boot").appendChild(again); return;
     }
     if (!me.data || !me.data.id) { await sb.auth.signOut(); return showSignIn("Your access is switched off. Speak to the office."); }
     S.me = me.data;
@@ -203,6 +217,8 @@
       sb.from("staff").select("id, name, role, active, created_at, extra, removed_at").order("name"),
       loadSheets()
     ]);
+    if (!res[1].data || res.some(function (x) { return x && x.error && isDown(x); })) { if (openFromSnap()) return; throw new Error("Couldn't load the company"); }
+    S.offline = false;
     S.perms = res[0].data || {};
     S.company = res[1].data;
     applyBrand(S.company);
@@ -253,7 +269,12 @@
     var sh = sheet();
     try { if (sh && !sh.archived_at) sessionStorage.setItem(openSheetKey(), S.sheetId); } catch (e) {}
     var r = await sb.from("bookings").select("*").eq("sheet_id", S.sheetId).order(sh && sh.kind === "picks" ? "drop_at" : "return_at", { ascending: true, nullsFirst: false });
-    if (r.error) { toast(r.error.message, true); return; }
+    if (r.error) {
+      // Keep showing the sheet that's loaded, not another sheet's name over it.
+      if (S.rowsSheet && S.rowsSheet !== S.sheetId) S.sheetId = S.rowsSheet;
+      toast(isDown(r) ? "The server isn't answering. Still showing what was loaded." : r.error.message, true); return;
+    }
+    S.rowsSheet = S.sheetId;
     S.rows = (r.data || []).filter(function (x) { return !x.removed_at; });
     S.removed = (r.data || []).filter(function (x) { return x.removed_at; });
   }
@@ -271,7 +292,50 @@
       })
       .subscribe(function (status) { S.live = status === "SUBSCRIBED"; renderSync(); });
   }
-  function teardown() { if (channel) sb.removeChannel(channel); channel = null; S.rows = []; }
+  function teardown() { if (channel) sb.removeChannel(channel); channel = null; S.rows = []; snapForget(); }
+
+  // ── the last board, kept on the phone ──
+  // If the server can't be reached when the app opens, the team still sees the
+  // last board this phone loaded and can keep tapping: the taps are saved on
+  // the phone and go through when the server answers again. Cleared on sign-out.
+  var SNAP_KEY = "takeoff_snap", snapTimer = null;
+  function snapSave() {
+    if (!S.me || !S.company || S.platform) return;
+    clearTimeout(snapTimer);
+    snapTimer = setTimeout(function () {
+      try {
+        localStorage.setItem(SNAP_KEY, JSON.stringify({ v: 1, at: S.offline ? S.offlineAt : new Date().toISOString(), me: S.me, perms: S.perms, company: S.company,
+          staff: S.staff, sheets: S.sheets, handArchived: S.handArchived, sheetId: S.rowsSheet || S.sheetId, rows: S.rows, removed: S.removed }));
+      } catch (e) {}
+    }, 2000);
+  }
+  function snapForget() { clearTimeout(snapTimer); try { localStorage.removeItem(SNAP_KEY); } catch (e) {} }
+  function openFromSnap() {
+    var x = null; try { x = JSON.parse(localStorage.getItem(SNAP_KEY) || "null"); } catch (e) {}
+    if (!x || !x.me || !x.company || !x.rows) return false;
+    S.me = x.me; S.perms = x.perms || {}; S.company = x.company; S.staff = x.staff || {};
+    S.sheets = x.sheets || []; S.handArchived = x.handArchived || []; S.sheetId = x.sheetId; S.rowsSheet = x.sheetId;
+    S.rows = x.rows; S.removed = x.removed || [];
+    S.offline = true; S.offlineAt = x.at; S.live = false;
+    try { applyBrand(S.company); } catch (e) {}
+    loadQueue(); only("app"); render();
+    toast("The server can't be reached. Showing the board from " + hhmm(x.at) + "; taps are saved and go through when it's back.", true);
+    clearTimeout(S.reconnect); S.reconnect = setTimeout(reconnect, 15000);
+    return true;
+  }
+  // Offline: try the server every 15 s (then less often); when it answers,
+  // load everything fresh and send the saved taps.
+  async function reconnect() {
+    if (!S.offline) return;
+    var me; try { me = await sb.rpc("me"); } catch (e) { me = { error: e }; }
+    if (me && !me.error && me.data && me.data.id) {
+      try { await loadAppInner(true); toast("Back online. Board up to date."); } catch (e) { oopsLog(e); }
+      return;
+    }
+    if (me && me.error && isAuth(me.error)) { S.offline = false; S.me = null; teardown(); await sb.auth.signOut(); return showSignIn(); }
+    S.reconnectWait = Math.min(120000, (S.reconnectWait || 10000) * 1.5);
+    S.reconnect = setTimeout(reconnect, S.reconnectWait);
+  }
 
   var redraw = null;
   function onChange(p) {
@@ -294,7 +358,7 @@
 
   // ── saving: optimistic, queued, retried ───
   function queueKey() { return "takeoff_queue_" + (S.me ? S.me.id : ""); }
-  function loadQueue() { try { S.queue = JSON.parse(localStorage.getItem(queueKey()) || "[]"); } catch (e) { S.queue = []; } S.queue.forEach(function (op) { S.pending[op.rowId] = (S.pending[op.rowId] || 0) + 1; }); }
+  function loadQueue() { try { S.queue = JSON.parse(localStorage.getItem(queueKey()) || "[]"); } catch (e) { S.queue = []; } S.pending = {}; S.queue.forEach(function (op) { S.pending[op.rowId] = (S.pending[op.rowId] || 0) + 1; }); }
   function saveQueue() { try { localStorage.setItem(queueKey(), JSON.stringify(S.queue)); } catch (e) {} }
 
   function run(fn, args, row, mutate) {
@@ -310,9 +374,12 @@
     var op = S.queue[0];
     var r = await sb.rpc(op.fn, op.args);
     S.flushing = false;
-    if (r.error && (isNetwork(r.error))) {
-      renderSync(); clearTimeout(retryTimer); retryTimer = setTimeout(flush, 5000); return;
+    if (r.error && isDown(r)) {
+      // Kept and tried again: every 5 s, slowing to once a minute in a long outage.
+      S.retryWait = Math.min(60000, (S.retryWait || 2500) * 2);
+      renderSync(); clearTimeout(retryTimer); retryTimer = setTimeout(flush, S.retryWait); return;
     }
+    S.retryWait = 0;
     if (r.error && isAuth(r.error)) { renderSync(); return; }
     S.queue.shift(); saveQueue();
     if (op.rowId) { S.pending[op.rowId] = Math.max(0, (S.pending[op.rowId] || 1) - 1); if (!S.pending[op.rowId]) delete S.pending[op.rowId]; }
@@ -341,8 +408,11 @@
     var waiting = S.queue.length;
     // Silent while all is well, like the Sheet app: it only speaks up when a
     // tap is waiting or live updates have dropped.
-    el.className = "pend" + (waiting || !S.live ? " on" : "") + (!navigator.onLine ? " stuck" : "");
-    el.textContent = waiting ? (navigator.onLine ? "SAVING " + waiting : "OFFLINE · " + waiting) : (S.live ? "" : navigator.onLine ? "CONNECTING" : "OFFLINE");
+    var down = S.offline || !!S.retryWait;
+    el.className = "pend" + (waiting || !S.live || down ? " on" : "") + (!navigator.onLine || down ? " stuck" : "");
+    el.textContent = S.offline ? "OFFLINE · BOARD FROM " + hhmm(S.offlineAt) + (waiting ? " · " + waiting + " TO SEND" : "")
+      : waiting ? (!navigator.onLine ? "OFFLINE · " + waiting : S.retryWait ? "SERVER BUSY · " + waiting + " WAITING" : "SAVING " + waiting)
+      : (S.live ? "" : navigator.onLine ? "CONNECTING" : "OFFLINE");
   }
 
   // ── chrome ────────────────────────────────
@@ -405,6 +475,7 @@
         '<button type="button" class="btn ghost" data-reload>Reload the app</button></div>';
     }
     $("main").innerHTML = html;
+    snapSave();
     if (flashId) { var el = document.querySelector('[data-id="' + flashId + '"]'); if (el) { el.classList.add("flash"); setTimeout(function () { el.classList.remove("flash"); }, 1500); } flashId = null; }
   }
   function go(view) { if (S.platform && view !== "me") view = "clients"; S.view = view; S.settingsDraft = null; if (view === "summary") S.activity = null; if ($("menu").open) $("menu").close(); render(); window.scrollTo(0, 0); }
