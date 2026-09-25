@@ -1391,8 +1391,8 @@
 
   // ── staff ─────────────────────────────────
   var ROLE_LABEL = { owner: "Owner", office: "Office", manager: "Manager", bongo: "Bongo driver", terminal: "Terminal", view: "View only" };
-  function issuedHtml(x) {
-    var msg = "Your " + brandName() + " app: " + x.link + " (open it on your phone) Your PIN: " + x.pin;
+  function issuedHtml(x, appName) {
+    var msg = "Your " + (appName || brandName()) + " app: " + x.link + " (open it on your phone) Your PIN: " + x.pin;
     return '<div class="issued"><strong>' + esc(x.name) + " · " + esc(ROLE_LABEL[x.role] || x.role) + '</strong><span class="note">Send them this link and PIN. It is shown only once.</span><code>' + esc(x.link) + '</code><div>PIN <span class="pin num">' + esc(x.pin) + "</span></div>" +
       '<div class="row-actions" style="margin:0"><button type="button" class="btn small" data-copy="' + esc(msg) + '">Copy message</button>' +
       '<a class="btn ghost small" href="https://wa.me/?text=' + encodeURIComponent(msg) + '" target="_blank" rel="noopener">WhatsApp</a></div></div>';
@@ -1410,12 +1410,11 @@
       var b = c.brand || {}, host = b.host || "parking-ops.vercel.app";
       var status = c.suspended_at ? '<span class="cstat off">Suspended</span>' : !c.has_owner ? '<span class="cstat wait">Waiting for owner</span>' : '<span class="cstat on">Active</span>';
       var last = c.last_activity ? dayShort(c.last_activity) + " " + hhmm(c.last_activity) : "never";
-      var setup = "https://" + host + "/#setup=" + c.slug;
       return '<div class="client' + (c.suspended_at ? " off" : "") + '"><div class="cl1"><span class="swatch" style="background:' + esc(b.colour || "#334155") + '"></span><strong>' + esc(c.name) + "</strong>" + status + "</div>" +
         '<div class="cmeta">' + esc(c.slug) + " · " + esc(host) + " · yards " + esc((c.yards || []).join(", ")) + "</div>" +
         '<div class="cnums"><div><b class="num">' + c.staff + "</b><span>staff</span></div><div><b class=\"num\">" + c.cars_7d + "</b><span>cars, last 7 days</span></div><div><b class=\"num\">" + c.sheets_7d + "</b><span>sheets, last 7 days</span></div><div><b>" + esc(last) + "</b><span>last activity</span></div></div>" +
         '<div class="row-actions"><button type="button" class="btn ghost small" data-clientedit="' + c.id + '">Edit</button>' +
-        (!c.has_owner ? '<button type="button" class="btn ghost small" data-copy="' + esc(setup) + '">Copy setup link</button>' : "") +
+        (!c.has_owner && !c.suspended_at ? '<button type="button" class="btn brand small" data-clientowner="' + c.id + '">Create first owner</button>' : "") +
         '<button type="button" class="btn ghost small' + (c.suspended_at ? "" : " warn") + '" data-clientsuspend="' + c.id + '">' + (c.suspended_at ? "Resume" : "Suspend") + "</button></div></div>";
     }).join("") + "</div>";
   }
@@ -1467,11 +1466,32 @@
     if (r.error) return toast(r.error.message, true);
     await loadClients();
     if (id) { toast("Saved"); return $("panel").close(); }
-    var host = (r.data.brand && r.data.brand.host) || "parking-ops.vercel.app", link = "https://" + host + "/#setup=" + r.data.slug;
+    var host = (r.data.brand && r.data.brand.host) || "parking-ops.vercel.app";
     $("panelBody").innerHTML = '<h2 id="panelTitle">' + esc(r.data.name) + " added</h2>" +
       '<p class="sub">Next steps:</p><ol class="steps"><li>' + (r.data.brand && r.data.brand.host ? "In Vercel, add <b>" + esc(host) + "</b> under Settings, Domains." : "No web address set: they'll use parking-ops.vercel.app.") + "</li>" +
-      "<li>Open the setup link yourself, enter the name of their boss and the setup code, and send the boss the personal link and PIN it gives you. Don't send the setup code.</li></ol>" +
-      '<code class="setuplink">' + esc(link) + '</code><div class="pbtns"><button type="button" data-close>Done</button><button type="button" class="save" data-copy="' + esc(link) + '">Copy setup link</button></div>';
+      "<li>On the Clients page, tap <b>Create first owner</b> on " + esc(r.data.name) + ", enter their boss's name, and send the boss the link and PIN it shows.</li></ol>" +
+      '<div class="pbtns"><button type="button" data-close>Done</button></div>';
+  }
+  function askClientOwner(id) {
+    var c = (S.clients || []).filter(function (x) { return x.id === id; })[0]; if (!c) return;
+    $("panelBody").innerHTML = '<h2 id="panelTitle">First owner for ' + esc(c.name) + '</h2>' +
+      '<p class="sub">Their boss. They get a personal link and PIN, and add the rest of their team themselves.</p>' +
+      '<form id="clientOwnerForm" data-id="' + c.id + '" novalidate><label for="coName">NAME</label><input id="coName" maxlength="60" autocomplete="off">' +
+      '<div class="pbtns"><button type="button" data-close>Cancel</button><button class="save" id="coGo">Create owner</button></div></form><div id="coDone"></div>';
+    if (!$("panel").open) $("panel").showModal();
+    setTimeout(function () { $("coName").focus(); }, 50);
+  }
+  async function createClientOwner() {
+    var form = $("clientOwnerForm"), name = $("coName").value.trim();
+    if (!name) return toast("Enter their boss's name.", true);
+    $("coGo").disabled = true;
+    try {
+      var r = await callFunction("manage-staff", { action: "client_owner", company_id: form.dataset.id, name: name, app_url: location.origin + "/" }, true);
+      form.remove();
+      var cl = (S.clients || []).filter(function (x) { return x.id === form.dataset.id; })[0] || {};
+      $("coDone").innerHTML = issuedHtml(r, (cl.brand && cl.brand.short) || cl.name) + '<div class="pbtns"><button type="button" data-close>Done</button></div>';
+      loadClients();
+    } catch (err) { $("coGo").disabled = false; toast(err.message, true); }
   }
   async function suspendClient(btn) {
     var c = (S.clients || []).filter(function (x) { return x.id === btn.dataset.clientsuspend; })[0]; if (!c) return;
@@ -1929,6 +1949,7 @@
     if (t.dataset.manage) return openStaffPanel(t.dataset.manage);
     if (t.dataset.clientedit && S.platform) return openClient(t.dataset.clientedit);
     if (t.dataset.clientsuspend && S.platform) return suspendClient(t);
+    if (t.dataset.clientowner && S.platform) return askClientOwner(t.dataset.clientowner);
     if (t.dataset.removedlist !== undefined) { $("menu").close(); return openRemoved(); }
     if (t.dataset.notifyon !== undefined) return turnOnNotifications(t);
     if (t.dataset.notifyoff !== undefined) return turnOffNotifications(false);
@@ -1975,6 +1996,7 @@
     if (e.target.id === "addCarForm") { e.preventDefault(); return addCar(); }
     if (e.target.id === "pinChange") { e.preventDefault(); return changePin(); }
     if (e.target.id === "clientForm") { e.preventDefault(); return saveClient(); }
+    if (e.target.id === "clientOwnerForm") { e.preventDefault(); return createClientOwner(); }
     if (e.target.id === "quickForm") {
       e.preventDefault();
       if (quick && quick.noFlight) { var ct = $("collectTime").value; if (!/^\d{2}:\d{2}$/.test(ct)) { toast("Type the collection time.", true); return; } return saveQuickFlight("NO FLIGHT", ct); }

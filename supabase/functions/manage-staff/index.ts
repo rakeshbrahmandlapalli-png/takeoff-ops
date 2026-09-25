@@ -5,7 +5,10 @@
 // the office ONCE to pass on; only hashes are stored.
 //
 // Actions (POST JSON):
-//   { action: "setup", code, name }            first owner, once, with the SETUP_CODE secret
+//   { action: "setup", code, name, company:"platform" }  the product owner's own login, once,
+//                                               with the SETUP_CODE secret. Clients can no longer
+//                                               be set up with the code (see client_owner).
+//   { action: "client_owner", company_id, name } product owner only: a client's first owner
 //   { action: "add", name, role }               office/manager (owner roles by an owner only)
 //   { action: "reset", staff_id }               new link + PIN, the old link stops working
 //   { action: "off" | "on", staff_id }          switch access off / back on (history is kept)
@@ -79,7 +82,10 @@ Deno.serve(async (req) => {
     if (action === "setup") {
       const code = Deno.env.get("SETUP_CODE");
       if (!code || String(body.code ?? "") !== code) return reply(403, { error: "Wrong setup code." });
-      const { data: company } = await admin.from("companies").select("id").eq("slug", String(body.company ?? "takeoff")).maybeSingle();
+      // Only the product owner's own login is made with the code. A client's
+      // first owner is made from the Clients page, by the product owner.
+      if (String(body.company ?? "") !== "platform") return reply(403, { error: "This setup link no longer works. Ask Parking Ops for your personal link." });
+      const { data: company } = await admin.from("companies").select("id").eq("slug", "platform").maybeSingle();
       if (!company) return reply(404, { error: "Company not found. Run database part 1 first." });
       const { count } = await admin.from("staff").select("id", { count: "exact", head: true })
         .eq("company_id", company.id).in("role", ["owner", "office", "manager"]).eq("active", true);
@@ -96,6 +102,26 @@ Deno.serve(async (req) => {
     });
     const { data: me, error: meError } = await asCaller.rpc("staff_admin_context");
     if (meError || !me) return reply(401, { error: "Sign in again." });
+
+    // ── a client's first owner, made by the product owner ──
+    if (action === "client_owner") {
+      const { data: isAdmin } = await asCaller.rpc("is_platform_admin");
+      if (isAdmin !== true) return reply(403, { error: "Not allowed." });
+      const { data: client } = await admin.from("companies").select("id, slug, brand, suspended_at").eq("id", String(body.company_id ?? "")).maybeSingle();
+      if (!client || client.slug === "platform") return reply(404, { error: "Client not found." });
+      if (client.suspended_at) return reply(409, { error: "Resume this client first." });
+      const { count } = await admin.from("staff").select("id", { count: "exact", head: true })
+        .eq("company_id", client.id).in("role", ["owner", "office", "manager"]).eq("active", true);
+      if ((count ?? 0) > 0) return reply(409, { error: "This client already has an owner or office. They add people from their own Staff screen." });
+      const name = String(body.name ?? "").trim().slice(0, 60);
+      if (!name) return reply(400, { error: "Enter the name of the client's boss." });
+      // The link opens the client's own address, so the app wears their brand.
+      const host = String((client.brand as Record<string, unknown> | null)?.host ?? "");
+      const clientUrl = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host) ? "https://" + host + "/" : appUrl;
+      const made = await createPerson(client.id, name, "owner");
+      return reply(200, { ...made, link: clientUrl.replace(/[#?].*$/, "") + made.link.slice(made.link.indexOf("#t=")) });
+    }
+
     if (!me.can_staff) return reply(403, { error: "Only the office can manage staff." });
 
     if (action === "add") {
