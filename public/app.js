@@ -1020,7 +1020,7 @@
 
   // ── PT the WhatsApp-photos way ──
   var PT_BATCH = 10;
-  var BIG_SHARE = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  var BIG_SHARE = IS_IOS;
   function openPtPhotos(r) {
     var num = (S.company && S.company.pt_whatsapp) || "", reg = ptCaption(r), n = pt.items.length, prep = ptCount("prep"), sent = pt.sent || 0;
     var b = ptBatch(), pick = '<input type="file" accept="image/*" multiple data-ptfile hidden>';
@@ -1029,8 +1029,12 @@
              : '<button type="button" class="btn brand ptgo" data-ptregshare>1 · SEND ' + esc(reg) + " TO PT</button>")
       : b ? '<button type="button" class="btn brand ptgo" data-ptshare>2 · ' + esc(ptShareLabel()) + "</button>" : "";
     $("panelBody").innerHTML = '<h2 id="panelTitle">PT · ' + esc(reg) + (r.num ? " <small>#" + r.num + "</small>" : "") + "</h2>" +
-      (sent ? "" : '<button type="button" class="btn ' + (n ? "ghost" : "brand") + ' ptgo" data-ptcam>' + (n ? "+ TAKE MORE" : "TAKE PHOTOS") + "</button>" +
-        '<label class="btn ghost ptpick">' + pick + (n ? "+ Add from gallery" : "Choose from gallery") + "</label>") +
+      (sent ? "" : IS_IOS
+        ? (n ? "" : '<p class="sub">Take the photos with the iPhone\'s Camera app, then choose them all here.</p>') +
+          '<label class="btn ' + (n ? "ghost" : "brand") + ' ptpick">' + pick + (n ? "+ ADD MORE PHOTOS" : "CHOOSE PHOTOS") + "</label>" +
+          '<button type="button" class="btn ghost ptgo" data-ptcam>' + (n ? "+ Take more in the app" : "Or take them in the app") + "</button>"
+        : '<button type="button" class="btn ' + (n ? "ghost" : "brand") + ' ptgo" data-ptcam>' + (n ? "+ TAKE MORE" : "TAKE PHOTOS") + "</button>" +
+          '<label class="btn ghost ptpick">' + pick + (n ? "+ Add from gallery" : "Choose from gallery") + "</label>") +
       (n ? '<div class="ptsteps"><span class="' + (pt.regSent ? "ok" : "") + '">' + (pt.regSent ? "✓" : "1") + " Reg</span><span class=\"" + (sent && sent >= n ? "ok" : "") + '">' + (sent >= n && n ? "✓" : "2") + " Photos " + sent + "/" + n + "</span></div>" : "") +
       (n ? '<div class="ptthumbs">' + pt.items.map(function (x, i) { return ptImg(x, i < sent ? ' class="sent"' : x.state === "prep" ? ' class="wait"' : ""); }).join("") + "</div>" : "") +
       '<p class="hint">' + (!n ? "" : prep ? "Getting " + prep + " photo" + (prep === 1 ? "" : "s") + " ready…"
@@ -1194,7 +1198,14 @@
       if (rec && S.company && S.company.pt_method !== "link") ptRestore(rec);
     }
     openPt(r);
-    if (!pt.items.length && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ptCamera(r);
+    if (!pt.items.length && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && await ptCameraFirst()) ptCamera(r);
+  }
+  // iPhones ask for the camera every time in a home-screen app, so there the
+  // in-app camera opens by itself only if the phone says it's already allowed.
+  // Otherwise the PT screen leads with the iPhone's own Camera + gallery.
+  async function ptCameraFirst() {
+    if (!IS_IOS || camLive(camParked)) return true;
+    try { return (await navigator.permissions.query({ name: "camera" })).state === "granted"; } catch (e) { return false; }
   }
   // After a reload: open the PT that was half sent.
   async function ptResume() {
@@ -1221,8 +1232,16 @@
   var panelRow = null;
   // Booking files give UK mobiles as 447…, 7… or 07…; without the + or the 0
   // the phone can't dial them. Anything else is dialled as written.
+  // Some bookings carry the number twice ("7868615571 7868615571") or two
+  // numbers: take the first whole number (UK numbers are written in pieces,
+  // "07868 615571", so pieces are joined until there are 10 digits).
+  function firstPhone(p) {
+    var acc = "";
+    String(p || "").split(/[^\d+]+/).filter(Boolean).some(function (g) { acc += g; return acc.replace(/\D/g, "").length >= 10; });
+    return acc;
+  }
   function dialable(p) {
-    var d = String(p || "").replace(/[^\d+]/g, "");
+    var d = firstPhone(p).replace(/[^\d+]/g, "");
     if (/^44\d{10}$/.test(d)) return "+" + d;
     if (/^7\d{9}$/.test(d)) return "0" + d;
     return d;
@@ -1231,7 +1250,7 @@
     var d = dialable(p);
     if (/^\+447\d{9}$/.test(d)) return "+44 " + d.slice(3, 7) + " " + d.slice(7);
     if (/^07\d{9}$/.test(d)) return d.slice(0, 5) + " " + d.slice(5);
-    return String(p);
+    return firstPhone(p) || String(p);
   }
   function openPanel(r) {
     panelRow = r;
@@ -1272,19 +1291,20 @@
     }
     if (extra) h += '<label>MARK AS</label><div class="pseg">' + extra + "</div>";
     if (drops) h += chargePanelHtml(r);
-    if (!drops) h += '<div id="ptPhotos"></div>';
+    // PT photos from when the car came in (PICKS), also on its DROPS row: same booking ref.
+    h += '<div id="ptPhotos"></div>';
     if (can("import")) h += '<button type="button" class="link rmcar" data-removecar>Remove this car (no show, cancelled)</button>';
     h += '<div class="pbtns"><button type="button" data-close>Close</button>' + (can("note") || can("flights") ? '<button type="button" class="save" data-savepanel>Save</button>' : "") + "</div>";
     $("panelBody").innerHTML = h;
     if (!$("panel").open) $("panel").showModal();
-    if (!drops) ptPhotosList(r);
+    ptPhotosList(r);
   }
   // The car's PT photos (kept 30 days). View opens the same page PT gets.
   async function ptPhotosList(r) {
     var res = await sb.rpc("pt_photos_for", { p_booking: r.id });
     var el = $("ptPhotos"); if (!el || panelRow !== r || res.error) return;
     var sets = res.data || [];
-    if (!sets.length) { if (r.pt_at) el.innerHTML = '<label>PT PHOTOS</label><p class="hint">No copy of the photos in the app for this car.</p>'; return; }
+    if (!sets.length) { if (r.pt_at && r.kind === "picks") el.innerHTML = '<label>PT PHOTOS</label><p class="hint">No copy of the photos in the app for this car.</p>'; return; }
     el.innerHTML = "<label>PT PHOTOS</label>" + sets.map(function (x) {
       return '<a class="ptset" href="/p/' + esc(x.token) + '" target="_blank" rel="noopener"><span><b>' + x.n + " photo" + (x.n === 1 ? "" : "s") + "</b> · " + esc(dayShort(x.at) + " " + hhmm(x.at)) + (x.by ? " · " + esc(x.by) : "") + "</span><i>View ›</i></a>";
     }).join("");
