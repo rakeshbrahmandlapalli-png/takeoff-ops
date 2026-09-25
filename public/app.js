@@ -725,7 +725,17 @@
   }
   // The camera stays open inside the app: one tap per photo, Done when finished.
   // If the phone refuses (no permission, old browser) its own camera opens instead.
-  var camStream = null, camShot = null, camBusy = false;
+  var camStream = null, camShot = null, camBusy = false, camTorch = false;
+  function camLight(on) {
+    var track = camStream && camStream.getVideoTracks()[0]; if (!track) return Promise.resolve();
+    return track.applyConstraints({ advanced: [{ torch: on }] });
+  }
+  async function camToggleTorch() {
+    var want = !camTorch;
+    try { await camLight(want); camTorch = want; }
+    catch (e) { return toast("This phone won't let the app use its light. Use \"Use the phone's camera\" for flash.", true); }
+    var b = $("camTorch"); if (b) { b.textContent = "⚡ FLASH " + (camTorch ? "ON" : "OFF"); b.classList.toggle("on", camTorch); b.setAttribute("aria-pressed", camTorch); }
+  }
   async function ptCamera(r) {
     try {
       camStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 4096 }, height: { ideal: 3072 } } });
@@ -734,12 +744,15 @@
       return;
     }
     $("panel").classList.add("cam");
-    $("panelBody").innerHTML = '<div class="camview"><video id="camVideo" autoplay playsinline muted></video><div class="camflash" id="camFlash"></div></div>' +
+    $("panelBody").innerHTML = '<div class="camview"><video id="camVideo" autoplay playsinline muted></video><div class="camflash" id="camFlash"></div><button type="button" class="camtorch hidden" id="camTorch" data-camtorch aria-pressed="false">⚡ FLASH OFF</button></div>' +
       '<div class="cambar"><span class="camcount" id="camCount">' + camCountText() + '</span><button type="button" class="shutter" data-shutter aria-label="Take photo"></button><button type="button" class="camdone" data-camdone>Done</button></div>';
     $("camVideo").srcObject = camStream;
     // Keep the picture sharp as the phone moves round the car.
     var track = camStream.getVideoTracks()[0], caps = track && track.getCapabilities ? track.getCapabilities() : {};
     if (caps.focusMode && caps.focusMode.indexOf("continuous") !== -1) track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(function () {});
+    // The phone's light, for dark corners of the terminal. Stays on while shooting.
+    camTorch = false;
+    if (caps.torch) show("camTorch", true);
     // A real photo from the camera (full size, the phone's own processing) where the
     // browser can take one; otherwise a frame from the preview.
     camShot = null;
@@ -755,7 +768,7 @@
   function camCountText() { var n = pt ? pt.files.length : 0; return n + " photo" + (n === 1 ? "" : "s"); }
   function camStop() {
     if (camStream) camStream.getTracks().forEach(function (t) { t.stop(); });
-    camStream = null; camShot = null; camBusy = false; $("panel").classList.remove("cam");
+    camStream = null; camShot = null; camBusy = false; camTorch = false; $("panel").classList.remove("cam");
   }
   function ptKeep(r, b) {
     if (!b || !pt) return;
@@ -777,6 +790,8 @@
     var sh = $("panelBody").querySelector("[data-shutter]"); if (sh) sh.disabled = true;
     try { ptKeep(r, await camShot()); }
     catch (e) { camShot = null; ptGrab(r); }
+    // Some phones turn the light off to take a still; put it back on.
+    if (camTorch) camLight(true).catch(function () {});
     camBusy = false; if (sh) sh.disabled = false;
   }
   function ptClear() { if (pt) pt.urls.forEach(function (u) { URL.revokeObjectURL(u); }); pt = null; }
@@ -938,6 +953,7 @@
     if (t.dataset.pcall) { tapPick(r, "called", t.dataset.pcall); return $("panel").close(); }
     if (t.dataset.ptcam !== undefined) return ptCamera(r);
     if (t.dataset.shutter !== undefined) return ptShoot(r);
+    if (t.dataset.camtorch !== undefined) return camToggleTorch();
     if (t.dataset.camdone !== undefined) { camStop(); return openPt(r); }
     if (t.dataset.ptsend !== undefined) return ptSend(r, t);
     if (t.dataset.ptregshare !== undefined) {
