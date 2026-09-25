@@ -157,6 +157,7 @@ select.code.pick.unset{color:#7a5c00;background:#fff2cc;border:1px dashed #d4a72
 .l2 .tag.cx{color:#fff;background:#c5221f;padding:0 5px;border-radius:4px;}
 .l3{margin-top:3px;font-size:11px;font-weight:700;color:#202124;background:#ffe89a;border-radius:3px;padding:2px 6px;display:inline-block;max-width:100%;vertical-align:bottom;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .l3.bang{color:#8c1d18;background:#f4c7c3;}
+.l3.early{color:#fff;background:#1155cc;margin-right:4px;}
 .acts{display:flex;gap:3px;width:var(--actw);flex:0 0 var(--actw);}
 .acts button{flex:1;min-width:0;min-height:44px;padding:2px 0;border:1px solid #c4c7cc;border-radius:5px;background:#fff;color:#5f6368;font-size:9px;font-weight:700;letter-spacing:.4px;display:flex;flex-direction:column;align-items:center;justify-content:center;}
 .acts button small{font-size:11px;font-weight:600;letter-spacing:0;margin-top:1px;}

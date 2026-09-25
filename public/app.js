@@ -663,6 +663,8 @@
     return '<select class="code pick ' + (r.yard ? esc(r.yard) : "unset") + '" data-yard aria-label="Yard for ' + esc(r.reg) + '"><option value="">' + (r.yard ? "—" : "YARD") + "</option>" +
       (S.company.yards || []).map(function (y) { return "<option" + (y === r.yard ? " selected" : "") + ' value="' + esc(y) + '">' + esc(y) + "</option>"; }).join("") + "</select>";
   }
+  // An early return gets its own line, like a note, so the flight line stays clear.
+  function earlyLine(r) { return r.early ? '<div class="l3 early">EARLY · booked ' + esc(r.return_at ? dayShort(r.return_at) + " " + hhmm(r.return_at) : "later") + "</div>" : ""; }
   function noteLine(r) { return r.note ? '<div class="l3' + (/^!/.test(r.note) ? " bang" : "") + '">' + esc(r.note.replace(/^!\s*/, "")) + "</div>" : ""; }
   // A pressed button shows the time and the first name of whoever pressed it.
   function actBtn(r, attrs, cls, label, on, at, allowed, who) {
@@ -757,9 +759,8 @@
       (flightToCheck(r) ? ' · <span class="tag ck">CHECK FLIGHT NO.</span>' : "") +
       (canc ? ' · <span class="tag cx">CANCELLED</span>' : "") +
       (over ? ' · <span class="tag ov">OVERSTAY</span>' : "") +
-      // Short on the row so the flight number still fits; the booked day is under BACK in the panel.
-      (r.early ? ' · <span class="tag ea" title="Booked back ' + esc(r.return_at ? dayShort(r.return_at) + " " + hhmm(r.return_at) : "later") + '">EARLY</span>' : "") +
-      (cmpl ? ' · <span class="tag cm">COMPLAINT</span>' : "") + chargeTag(r) + "</span></div>" + noteLine(r) + "</div>" +
+
+      (cmpl ? ' · <span class="tag cm">COMPLAINT</span>' : "") + chargeTag(r) + "</span></div>" + earlyLine(r) + noteLine(r) + "</div>" +
       '<div class="acts">' +
       actBtn(r, 'data-act="sent"', "s", "SENT", !!r.sent_at, r.sent_at, can("sent"), r.sent_by) +
       actBtn(r, 'data-act="called"', "c" + (overWord ? " ov" : ""), overWord ? "OVERSTAY" : "CALLED", !!r.called_at, r.called_at, can("called"), r.called_by) +
