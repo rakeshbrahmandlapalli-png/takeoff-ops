@@ -1250,7 +1250,8 @@
     var sh = sheet();
     if (!sh || sh.kind !== "drops") return '<div class="msg">Choose a DROPS sheet at the top to see its flights.</div>';
     if (!S.runs) loadRuns();
-    var rows = S.rows.filter(function (r) { return r.flight; }).sort(function (a, b) { return orderAt(a) < orderAt(b) ? -1 : 1; });
+    var all = S.rows.filter(function (r) { return r.flight; }).sort(function (a, b) { return orderAt(a) < orderAt(b) ? -1 : 1; });
+    var manual = all.filter(flightToCheck), rows = all.filter(function (r) { return !flightToCheck(r); });
     function n(st) { return rows.filter(function (r) { return r.flight_status === st; }).length; }
     function last(src) {
       var run0 = (S.runs || []).filter(function (x) { return x.source === src; })[0];
@@ -1259,17 +1260,26 @@
       return esc(dayShort(run0.at) + " " + hhmm(run0.at)) + (res.error ? ' · <span class="bad">' + esc(res.error) + "</span>" : "");
     }
     var h = '<div class="pad"><h2 class="title">' + esc(sheetLabel(sh)) + "</h2>" +
-      '<div class="stats"><div class="stat"><span>Flights</span><strong class="num">' + rows.length + '</strong></div><div class="stat"><span>Landed</span><strong class="num">' + n("landed") +
+      '<div class="stats"><div class="stat"><span>Flights</span><strong class="num">' + all.length + '</strong></div><div class="stat"><span>Landed</span><strong class="num">' + n("landed") +
       '</strong></div><div class="stat"><span>Delayed or late</span><strong class="num">' + (n("delayed") + n("expected")) + '</strong></div><div class="stat"><span>Cancelled</span><strong class="num">' + n("cancelled") +
       '</strong></div></div><p class="note">Timetable last checked: ' + last("schedule") + "<br>Live positions last checked: " + last("live") + "</p>" +
-      (can("flights") ? '<div class="row-actions"><button type="button" class="btn small" data-filltimes>Fill &amp; check scheduled times</button><button type="button" class="btn small" data-checkflights>Check flights now</button></div>' +
-        '<p class="note">Fill &amp; check: the airport timetable (AeroDataBox) for this sheet only: fills missing scheduled times and updates changed ones. No FlightRadar credits.</p>' : "") +
-      "</div>" + missingHtml();
+      (can("flights") ? '<div class="row-actions"><button type="button" class="btn small" data-filltimes>Fill &amp; check scheduled times</button><button type="button" class="btn small" data-checkflights>Check flights now</button></div>' : "") +
+      "</div>" + missingHtml() + manualHtml(manual) + (missingFlights().length || manual.length ? '<div class="sec">WITH FLIGHT NUMBERS</div>' : "");
     return h + (rows.length ? rows.map(function (r) {
       return '<div class="row' + (r.flight_status === "cancelled" || r.flight_status === "delayed" ? " late" : r.flight_status === "landed" ? " done" : "") + '" data-id="' + r.id + '"><div class="left" data-open><div class="l1"><span class="reg">' + esc(r.flight) + '</span><span class="dn">' + esc(r.reg) + '</span><span class="pin">' + esc(r.name) + "</span></div>" +
         '<div class="l2 num"><span class="l2a">' + esc(FLIGHT_WORD[r.flight_status] || r.flight_status) + (r.flight_note ? " · " + esc(r.flight_note) : "") + '</span><span class="l2b"> · ' + esc(r.sched_time || hhmm(r.return_at)) +
         (r.est_time ? ' &rarr; <span class="eta' + (r.est_time === "DELAY" ? " dly" : "") + '">' + esc(r.est_time) + "</span>" : "") + "</span></div></div></div>";
     }).join("") : '<div class="msg">No flight numbers on this sheet.</div>');
+  }
+  // Flight numbers the timetable can't find (or TBC): the office checks these by hand.
+  function manualHtml(list) {
+    if (!list.length) return "";
+    return '<div class="sec old">NEED TO CHECK MANUALLY <b class="num">' + list.length + "</b></div>" +
+      list.map(function (r) {
+        var why = /check the flight number$/.test(r.flight_note) ? r.flight_note.replace(/ · check the flight number$/, "") : "Not a flight number";
+        return '<div class="row cmpl" data-id="' + r.id + '"><div class="left" data-open><div class="l1"><span class="reg">' + esc(r.flight) + '</span><span class="dn">' + esc(r.reg) + '</span><span class="pin">' + esc(r.name) + "</span></div>" +
+          '<div class="l2 num"><span class="l2a">' + esc(why) + '</span><span class="l2b"> · back ' + esc(hhmm(r.return_at)) + "</span></div></div></div>";
+      }).join("");
   }
   function missingHtml() {
     var miss = missingFlights();
@@ -1279,7 +1289,7 @@
         return '<div class="row" data-id="' + r.id + '"><div class="left"><div class="l1"><span class="reg">' + esc(r.reg || "NO REG") + "</span>" + (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + '<span class="pin">' + esc(r.name) + "</span></div>" +
           '<div class="l2 num"><span class="l2a">' + esc(r.make) + '</span><span class="l2b">back ' + esc(hhmm(r.return_at)) + "</span></div></div>" +
           (can("flights") ? '<button type="button" class="addflight" data-addflight>+ FLIGHT</button>' : "") + "</div>";
-      }).join("") + '<div class="sec">WITH FLIGHT NUMBERS</div>';
+      }).join("");
   }
   async function loadRuns() {
     S.runs = [];
