@@ -920,11 +920,28 @@
     catch (e) { return toast("This phone won't let the app use its light.", true); }
     var b = $("camTorch"); if (b) { b.textContent = "⚡ FLASH " + (camTorch ? "ON" : "OFF"); b.classList.toggle("on", camTorch); b.setAttribute("aria-pressed", camTorch); }
   }
+  // iPhones ask for camera permission every time the camera is started again,
+  // so there the camera is parked (kept running, off screen) for a few minutes
+  // after Done and picked up again by the next PT: one question, not one per car.
+  var IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  var camParked = null, camParkTimer = null, CAM_PARK_MS = 5 * 60000;
+  function camLive(st) { return !!st && st.getVideoTracks().some(function (t) { return t.readyState === "live"; }); }
+  function camUnpark() {
+    clearTimeout(camParkTimer);
+    if (camParked) camParked.getTracks().forEach(function (t) { t.stop(); });
+    camParked = null;
+  }
   async function ptCamera(r) {
     try {
-      camStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 30 } } });
+      if (camLive(camParked)) { clearTimeout(camParkTimer); camStream = camParked; camParked = null; }
+      else {
+        camUnpark();
+        camStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 30 } } });
+      }
     } catch (e) {
-      toast(e && e.name === "NotAllowedError" ? "Camera not allowed. Allow it in the browser's site settings, or choose photos from the gallery." : "The camera wouldn't start. Choose photos from the gallery instead.", true);
+      toast(e && e.name === "NotAllowedError"
+        ? (IS_IOS ? "Camera not allowed. Tap Allow when asked, or in Safari tap aA › Website Settings › Camera › Allow." : "Camera not allowed. Allow it in the browser's site settings, or choose photos from the gallery.")
+        : "The camera wouldn't start. Choose photos from the gallery instead.", true);
       return;
     }
     $("panel").classList.add("cam");
@@ -954,7 +971,11 @@
     return n + " photo" + (n === 1 ? "" : "s") + (n && pt.mode === "link" ? " · " + d + " uploaded" : "");
   }
   function camStop() {
-    if (camStream) camStream.getTracks().forEach(function (t) { t.stop(); });
+    if (camStream) {
+      if (camTorch) camLight(false).catch(function () {});
+      if (IS_IOS && camLive(camStream)) { camParked = camStream; clearTimeout(camParkTimer); camParkTimer = setTimeout(camUnpark, CAM_PARK_MS); }
+      else camStream.getTracks().forEach(function (t) { t.stop(); });
+    }
     camStream = null; camTorch = false; $("panel").classList.remove("cam");
   }
   // The picture on screen, saved at upload size in one go (no second squeeze).
