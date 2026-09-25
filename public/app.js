@@ -917,8 +917,51 @@
       if (pt !== cur) return;
     }
     cur.prepping = false;
+    // The copy starts once shooting's finished, so it's saved as one set.
+    if (!camStream) cur.items.forEach(function (y) { if (y.state === "local") bkQueue(cur.id, cur.token, y); });
     ptStore(); ptRefresh();
   }
+
+  // ── The copy kept for the app ──
+  // In the WhatsApp-chat way a copy of the photos uploads quietly in the
+  // background (same store as the link way, kept 30 days), so the car's panel
+  // can show them. It never holds up sending; a failed upload tries again.
+  var BK = [], bkActive = 0, BK_TRIES = 4;
+  function bkQueue(rowId, token, x) {
+    if (x.bk === "done" || x.bk === "wait" || x.bk === "up") return;
+    x.bk = "wait"; BK.push({ row: rowId, token: token, x: x }); bkPump();
+  }
+  function bkPump() {
+    while (bkActive < 3) {
+      var j = BK.filter(function (y) { return y.x.bk === "wait"; })[0]; if (!j) break;
+      j.x.bk = "up"; bkActive++; bkUpload(j);
+    }
+  }
+  async function bkUpload(j) {
+    var x = j.x;
+    try {
+      x.path = S.me.company_id + "/" + j.row + "/" + j.token + "/" + String(x.n).padStart(2, "0") + ".jpg";
+      var up = await sb.storage.from("pt-photos").upload(x.path, x.file, { contentType: x.file.type || "image/jpeg" });
+      x.bk = !up.error || /exist|duplicate/i.test(up.error.message || "") ? "done" : "fail";
+    } catch (e) { x.bk = "fail"; }
+    bkActive--;
+    if (x.bk === "fail") { x.tries = (x.tries || 0) + 1; if (x.tries < BK_TRIES) setTimeout(function () { if (x.bk === "fail") { x.bk = "wait"; bkPump(); } }, 5000 * x.tries); }
+    var mine = BK.filter(function (y) { return y.token === j.token; });
+    if (mine.length && mine.every(function (y) { return y.x.bk === "done" || (y.x.bk === "fail" && y.x.tries >= BK_TRIES); })) {
+      BK = BK.filter(function (y) { return y.token !== j.token; });
+      var paths = mine.filter(function (y) { return y.x.bk === "done"; }).map(function (y) { return y.x.path; });
+      if (paths.length) await sb.rpc("pt_link_save", { p_token: j.token, p_booking: j.row, p_paths: paths });
+      bkFinished(j.row);
+    }
+    bkPump();
+  }
+  // Everything for that car is up: forget the phone's copy once all are sent too.
+  async function bkFinished(rowId) {
+    if (pt && pt.id === rowId) return ptStore();
+    var rec = (await ptSaved()).filter(function (x) { return x.id === rowId; })[0];
+    if (rec && rec.sent >= (rec.blobs || []).length) ptForget(rowId);
+  }
+  function bkPending(p) { return p.items.some(function (x) { return x.state === "local" && x.bk !== "done"; }); }
   function ptBatch() {
     if (!pt) return null;
     var left = pt.items.slice(pt.sent || 0).filter(function (x) { return x.state === "local"; });
@@ -956,7 +999,8 @@
     }
     pt.sent = (pt.sent || 0) + batch.length;
     if (pt.sent < pt.items.length) { ptStore(); toast(pt.sent + " of " + pt.items.length + " sent. Now the next ones."); return openPt(r); }
-    ptForget(pt.id); ptClear();
+    if (bkPending(pt)) ptStore(); else ptForget(pt.id);
+    ptClear();
     toast(ptCaption(r) + ": all photos sent, PT done");
     $("panel").close();
   }
@@ -973,11 +1017,11 @@
   }
   async function ptStore() {
     if (!pt || pt.mode !== "photos") return;
-    try {
-      var db = await ptDb(), rec = { id: pt.id, reg: pt.reg, at: Date.now(), regSent: !!pt.regSent, sent: pt.sent || 0,
-        blobs: pt.items.filter(function (x) { return x.state === "local"; }).map(function (x) { return x.file; }) };
-      db.transaction("pt", "readwrite").objectStore("pt").put(rec);
-    } catch (e) {}
+    // Taken now, before anything can clear pt.
+    var keep = pt.items.filter(function (x) { return x.state === "local"; });
+    var rec = { id: pt.id, reg: pt.reg, at: Date.now(), regSent: !!pt.regSent, sent: pt.sent || 0, token: pt.token,
+      blobs: keep.map(function (x) { return x.file; }), bk: keep.map(function (x) { return x.bk === "done"; }) };
+    try { (await ptDb()).transaction("pt", "readwrite").objectStore("pt").put(rec); } catch (e) {}
   }
   async function ptForget(id) { try { (await ptDb()).transaction("pt", "readwrite").objectStore("pt").delete(id); } catch (e) {} }
   async function ptSaved() {
@@ -988,8 +1032,15 @@
   }
   function ptRestore(rec) {
     ptClear();
-    pt = { id: rec.id, reg: rec.reg, mode: "photos", token: ptToken(), items: [], saved: 0, sent: rec.sent || 0, regSent: !!rec.regSent };
-    (rec.blobs || []).forEach(function (b, i) { pt.items.push({ file: b, url: URL.createObjectURL(b), state: "local", n: i + 1, ready: true }); });
+    pt = { id: rec.id, reg: rec.reg, mode: "photos", token: rec.token || ptToken(), items: [], saved: 0, sent: rec.sent || 0, regSent: !!rec.regSent };
+    (rec.blobs || []).forEach(function (b, i) { pt.items.push({ file: b, url: URL.createObjectURL(b), state: "local", n: i + 1, ready: true, bk: (rec.bk || [])[i] ? "done" : undefined }); });
+    pt.items.forEach(function (x) { bkQueue(pt.id, pt.token, x); });
+  }
+  // All sent but the app's copy didn't finish uploading before a reload: finish it quietly.
+  function bkRestore(rec) {
+    var token = rec.token; if (!token) return ptForget(rec.id);
+    (rec.blobs || []).forEach(function (b, i) { bkQueue(rec.id, token, { file: b, n: i + 1, bk: (rec.bk || [])[i] ? "done" : undefined }); });
+    if (!BK.some(function (y) { return y.token === token; })) ptForget(rec.id);
   }
   // Tapping PT on a car: carry on where it left off, or straight into the camera.
   async function ptStart(r) {
@@ -1004,7 +1055,9 @@
   async function ptResume() {
     var list = await ptSaved();
     list.forEach(function (x) { if (Date.now() - x.at >= PT_KEEP_MS) ptForget(x.id); });
-    var rec = list.filter(function (x) { return Date.now() - x.at < PT_KEEP_MS && (x.blobs || []).length; })[0];
+    list = list.filter(function (x) { return Date.now() - x.at < PT_KEEP_MS && (x.blobs || []).length; });
+    list.filter(function (x) { return x.sent >= x.blobs.length; }).forEach(bkRestore);
+    var rec = list.filter(function (x) { return x.sent < x.blobs.length; })[0];
     var row = rec && S.rows.filter(function (x) { return x.id === rec.id; })[0];
     if (!row || pt || $("panel").open) return;
     ptRestore(rec); openPt(row);
@@ -1074,10 +1127,22 @@
     }
     if (extra) h += '<label>MARK AS</label><div class="pseg">' + extra + "</div>";
     if (drops) h += chargePanelHtml(r);
+    if (!drops) h += '<div id="ptPhotos"></div>';
     if (can("import")) h += '<button type="button" class="link rmcar" data-removecar>Remove this car (no show, cancelled)</button>';
     h += '<div class="pbtns"><button type="button" data-close>Close</button>' + (can("note") || can("flights") ? '<button type="button" class="save" data-savepanel>Save</button>' : "") + "</div>";
     $("panelBody").innerHTML = h;
     if (!$("panel").open) $("panel").showModal();
+    if (!drops) ptPhotosList(r);
+  }
+  // The car's PT photos (kept 30 days). View opens the same page PT gets.
+  async function ptPhotosList(r) {
+    var res = await sb.rpc("pt_photos_for", { p_booking: r.id });
+    var el = $("ptPhotos"); if (!el || panelRow !== r || res.error) return;
+    var sets = res.data || [];
+    if (!sets.length) { if (r.pt_at) el.innerHTML = '<label>PT PHOTOS</label><p class="hint">No copy of the photos in the app for this car.</p>'; return; }
+    el.innerHTML = "<label>PT PHOTOS</label>" + sets.map(function (x) {
+      return '<a class="ptset" href="/p/' + esc(x.token) + '" target="_blank" rel="noopener"><span><b>' + x.n + " photo" + (x.n === 1 ? "" : "s") + "</b> · " + esc(dayShort(x.at) + " " + hhmm(x.at)) + (x.by ? " · " + esc(x.by) : "") + "</span><i>View ›</i></a>";
+    }).join("");
   }
   $("panel").addEventListener("close", function () { camStop(); panelRow = null; quick = null; staffEdit = null; render(); });
   $("panel").addEventListener("click", function (e) {
@@ -1128,7 +1193,10 @@
       navigator.share({ text: ptMessage(r) }).then(function () { ptSent(r); }).catch(function () {});
       return;
     }
-    if (t.dataset.ptclear !== undefined) { if (pt) ptForget(pt.id); ptClear(); return openPt(r); }
+    if (t.dataset.ptclear !== undefined) {
+      if (pt) { var tk = pt.token; BK = BK.filter(function (y) { return y.token !== tk; }); ptForget(pt.id); }
+      ptClear(); return openPt(r);
+    }
     if (t.dataset.ptshare !== undefined) return ptShare(r, t);
     if (t.dataset.ptregshare !== undefined) {
       // No PT number in Settings: share the reg and pick the chat.
