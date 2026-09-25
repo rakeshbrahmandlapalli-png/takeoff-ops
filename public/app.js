@@ -329,7 +329,8 @@
     if (!S.offline) return;
     var me; try { me = await sb.rpc("me"); } catch (e) { me = { error: e }; }
     if (me && !me.error && me.data && me.data.id) {
-      try { await loadAppInner(true); toast("Back online. Board up to date."); } catch (e) { oopsLog(e); }
+      try { await loadAppInner(true); toast("Back online. Board up to date."); }
+      catch (e) { oopsLog(e); if (S.me) { S.offline = true; renderSync(); clearTimeout(S.reconnect); S.reconnect = setTimeout(reconnect, 20000); } }
       return;
     }
     if (me && me.error && isAuth(me.error)) { S.offline = false; S.me = null; teardown(); await sb.auth.signOut(); return showSignIn(); }
@@ -843,8 +844,8 @@
       (ready ? (num
           ? '<a class="btn brand ptgo" href="https://wa.me/' + esc(num) + "?text=" + encodeURIComponent(ptMessage(r)) + '" target="_blank" rel="noopener" data-ptlink>SEND TO PT ON WHATSAPP</a>'
           : '<button type="button" class="btn brand ptgo" data-ptlinkshare>SEND TO PT ON WHATSAPP</button>')
-        : n ? '<button type="button" class="btn brand ptgo" disabled data-keepoff>' + (ptCount("fail") ? "Some photos didn't upload" : "Uploading…") + "</button>" : "") +
-      (ptCount("fail") && !ptCount("wait") && !ptCount("up") ? '<button type="button" class="btn ghost ptgo" data-ptretry>Try again (' + ptCount("fail") + ")</button>" : "") +
+        : n ? '<button type="button" class="btn brand ptgo" disabled data-keepoff>' + (ptCount("fail") ? "Some photos didn't upload" : pt.saveFail ? "Link not saved yet" : "Uploading…") + "</button>" : "") +
+      ((ptCount("fail") || pt.saveFail) && !ptCount("wait") && !ptCount("up") ? '<button type="button" class="btn ghost ptgo" data-ptretry>Try again' + (ptCount("fail") ? " (" + ptCount("fail") + ")" : "") + "</button>" : "") +
       '<div class="pbtns"><button type="button" data-close>Close</button>' + (n ? '<button type="button" data-ptclear>Start again</button>' : "") + "</div>" +
       '<button type="button" class="link" data-ptmark>Tick PT without sending photos</button>';
     if (!$("panel").open) $("panel").showModal();
@@ -855,6 +856,7 @@
     var n = pt.items.length, d = ptCount("done"), f = ptCount("fail");
     if (ptReady()) return "✓ " + n + " photo" + (n === 1 ? "" : "s") + " uploaded. Tap Send, then Send again in WhatsApp.";
     if (f && d + f === n) return d + " of " + n + " uploaded. " + f + " didn't upload: check the signal and try again.";
+    if (pt.saveFail && d === n) return "✓ All " + n + " photos are up, but the link didn't save. Trying again… or tap Try again.";
     return "Uploading " + (d + 1 > n ? n : d + 1) + " of " + n + "… keep this screen open.";
   }
   // Update the thumbnails and the button in place while uploading, or redraw
@@ -963,7 +965,13 @@
     var paths = cur.items.filter(function (x) { return x.state === "done"; }).map(function (x) { return x.path; });
     var res = await sb.rpc("pt_link_save", { p_token: cur.token, p_booking: r.id, p_paths: paths });
     if (pt !== cur) return;
-    if (res.error) { toast("Couldn't make the link: " + res.error.message, true); return openPt(r); }
+    if (res.error) {
+      cur.saveFail = true;
+      toast("Couldn't save the link yet: " + (isDown(res) ? "no signal or the server is busy." : res.error.message), true);
+      setTimeout(function () { if (pt === cur && cur.saveFail) { cur.saveFail = false; ptSave(r, cur); } }, 8000);
+      return openPt(r);
+    }
+    cur.saveFail = false;
     cur.saved = paths.length;
     if (ptCount("fail")) { var f = cur.items.filter(function (x) { return x.state === "fail"; })[0]; if (f && f.err) toast("Upload failed: " + f.err, true); }
     ptRefresh();
@@ -1057,7 +1065,7 @@
       ptPump(r);
     }, "image/jpeg", PT_Q);
   }
-  function ptRetry(r) { pt.items.forEach(function (x) { if (x.state === "fail") x.state = "wait"; }); openPt(r); ptPump(r); }
+  function ptRetry(r) { pt.saveFail = false; pt.items.forEach(function (x) { if (x.state === "fail") x.state = "wait"; }); openPt(r); ptPump(r); }
   // WhatsApp is open with the message: PT is done.
   function ptSent(r) {
     r = S.rows.filter(function (x) { return x.id === r.id; })[0] || r;
@@ -1153,18 +1161,28 @@
     if (mine.length && mine.every(function (y) { return y.x.bk === "done" || (y.x.bk === "fail" && y.x.tries >= BK_TRIES); })) {
       BK = BK.filter(function (y) { return y.token !== j.token; });
       var paths = mine.filter(function (y) { return y.x.bk === "done"; }).map(function (y) { return y.x.path; });
-      if (paths.length) await sb.rpc("pt_link_save", { p_token: j.token, p_booking: j.row, p_paths: paths });
-      bkFinished(j.row);
+      bkSave(j.row, j.token, paths, paths.length === mine.length, 0);
     }
     bkPump();
   }
-  // Everything for that car is up: forget the phone's copy once all are sent too.
-  async function bkFinished(rowId) {
+  // The set is saved as one link; until that has worked the phone keeps its copy
+  // (tried again a few times, then again next time the app opens).
+  var BK_SAVED = {};
+  async function bkSave(rowId, token, paths, allUp, tries) {
+    if (paths.length) {
+      var res; try { res = await sb.rpc("pt_link_save", { p_token: token, p_booking: rowId, p_paths: paths }); } catch (e) { res = { error: e }; }
+      if (res.error) { if (tries < 5) setTimeout(function () { bkSave(rowId, token, paths, allUp, tries + 1); }, 5000 * Math.pow(2, tries)); return; }
+    }
+    if (allUp) BK_SAVED[token] = true;
+    bkFinished(rowId, allUp);
+  }
+  // Everything for that car is up and saved: forget the phone's copy once all are sent too.
+  async function bkFinished(rowId, allUp) {
     if (pt && pt.id === rowId) return ptStore();
     var rec = (await ptSaved()).filter(function (x) { return x.id === rowId; })[0];
-    if (rec && rec.sent >= (rec.blobs || []).length) ptForget(rowId);
+    if (allUp && rec && rec.sent >= (rec.blobs || []).length) ptForget(rowId);
   }
-  function bkPending(p) { return p.items.some(function (x) { return x.state === "local" && x.bk !== "done"; }); }
+  function bkPending(p) { return !BK_SAVED[p.token] || p.items.some(function (x) { return x.state === "local" && x.bk !== "done"; }); }
   function ptBatch() {
     if (!pt) return null;
     var left = pt.items.slice(pt.sent || 0).filter(function (x) { return x.state === "local"; });
