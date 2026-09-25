@@ -217,6 +217,9 @@ dialog.cam{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;
 dialog.cam #panelBody{height:100%;display:flex;flex-direction:column;padding:0;}
 .camview{position:relative;flex:1;min-height:0;background:#000;}
 .camview video{width:100%;height:100%;object-fit:contain;display:block;}
+.camring{position:absolute;width:64px;height:64px;margin:-32px 0 0 -32px;border:2px solid #fbbc04;border-radius:50%;opacity:0;pointer-events:none;}
+.camring.go{animation:camring .8s ease-out;}
+@keyframes camring{0%{opacity:1;transform:scale(1.3)}40%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1)}}
 .camflash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;}
 .camflash.go{animation:camflash .25s ease-out;}
 @keyframes camflash{from{opacity:.7}to{opacity:0}}

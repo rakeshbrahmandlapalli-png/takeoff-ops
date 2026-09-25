@@ -738,13 +738,13 @@
   }
   async function ptCamera(r) {
     try {
-      camStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 4096 }, height: { ideal: 3072 } } });
+      camStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 30 } } });
     } catch (e) {
       toast(e && e.name === "NotAllowedError" ? "Camera not allowed. Allow it in the browser's site settings, or tap \"Use the phone's camera\"." : "The camera wouldn't start. Tap \"Use the phone's camera\" below.", true);
       return;
     }
     $("panel").classList.add("cam");
-    $("panelBody").innerHTML = '<div class="camview"><video id="camVideo" autoplay playsinline muted></video><div class="camflash" id="camFlash"></div><button type="button" class="camtorch hidden" id="camTorch" data-camtorch aria-pressed="false">⚡ FLASH OFF</button></div>' +
+    $("panelBody").innerHTML = '<div class="camview"><video id="camVideo" autoplay playsinline muted></video><div class="camflash" id="camFlash"></div><div class="camring" id="camRing"></div><button type="button" class="camtorch hidden" id="camTorch" data-camtorch aria-pressed="false">⚡ FLASH OFF</button></div>' +
       '<div class="cambar"><span class="camcount" id="camCount">' + camCountText() + '</span><button type="button" class="shutter" data-shutter aria-label="Take photo"></button><button type="button" class="camdone" data-camdone id="camDone">' + camDoneText() + "</button></div>";
     $("camVideo").srcObject = camStream;
     // Keep the picture sharp as the phone moves round the car.
@@ -753,10 +753,12 @@
     // The phone's light, for dark corners of the terminal. Stays on while shooting.
     camTorch = false;
     if (caps.torch) show("camTorch", true);
-    // A real photo from the camera (full size, the phone's own processing) where the
-    // browser can take one; otherwise a frame from the preview.
+    // Speed first: a photo is the live picture grabbed instantly, which at Full HD
+    // or more is sharp. Only a phone whose live picture is small uses the camera's
+    // still photo, which is sharper but takes a second or two each time.
     camShot = null;
-    if (track && window.ImageCapture) {
+    var sv = track && track.getSettings ? track.getSettings() : {};
+    if (track && window.ImageCapture && Math.min(sv.width || 0, sv.height || 0) < 1080) {
       try {
         var ic = new ImageCapture(track), pc = await ic.getPhotoCapabilities().catch(function () { return null; });
         var opts = pc && pc.imageWidth && pc.imageWidth.max ? { imageWidth: pc.imageWidth.max, imageHeight: pc.imageHeight.max } : {};
@@ -765,6 +767,17 @@
       } catch (e) { camShot = null; }
     }
   }
+  // Tap the picture to focus on that spot (where the phone allows it).
+  function camFocus(e) {
+    var v = $("camVideo"), track = camStream && camStream.getVideoTracks()[0]; if (!v || !track) return;
+    var caps = track.getCapabilities ? track.getCapabilities() : {}; if (!caps.pointsOfInterest && !caps.focusMode) return;
+    var b = v.getBoundingClientRect(), x = (e.clientX - b.left) / b.width, y = (e.clientY - b.top) / b.height;
+    var c = { pointsOfInterest: [{ x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) }] };
+    if (caps.focusMode && caps.focusMode.indexOf("continuous") !== -1) c.focusMode = "continuous";
+    track.applyConstraints({ advanced: [c] }).catch(function () {});
+    var ring = $("camRing"); if (ring) { ring.style.left = (e.clientX - b.left) + "px"; ring.style.top = (e.clientY - b.top) + "px"; ring.classList.remove("go"); void ring.offsetWidth; ring.classList.add("go"); }
+  }
+  $("panel").addEventListener("pointerdown", function (e) { if (e.target && e.target.id === "camVideo") camFocus(e); });
   function camDoneText() { return pt && pt.files.length ? "Send ›" : "Done"; }
   function camCountText() { var n = pt ? pt.files.length : 0; return n + " photo" + (n === 1 ? "" : "s"); }
   function camStop() {
@@ -795,7 +808,7 @@
     var v = $("camVideo"); if (!v || !v.videoWidth) return;
     var c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight;
     c.getContext("2d").drawImage(v, 0, 0);
-    c.toBlob(function (b) { ptKeep(r, b); }, "image/jpeg", 0.95);
+    c.toBlob(function (b) { ptKeep(r, b); }, "image/jpeg", 0.92);
   }
   async function ptShoot(r) {
     var v = $("camVideo"); if (!v || !v.videoWidth || !pt || camBusy) return;
