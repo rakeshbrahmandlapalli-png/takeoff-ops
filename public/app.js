@@ -55,6 +55,15 @@
   function isNetwork(err) { return !navigator.onLine || /Failed to fetch|NetworkError|Load failed|AbortError|aborted|network/i.test(String((err && (err.message || err.name)) || err)); }
   function isAuth(err) { return !!err && (err.status === 401 || err.code === "PGRST301" || /JWT expired|invalid jwt|refresh token|Auth session missing/i.test(String(err.message || ""))); }
 
+  // The app can't do anything without its database library: say so and offer
+  // a reload rather than a blank page.
+  if (!window.supabase) {
+    only("boot");
+    $("boot").innerHTML = "The app didn't load properly. Check your signal.<br><br>";
+    var reload0 = document.createElement("button"); reload0.className = "btn"; reload0.textContent = "Try again";
+    reload0.onclick = function () { location.reload(); }; $("boot").appendChild(reload0);
+    return;
+  }
   var sb = window.supabase.createClient(CFG.url, CFG.key, { global: { fetch: timedFetch } });
 
   async function callFunction(name, body, withSession) {
@@ -169,6 +178,17 @@
   // ── loading ───────────────────────────────
   var channel = null;
   async function loadApp() {
+    try { await loadAppInner(); } catch (err) { oopsLog(err); bootTrouble(); }
+  }
+  // Loading went wrong somewhere: never a blank page, always a way back in.
+  function bootTrouble() {
+    if (S.me && !$("app").classList.contains("hidden")) return;
+    only("boot");
+    $("boot").innerHTML = "Something went wrong while loading. Check your signal and try again.<br><br>";
+    var again = document.createElement("button"); again.className = "btn"; again.textContent = "Try again";
+    again.onclick = function () { location.reload(); }; $("boot").appendChild(again);
+  }
+  async function loadAppInner() {
     only("boot"); $("boot").textContent = "Loading…";
     var me = await sb.rpc("me");
     if (me.error) {
@@ -375,9 +395,16 @@
 
   function render() {
     if (!S.me) return;
-    renderChrome();
+    try { renderChrome(); } catch (err) { oopsLog(err); }
     var fn = { clients: renderClients, board: renderBoard, flights: renderFlights, summary: renderSummary, import: renderImport, staff: renderStaff, settings: renderSettings, archive: renderArchive, me: renderMe }[S.view] || renderBoard;
-    $("main").innerHTML = fn();
+    var html;
+    // One screen going wrong never takes the app down: it says so and offers a way out.
+    try { html = fn(); } catch (err) {
+      oopsLog(err);
+      html = '<div class="msg">This screen couldn\'t be shown just now.<br><br>' + (S.view !== "board" ? '<button type="button" class="btn brand" data-view="board">Back to the board</button> ' : "") +
+        '<button type="button" class="btn ghost" data-reload>Reload the app</button></div>';
+    }
+    $("main").innerHTML = html;
     if (flashId) { var el = document.querySelector('[data-id="' + flashId + '"]'); if (el) { el.classList.add("flash"); setTimeout(function () { el.classList.remove("flash"); }, 1500); } flashId = null; }
   }
   function go(view) { if (S.platform && view !== "me") view = "clients"; S.view = view; S.settingsDraft = null; if (view === "summary") S.activity = null; if ($("menu").open) $("menu").close(); render(); window.scrollTo(0, 0); }
@@ -725,12 +752,12 @@
     $("panelBody").innerHTML = '<h2 id="panelTitle">PT · ' + esc(r.reg || "NO REG") + (r.num ? " <small>#" + r.num + "</small>" : "") + "</h2>" +
       '<button type="button" class="btn ' + (n ? "ghost" : "brand") + ' ptgo" data-ptcam>' + (n ? "+ TAKE MORE" : "TAKE PHOTOS") + "</button>" +
       '<label class="btn ghost ptpick">' + pick + (n ? "+ Add from gallery" : "Choose from gallery") + "</label>" +
-      (n ? '<div class="ptthumbs" id="ptThumbs">' + pt.items.map(function (x, i) { return '<img src="' + x.url + '" alt="" data-pti="' + i + '" class="' + x.state + '">'; }).join("") + "</div>" : "") +
+      (n ? '<div class="ptthumbs" id="ptThumbs">' + pt.items.map(function (x, i) { return ptImg(x, ' data-pti="' + i + '" class="' + x.state + '"'); }).join("") + "</div>" : "") +
       '<p class="hint" id="ptStatus">' + ptStatusText() + "</p>" +
       (ready ? (num
           ? '<a class="btn brand ptgo" href="https://wa.me/' + esc(num) + "?text=" + encodeURIComponent(ptMessage(r)) + '" target="_blank" rel="noopener" data-ptlink>SEND TO PT ON WHATSAPP</a>'
           : '<button type="button" class="btn brand ptgo" data-ptlinkshare>SEND TO PT ON WHATSAPP</button>')
-        : n ? '<button type="button" class="btn brand ptgo" disabled>' + (ptCount("fail") ? "Some photos didn't upload" : "Uploading…") + "</button>" : "") +
+        : n ? '<button type="button" class="btn brand ptgo" disabled data-keepoff>' + (ptCount("fail") ? "Some photos didn't upload" : "Uploading…") + "</button>" : "") +
       (ptCount("fail") && !ptCount("wait") && !ptCount("up") ? '<button type="button" class="btn ghost ptgo" data-ptretry>Try again (' + ptCount("fail") + ")</button>" : "") +
       '<div class="pbtns"><button type="button" data-close>Close</button>' + (n ? '<button type="button" data-ptclear>Start again</button>' : "") + "</div>" +
       '<button type="button" class="link" data-ptmark>Tick PT without sending photos</button>';
@@ -757,7 +784,7 @@
   function ptAdd(input) {
     var r = panelRow; if (!pt || !r) return;
     Array.prototype.forEach.call(input.files || [], function (f) {
-      pt.items.push({ file: f, url: URL.createObjectURL(f), state: pt.mode === "photos" ? "prep" : "wait", n: pt.items.length + 1 });
+      pt.items.push({ file: f, url: "", state: pt.mode === "photos" ? "prep" : "wait", n: pt.items.length + 1 });
     });
     input.value = "";
     openPt(r); ptPump(r);
@@ -786,7 +813,9 @@
   }
   async function ptUpload(r, cur, x) {
     try {
-      var b = x.ready ? x.file : await ptShrink(x.file), ext = b.type === "image/png" ? "png" : b.type === "image/jpeg" ? "jpg" : (x.file.name.split(".").pop() || "jpg").toLowerCase();
+      var b = x.ready ? x.file : await ptShrink(x.file);
+      if (!x.url) { x.url = await ptThumbOf(b); var im0 = $("panelBody").querySelector('[data-pti="' + (x.n - 1) + '"]'); if (im0 && x.url) im0.src = x.url; }
+      var ext = b.type === "image/png" ? "png" : b.type === "image/jpeg" ? "jpg" : (x.file.name.split(".").pop() || "jpg").toLowerCase();
       x.path = S.me.company_id + "/" + r.id + "/" + cur.token + "/" + String(x.n).padStart(2, "0") + "." + ext;
       var up = await sb.storage.from("pt-photos").upload(x.path, b, { contentType: b.type || "image/jpeg" });
       // "Already exists" on a retry means the first try got there after all.
@@ -864,10 +893,10 @@
     var k = Math.min(1, PT_MAX / Math.max(v.videoWidth, v.videoHeight));
     var c = document.createElement("canvas"); c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
     c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
-    var cur = pt;
+    var cur = pt, thumb = ptThumb(c, c.width, c.height);
     c.toBlob(function (b) {
       if (!b || pt !== cur) return;
-      cur.items.push({ file: b, url: URL.createObjectURL(b), state: cur.mode === "photos" ? "local" : "wait", n: cur.items.length + 1, ready: true });
+      cur.items.push({ file: b, url: thumb, state: cur.mode === "photos" ? "local" : "wait", n: cur.items.length + 1, ready: true });
       var el = $("camCount"); if (el) el.textContent = camCountText();
       ptPump(r);
     }, "image/jpeg", PT_Q);
@@ -880,7 +909,22 @@
     toast(ptCaption(r) + ": PT link sent, PT ticked");
     setTimeout(function () { ptClear(); if ($("panel").open) $("panel").close(); }, 300);
   }
-  function ptClear() { if (pt) pt.items.forEach(function (x) { URL.revokeObjectURL(x.url); }); pt = null; }
+  function ptClear() { pt = null; }
+  // Small previews (240 px) for the tiles: fifty full-size photos on screen
+  // would need close to a gigabyte and cheaper phones would close the app.
+  var PT_THUMB = 240;
+  function ptThumb(src, w, h) {
+    try {
+      var k = PT_THUMB / Math.max(w, h), c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+      c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+      return c.toDataURL("image/jpeg", 0.7);
+    } catch (e) { return ""; }
+  }
+  async function ptThumbOf(blob) {
+    try { var im = await createImageBitmap(blob), t = ptThumb(im, im.width, im.height); if (im.close) im.close(); return t; } catch (e) { return ""; }
+  }
+  function ptImg(x, attrs) { return "<img" + (x.url ? ' src="' + x.url + '"' : "") + ' alt="" decoding="async"' + (attrs || "") + ">"; }
 
   // ── PT the WhatsApp-photos way ──
   var PT_BATCH = 10;
@@ -896,7 +940,7 @@
       (sent ? "" : '<button type="button" class="btn ' + (n ? "ghost" : "brand") + ' ptgo" data-ptcam>' + (n ? "+ TAKE MORE" : "TAKE PHOTOS") + "</button>" +
         '<label class="btn ghost ptpick">' + pick + (n ? "+ Add from gallery" : "Choose from gallery") + "</label>") +
       (n ? '<div class="ptsteps"><span class="' + (pt.regSent ? "ok" : "") + '">' + (pt.regSent ? "✓" : "1") + " Reg</span><span class=\"" + (sent && sent >= n ? "ok" : "") + '">' + (sent >= n && n ? "✓" : "2") + " Photos " + sent + "/" + n + "</span></div>" : "") +
-      (n ? '<div class="ptthumbs">' + pt.items.map(function (x, i) { return '<img src="' + x.url + '" alt=""' + (i < sent ? ' class="sent"' : x.state === "prep" ? ' class="wait"' : "") + ">"; }).join("") + "</div>" : "") +
+      (n ? '<div class="ptthumbs">' + pt.items.map(function (x, i) { return ptImg(x, i < sent ? ' class="sent"' : x.state === "prep" ? ' class="wait"' : ""); }).join("") + "</div>" : "") +
       '<p class="hint">' + (!n ? "" : prep ? "Getting " + prep + " photo" + (prep === 1 ? "" : "s") + " ready…"
         : !pt.regSent ? "Opens the PT chat with " + esc(reg) + " typed. Tap Send in WhatsApp, then come back here."
         : sent ? "Keep going: tap the button, pick the PT chat (top of the list), Send."
@@ -913,7 +957,7 @@
     cur.prepping = true;
     var x;
     while ((x = cur.items.filter(function (y) { return y.state === "prep"; })[0])) {
-      x.file = await ptShrink(x.file); x.state = "local";
+      x.file = await ptShrink(x.file); x.url = x.url || await ptThumbOf(x.file); x.state = "local";
       if (pt !== cur) return;
     }
     cur.prepping = false;
@@ -927,9 +971,13 @@
   // background (same store as the link way, kept 30 days), so the car's panel
   // can show them. It never holds up sending; a failed upload tries again.
   var BK = [], bkActive = 0, BK_TRIES = 4;
+  // Photos already up (before a reload) join the set too, so it's saved whole.
   function bkQueue(rowId, token, x) {
-    if (x.bk === "done" || x.bk === "wait" || x.bk === "up") return;
-    x.bk = "wait"; BK.push({ row: rowId, token: token, x: x }); bkPump();
+    if (x.queued) return;
+    x.queued = true;
+    x.path = S.me.company_id + "/" + rowId + "/" + token + "/" + String(x.n).padStart(2, "0") + ".jpg";
+    if (x.bk !== "done") x.bk = "wait";
+    BK.push({ row: rowId, token: token, x: x }); bkPump();
   }
   function bkPump() {
     while (bkActive < 3) {
@@ -940,7 +988,6 @@
   async function bkUpload(j) {
     var x = j.x;
     try {
-      x.path = S.me.company_id + "/" + j.row + "/" + j.token + "/" + String(x.n).padStart(2, "0") + ".jpg";
       var up = await sb.storage.from("pt-photos").upload(x.path, x.file, { contentType: x.file.type || "image/jpeg" });
       x.bk = !up.error || /exist|duplicate/i.test(up.error.message || "") ? "done" : "fail";
     } catch (e) { x.bk = "fail"; }
@@ -1020,7 +1067,7 @@
     // Taken now, before anything can clear pt.
     var keep = pt.items.filter(function (x) { return x.state === "local"; });
     var rec = { id: pt.id, reg: pt.reg, at: Date.now(), regSent: !!pt.regSent, sent: pt.sent || 0, token: pt.token,
-      blobs: keep.map(function (x) { return x.file; }), bk: keep.map(function (x) { return x.bk === "done"; }) };
+      blobs: keep.map(function (x) { return x.file; }), thumbs: keep.map(function (x) { return x.url || ""; }), bk: keep.map(function (x) { return x.bk === "done"; }) };
     try { (await ptDb()).transaction("pt", "readwrite").objectStore("pt").put(rec); } catch (e) {}
   }
   async function ptForget(id) { try { (await ptDb()).transaction("pt", "readwrite").objectStore("pt").delete(id); } catch (e) {} }
@@ -1033,14 +1080,20 @@
   function ptRestore(rec) {
     ptClear();
     pt = { id: rec.id, reg: rec.reg, mode: "photos", token: rec.token || ptToken(), items: [], saved: 0, sent: rec.sent || 0, regSent: !!rec.regSent };
-    (rec.blobs || []).forEach(function (b, i) { pt.items.push({ file: b, url: URL.createObjectURL(b), state: "local", n: i + 1, ready: true, bk: (rec.bk || [])[i] ? "done" : undefined }); });
+    (rec.blobs || []).forEach(function (b, i) { pt.items.push({ file: b, url: (rec.thumbs || [])[i] || "", state: "local", n: i + 1, ready: true, bk: (rec.bk || [])[i] ? "done" : undefined }); });
     pt.items.forEach(function (x) { bkQueue(pt.id, pt.token, x); });
   }
   // All sent but the app's copy didn't finish uploading before a reload: finish it quietly.
   function bkRestore(rec) {
     var token = rec.token; if (!token) return ptForget(rec.id);
-    (rec.blobs || []).forEach(function (b, i) { bkQueue(rec.id, token, { file: b, n: i + 1, bk: (rec.bk || [])[i] ? "done" : undefined }); });
-    if (!BK.some(function (y) { return y.token === token; })) ptForget(rec.id);
+    var items = (rec.blobs || []).map(function (b, i) { return { file: b, n: i + 1, bk: (rec.bk || [])[i] ? "done" : undefined }; });
+    // All up already, but maybe not saved as a set before the reload: save it (saving twice is harmless).
+    if (items.every(function (x) { return x.bk === "done"; })) {
+      items.forEach(function (x) { x.path = S.me.company_id + "/" + rec.id + "/" + token + "/" + String(x.n).padStart(2, "0") + ".jpg"; });
+      sb.rpc("pt_link_save", { p_token: token, p_booking: rec.id, p_paths: items.map(function (x) { return x.path; }) }).then(function (res) { if (!res.error) ptForget(rec.id); });
+      return;
+    }
+    items.forEach(function (x) { bkQueue(rec.id, token, x); });
   }
   // Tapping PT on a car: carry on where it left off, or straight into the camera.
   async function ptStart(r) {
@@ -2413,7 +2466,33 @@
   // A personal link opened while this page is already open only changes the hash.
   window.addEventListener("hashchange", function () { if (/^#t=/.test(location.hash) || /^#setup/.test(location.hash)) location.reload(); });
 
+  // ── never a dead screen ──
+  // Anything that goes wrong unexpectedly is noted, the person gets a short
+  // message (not more than one every few seconds), and the screen is redrawn
+  // from what the app knows, so buttons work again. Signal trouble has its own
+  // messages and isn't repeated here.
+  var lastOops = 0;
+  function oopsLog(err) {
+    var m = String((err && (err.message || err.reason)) || err || "").slice(0, 300);
+    try { console.error(err); } catch (e) {}
+    try { var list = JSON.parse(localStorage.getItem("takeoff_errors") || "[]"); list.push({ at: new Date().toISOString(), view: S.view, m: m }); localStorage.setItem("takeoff_errors", JSON.stringify(list.slice(-30))); } catch (e) {}
+    return m;
+  }
+  function oops(err) {
+    if (!err) return;
+    var m = oopsLog(err);
+    if (isNetwork({ message: m }) || /ResizeObserver|Script error/i.test(m)) return;
+    if (Date.now() - lastOops > 8000) { lastOops = Date.now(); try { toast("That didn't work. Try again.", true); } catch (e) {} }
+    try {
+      $("panelBody").querySelectorAll("button[disabled]").forEach(function (b) { if (!b.closest("[data-keepoff]")) b.disabled = false; });
+      if (S.me && !$("panel").open) render();
+    } catch (e) {}
+  }
+  window.addEventListener("error", function (e) { if (e.error || e.message) oops(e.error || e.message); });
+  window.addEventListener("unhandledrejection", function (e) { oops(e.reason); });
+
   document.addEventListener("click", async function (e) {
+    if (e.target.closest("[data-reload]")) return location.reload();
     // The second line of a row opens the car too, not only the reg.
     var opener = e.target.closest("[data-addflight]") ? null : e.target.closest("div[data-open]");
     if (opener && S.me && !$("panel").open) { var or = rowOf(opener); if (or) return openPanel(or); }
@@ -2575,9 +2654,9 @@
   setInterval(function () {
     if (!S.me) return;
     $("clock").textContent = londonParts(new Date()).time;
-    if (S.view === "board" && !$("panel").open && !yardOpen() && document.activeElement !== $("q")) $("main").innerHTML = renderBoard();
+    if (S.view === "board" && !$("panel").open && !yardOpen() && document.activeElement !== $("q")) render();
   }, 60000);
 
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("/sw.js").catch(function () {});
-  start();
+  start().catch(function (err) { oopsLog(err); bootTrouble(); });
 })();

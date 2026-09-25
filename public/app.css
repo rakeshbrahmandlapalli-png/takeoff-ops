@@ -230,7 +230,7 @@ dialog.cam #panelBody{height:100%;display:flex;flex-direction:column;padding:0;}
 .camdone{justify-self:end;height:44px;padding:0 18px;border:0;border-radius:7px;background:#fff;color:#000;font-weight:700;font-size:15px;}
 dialog.cam{width:100vw!important;max-width:100vw!important;height:100dvh!important;max-height:100dvh!important;margin:0!important;padding:0!important;border-radius:0!important;}
 .ptthumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px;}
-.ptthumbs img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;border:1px solid #dadce0;transition:opacity .2s;}
+.ptthumbs img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;border:1px solid #dadce0;background:#e8eaed;transition:opacity .2s;}
 .ptthumbs img.sent{opacity:.3;}
 .ptset{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;padding:0 12px;margin-top:6px;border:1px solid #dadce0;border-radius:7px;background:#fff;color:#202124;text-decoration:none;font-size:14px;}
 .ptset i{font-style:normal;font-weight:700;color:#1155cc;}
