@@ -533,7 +533,7 @@
   }
   function renderSheet() {
     var sh = sheet();
-    if (!sh) return '<div class="msg">No day sheets yet.' + (can("import") ? ' Tap the logo, then <b>Import</b>, to create one from the booking site\'s download.' : " The office will import today's bookings.") + "</div>";
+    if (!sh) return '<div class="msg">No day sheets yet.' + (can("import") ? ' Open <b>☰ → Import</b> to create one from the booking site\'s download.' : " The office will import today's bookings.") + "</div>";
     var rows = visibleRows();
     var groups;
     if (sh.kind === "picks") groups = [{ title: "", cls: "", rows: rows }];
@@ -1500,14 +1500,6 @@
   }
 
   var R = window.TakeoffReader;
-  // Drag the downloads straight onto the import page (office computer).
-  ["dragover", "drop"].forEach(function (ev) {
-    document.addEventListener(ev, function (e) {
-      if (S.view !== "import" || !S.imp || S.imp.stage === "preview" || !e.dataTransfer) return;
-      e.preventDefault();
-      if (ev === "drop") addImportFiles(e.dataTransfer.files);
-    });
-  });
   function newImport(kind) { return { kind: kind || "drops", excelFile: null, pdfFile: null, stage: "pick", error: "", cutoff: kind === "picks" ? "00:00" : (S.company.drops_day_end || "06:00").slice(0, 5) }; }
   function shiftKey(dt, cutoff) {
     if (!dt) return "";
@@ -1523,10 +1515,7 @@
       h += '<div class="steps">' + dropZone("excel", "1. Bookings", I.kind === "drops" ? "The booking list covering two days, e.g. 17th to 18th, exactly as downloaded. Excel or a Joblist PDF." : "The booking list for the day, exactly as downloaded. Excel or a Joblist PDF.", I.excelFile) +
         (I.kind === "drops" && !joblist ? dropZone("pdf", "2. Flight numbers (PDF)", "Return Report PDF for the same days. Not needed with a Joblist PDF, which already carries the flights.", I.pdfFile) : "") + "</div>" +
         (I.error ? '<div class="alert" role="alert">' + esc(I.error) + "</div>" : "") +
-        (I.stage === "reading" ? '<p class="note imphint">Reading…</p>'
-          : I.excelFile && !importReady(I) ? '<p class="note imphint">Now add the Return Report PDF for the flight numbers. It reads by itself once it\'s in.</p>'
-          : !I.excelFile ? '<p class="note imphint">Tip: pick the bookings file and the flights PDF together, or drag them onto this page. It reads by itself.</p>' : "") +
-        '<div class="row-actions"><button type="button" class="btn ' + (importReady(I) ? "brand" : "ghost") + '" data-read' + (I.excelFile && I.stage !== "reading" ? "" : " disabled") + ">" + (I.stage === "reading" ? "Reading…" : importReady(I) ? "Read files" : "Read without flight numbers") + "</button></div>";
+        '<div class="row-actions"><button type="button" class="btn brand" data-read' + (I.excelFile && I.stage !== "reading" ? "" : " disabled") + ">" + (I.stage === "reading" ? "Reading…" : "Read files") + "</button></div>";
       return h;
     }
     var P = I.preview, miss = P.rows.filter(function (r) { return I.kind === "drops" && !r.flight; }).length;
@@ -1548,29 +1537,7 @@
   }
   function dropZone(key, title, text, file) {
     return '<div class="drop' + (file ? " filled" : "") + '"><strong>' + esc(title) + '</strong><p class="note">' + (file ? "✓ " + esc(file.name) : esc(text)) + "</p>" +
-      "<label>" + (file ? "Choose another" : key === "pdf" ? "Choose file" : "Choose files") + '<input type="file" data-file="' + key + '"' + (key === "pdf" ? "" : " multiple") + ' accept="' + (key === "pdf" ? ".pdf" : ".xls,.xlsx,.csv,.txt,.pdf") + '"></label></div>';
-  }
-  // Everything needed to read: the booking list, plus the flights PDF for a DROPS
-  // spreadsheet (a Joblist PDF already carries the flights).
-  function isPdf(f) { return !!f && /\.pdf$/i.test(f.name || ""); }
-  function importReady(I) { return !!I.excelFile && (I.kind === "picks" || isPdf(I.excelFile) || !!I.pdfFile); }
-  // Files in any order, one at a time or all together, picked or dragged in:
-  // a spreadsheet is the booking list; a PDF next to a spreadsheet is the flights
-  // PDF; a PDF on its own is a Joblist. Reads by itself once everything is in.
-  function addImportFiles(list, key) {
-    var I = S.imp; if (!I || I.stage === "preview" || I.stage === "reading") return;
-    var files = Array.prototype.slice.call(list || []); if (!files.length) return;
-    I.error = "";
-    if (key === "pdf") I.pdfFile = files[0];
-    else {
-      var sheets = files.filter(function (f) { return !isPdf(f); }), pdfs = files.filter(isPdf);
-      if (sheets.length) { I.excelFile = sheets[0]; if (pdfs.length) I.pdfFile = pdfs[0]; }
-      else if (I.excelFile && !isPdf(I.excelFile) && key !== "excel") I.pdfFile = pdfs[0];
-      else if (pdfs.length > 1) { I.error = "Two PDFs and no spreadsheet: choose the Excel booking list with the flights PDF, or just the one Joblist PDF."; return render(); }
-      else { I.excelFile = pdfs[0]; I.pdfFile = null; }
-    }
-    if (importReady(I)) return readImport();
-    render();
+      "<label>" + (file ? "Choose another" : "Choose file") + '<input type="file" data-file="' + key + '" accept="' + (key === "pdf" ? ".pdf" : ".xls,.xlsx,.csv,.txt,.pdf") + '"></label></div>';
   }
   async function readImport() {
     var I = S.imp; I.stage = "reading"; I.error = ""; render();
@@ -1581,10 +1548,9 @@
       // office never has to know which is which.
       var isJoblist = /\.pdf$/i.test(I.excelFile.name || "");
       var xl = isJoblist ? await R.readJoblistPdf(I.excelFile) : await R.readExcel(I.excelFile);
-      // The Joblist says which it is, so follow the file rather than the switch.
       if (isJoblist && xl.kind && xl.kind !== I.kind) {
-        I.kind = xl.kind; I.cutoff = newImport(xl.kind).cutoff;
-        toast("That's a " + xl.kind.toUpperCase() + " file, so it's going in as " + xl.kind.toUpperCase() + ".");
+        throw new Error("That is a " + xl.kind.toUpperCase() + " sheet, but " + I.kind.toUpperCase() +
+          " is selected above. Switch it, or choose the other file.");
       }
       if (!isJoblist && I.kind === "drops" && I.pdfFile) R.matchFlights(xl.rows, await R.readPdf(I.pdfFile), "flightIn");
       I.real = { all: xl.rows };
@@ -2249,12 +2215,7 @@
     if (r && t.dataset.act) return tapDrop(r, t.dataset.act);
     if (r && t.dataset.pick) return tapPick(r, "intake", t.dataset.pick);
     if (r && t.dataset.pt !== undefined) return r.pt_at ? tapPick(r, "pt") : openPt(r);
-    if (t.dataset.impkind) {
-      // Switching keeps the files already chosen.
-      var was = S.imp || {}; S.imp = newImport(t.dataset.impkind);
-      if (was.stage !== "preview") { S.imp.excelFile = was.excelFile || null; S.imp.pdfFile = was.pdfFile || null; if (importReady(S.imp)) return readImport(); }
-      render(); return;
-    }
+    if (t.dataset.impkind) { S.imp = newImport(t.dataset.impkind); render(); return; }
     if (t.dataset.read !== undefined) return readImport();
     if (t.dataset.restart !== undefined) { S.imp = newImport(S.imp.kind); render(); return; }
     if (t.dataset.create !== undefined) return createSheet();
@@ -2307,7 +2268,7 @@
       return;
     }
     if (t.dataset.ptfile !== undefined) return ptAdd(t);
-    if (t.dataset.file) { var fl = t.files; addImportFiles(fl, t.dataset.file); t.value = ""; return; }
+    if (t.dataset.file) { var f = t.files && t.files[0]; if (!f) return; S.imp[t.dataset.file + "File"] = f; S.imp.error = ""; render(); return; }
     if (t.dataset.alertpref !== undefined) {
       var P = Object.assign({ drops: true, picks: true, flights: true }, S.notify.prefs); P[t.dataset.alertpref] = t.checked;
       var pr = await sb.rpc("set_alert_prefs", { p_drops: P.drops !== false, p_picks: P.picks !== false, p_flights: P.flights !== false });
