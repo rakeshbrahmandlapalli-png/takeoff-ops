@@ -502,6 +502,8 @@
   // needed two hours later, so a live or expected time beats the timetable.
   function orderAt(r) {
     if (r.kind === "picks") return r.drop_at || "9";
+    // An early return is needed from when they rang, not their booked day.
+    if (r.early) return r.est_at || r.called_at || r.early_at || "9";
     return r.est_at || r.sched_at || r.return_at || r.called_at || "9";
   }
   function yardOf(r) { return r.yard || ""; }
@@ -741,19 +743,21 @@
     else if (r.cleared_at) cls = " done";
     else if (over) cls = " ovst";
     else if (r.called_at) { var w = minsSince(r.called_at); cls = w > LATE_MINS ? " late" : w > WARN_MINS ? " warn" : " called"; }
-    var booked = r.sched_time || hhmm(r.return_at) || "—";
+    // An early return shows no booked time here (it was for another day): the EARLY tag says when.
+    var booked = r.early ? r.sched_time : (r.sched_time || hhmm(r.return_at) || "—");
     var eta = canc ? "" : r.est_time;
     return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' +
       '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" + yardChip(r) +
       (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + '<span class="pin">' + esc(r.name) + "</span></div>" +
       '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(makeOnly(r.make)) + "</span> · " : "") +
       (r.flight ? esc(r.flight) : can("flights") ? '<button type="button" class="addflight" data-addflight>+ FLIGHT</button>' : "—") + "</span>" +
-      '<span class="l2b"> · ' + esc(booked) +
+      '<span class="l2b">' + (booked ? " · " + esc(booked) : "") +
       (eta ? ' &rarr; <span class="eta' + (eta === "DELAY" ? " dly" : "") + (r.flight_status === "expected" ? " exp" : "") + '">' + esc(eta) + "</span>" : "") +
       (r.flight_status === "landed" ? ' <span class="tag ld">LANDED</span>' : "") +
       (flightToCheck(r) ? ' · <span class="tag ck">CHECK FLIGHT NO.</span>' : "") +
       (canc ? ' · <span class="tag cx">CANCELLED</span>' : "") +
       (over ? ' · <span class="tag ov">OVERSTAY</span>' : "") +
+      (r.early ? ' · <span class="tag ea">EARLY · was ' + esc(r.return_at ? dayWord(londonParts(new Date(r.return_at)).key) + " " + hhmm(r.return_at) : "later") + "</span>" : "") +
       (cmpl ? ' · <span class="tag cm">COMPLAINT</span>' : "") + chargeTag(r) + "</span></div>" + noteLine(r) + "</div>" +
       '<div class="acts">' +
       actBtn(r, 'data-act="sent"', "s", "SENT", !!r.sent_at, r.sent_at, can("sent"), r.sent_by) +
@@ -1290,6 +1294,32 @@
     if (/^07\d{9}$/.test(d)) return d.slice(0, 5) + " " + d.slice(5);
     return firstPhone(p) || String(p);
   }
+  // ── early returns (database part 29) ──
+  // Booked back on a later day but coming back tonight: the car moves onto the
+  // sheet for the shift running now, marked EARLY. Undo puts it back.
+  function earlyHtml(r) {
+    if (!can("called") || r.cleared_at) return "";
+    var here = S.sheets.filter(function (x) { return x.id === r.sheet_id; })[0], today = currentShiftKey();
+    if (r.early) {
+      var from = S.sheets.filter(function (x) { return x.id === r.moved_from; })[0];
+      return '<button type="button" class="link" data-undoearly>Undo early return' + (from ? " (back to " + esc(sheetLabel(from)) + ")" : "") + "</button>";
+    }
+    if (!here || here.day <= today) return "";
+    return '<button type="button" class="btn ghost ptgo" data-early>EARLY RETURN · move to ' + esc(sheetLabel({ kind: "drops", day: today })) + "</button>" +
+      '<p class="hint">Booked back ' + esc(dayShort(r.return_at) + " " + hhmm(r.return_at)) + ". Use this when they ring to come back sooner.</p>";
+  }
+  async function earlyMove(r, btn, undo) {
+    if (!undo && !confirm("Move " + (r.reg || "this car") + " to tonight's sheet as an early return?")) return;
+    btn.disabled = true;
+    var x = await sb.rpc(undo ? "undo_early_return" : "early_return", { p_booking: r.id });
+    btn.disabled = false;
+    if (x.error) return toast(x.error.message, true);
+    $("panel").close();
+    // Follow the car to the sheet it's on now.
+    S.sheetId = x.data.sheet_id; S.q = ""; S.yardFilter = "";
+    await loadSheets(); await loadRows(); flashId = x.data.id; render();
+    toast((r.reg || "Car") + (undo ? " is back on its booked day." : " moved to tonight's sheet as an early return."));
+  }
   function openPanel(r) {
     panelRow = r;
     var drops = r.kind === "drops";
@@ -1329,6 +1359,7 @@
     }
     if (extra) h += '<label>MARK AS</label><div class="pseg">' + extra + "</div>";
     if (drops) h += chargePanelHtml(r);
+    if (drops) h += earlyHtml(r);
     // PT photos from when the car came in (PICKS), also on its DROPS row: same booking ref.
     h += '<div id="ptPhotos"></div>';
     if (can("import")) h += '<button type="button" class="link rmcar" data-removecar>Remove this car (no show, cancelled)</button>';
@@ -1411,6 +1442,8 @@
     if (t.dataset.charge) { recordCharge(r, t.dataset.charge); return openPanel(r); }
     if (t.dataset.chargeundo !== undefined) { recordCharge(r, ""); return openPanel(r); }
     if (t.dataset.removecar !== undefined) return askRemove(r);
+    if (t.dataset.early !== undefined) return earlyMove(r, t, false);
+    if (t.dataset.undoearly !== undefined) return earlyMove(r, t, true);
     if (t.dataset.backcar !== undefined) return openPanel(r);
     if (t.dataset.removewhy) return removeCar(r, t.dataset.removewhy, t);
   });
@@ -2032,8 +2065,9 @@
     // A re-import adds and updates but never takes a car away. Cars the booking
     // site no longer lists (usually cancelled) are shown for someone to confirm.
     var inFile = {}; rows.forEach(function (x) { if (x.ref) inFile[x.ref] = 1; });
-    // Overstays were carried in from older days, so they're never in today's file.
-    var gone = S.rows.filter(function (x) { return x.ref && !inFile[x.ref] && !x.overstay; });
+    // Overstays were carried in from older days and early returns from later
+    // ones, so they're never in today's file.
+    var gone = S.rows.filter(function (x) { return x.ref && !inFile[x.ref] && !x.overstay && !x.early; });
     if (gone.length) openGone(gone);
   }
   function openGone(gone) {

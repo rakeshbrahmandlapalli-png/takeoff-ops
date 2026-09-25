@@ -150,6 +150,7 @@ select.code.pick.unset{color:#7a5c00;background:#fff2cc;border:1px dashed #d4a72
 .l2 .eta.exp{color:#b06000;}
 .l2 .tag{color:#1558d6;font-weight:700;}
 .l2 .tag.ov{color:#b06000;}
+.l2 .tag.ea{color:#fff;background:#1155cc;padding:0 5px;border-radius:4px;}
 .l2 .tag.cm{color:#c5221f;}
 .l2 .tag.ld{color:#137333;font-size:10px;}
 .l2 .tag.ck{color:#fff;background:#b06000;padding:0 5px;border-radius:4px;}
