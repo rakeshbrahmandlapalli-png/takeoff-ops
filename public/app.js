@@ -711,7 +711,7 @@
       '<div class="ptstep' + (pt.regSent ? " done" : "") + '"><b>1</b>' +
       (num ? '<a class="btn ' + (pt.regSent ? "ghost" : "brand") + '" href="https://wa.me/' + esc(num) + "?text=" + encodeURIComponent(reg) + '" target="_blank" rel="noopener" data-ptreg>' + (pt.regSent ? "✓ Sent " : "Send ") + esc(reg) + " to WhatsApp</a>"
         : '<button type="button" class="btn ' + (pt.regSent ? "ghost" : "brand") + '" data-ptregshare>' + (pt.regSent ? "✓ Sent " : "Send ") + esc(reg) + " to WhatsApp</button>") +
-      "</div>" + (pt.regSent ? "" : '<p class="hint">Opens the chat with ' + esc(reg) + " typed. Tap Send, then come back here for the photos.</p>") +
+      "</div>" + (pt.regSent ? (pt.files.length && !pt.sent ? '<p class="hint">Back from WhatsApp? Tap <b>' + esc(ptSendLabel()) + "</b> below and pick the PT chat.</p>" : "") : '<p class="hint">Opens the chat with ' + esc(reg) + " typed. Tap Send, then come back here for the photos.</p>") +
       '<div class="ptstep"><b>2</b><span>Photos</span></div>' +
       '<div class="pseg ptadd"><button type="button" data-ptcam>CAMERA</button>' +
       '<label><input type="file" accept="image/*" multiple data-ptfile hidden>CHOOSE FROM GALLERY</label></div>' +
@@ -745,7 +745,7 @@
     }
     $("panel").classList.add("cam");
     $("panelBody").innerHTML = '<div class="camview"><video id="camVideo" autoplay playsinline muted></video><div class="camflash" id="camFlash"></div><button type="button" class="camtorch hidden" id="camTorch" data-camtorch aria-pressed="false">⚡ FLASH OFF</button></div>' +
-      '<div class="cambar"><span class="camcount" id="camCount">' + camCountText() + '</span><button type="button" class="shutter" data-shutter aria-label="Take photo"></button><button type="button" class="camdone" data-camdone>Done</button></div>';
+      '<div class="cambar"><span class="camcount" id="camCount">' + camCountText() + '</span><button type="button" class="shutter" data-shutter aria-label="Take photo"></button><button type="button" class="camdone" data-camdone id="camDone">' + camDoneText() + "</button></div>";
     $("camVideo").srcObject = camStream;
     // Keep the picture sharp as the phone moves round the car.
     var track = camStream.getVideoTracks()[0], caps = track && track.getCapabilities ? track.getCapabilities() : {};
@@ -765,6 +765,7 @@
       } catch (e) { camShot = null; }
     }
   }
+  function camDoneText() { return pt && pt.files.length ? "Send ›" : "Done"; }
   function camCountText() { var n = pt ? pt.files.length : 0; return n + " photo" + (n === 1 ? "" : "s"); }
   function camStop() {
     if (camStream) camStream.getTracks().forEach(function (t) { t.stop(); });
@@ -775,6 +776,7 @@
     pt.files.push(new File([b], (r.reg || "car").replace(/\s+/g, "") + "-" + (pt.files.length + 1) + (b.type === "image/png" ? ".png" : ".jpg"), { type: b.type || "image/jpeg" }));
     pt.urls.push(URL.createObjectURL(b));
     var el = $("camCount"); if (el) el.textContent = camCountText();
+    var d = $("camDone"); if (d) d.textContent = camDoneText();
   }
   function ptGrab(r) {
     var v = $("camVideo"); if (!v || !v.videoWidth) return;
@@ -793,6 +795,19 @@
     // Some phones turn the light off to take a still; put it back on.
     if (camTorch) camLight(true).catch(function () {});
     camBusy = false; if (sh) sh.disabled = false;
+  }
+  // Done on the camera carries straight on: the reg to the PT chat first, and
+  // once that's sent, the photos (the tap on Done opens the share itself).
+  function ptNext(r) {
+    openPt(r);
+    if (!pt || !pt.files.length) return;
+    var num = (S.company && S.company.pt_whatsapp) || "";
+    if (!pt.regSent && num) {
+      pt.regSent = true;
+      window.open("https://wa.me/" + num + "?text=" + encodeURIComponent(ptCaption(r)), "_blank", "noopener");
+      return openPt(r);
+    }
+    if (pt.regSent) { var b = $("panelBody").querySelector("[data-ptsend]"); if (b) ptSend(r, b); }
   }
   function ptClear() { if (pt) pt.urls.forEach(function (u) { URL.revokeObjectURL(u); }); pt = null; }
   function ptAdd(input) {
@@ -954,7 +969,7 @@
     if (t.dataset.ptcam !== undefined) return ptCamera(r);
     if (t.dataset.shutter !== undefined) return ptShoot(r);
     if (t.dataset.camtorch !== undefined) return camToggleTorch();
-    if (t.dataset.camdone !== undefined) { camStop(); return openPt(r); }
+    if (t.dataset.camdone !== undefined) { camStop(); return ptNext(r); }
     if (t.dataset.ptsend !== undefined) return ptSend(r, t);
     if (t.dataset.ptregshare !== undefined) {
       // No PT number set: share the reg and let them pick the chat.
@@ -2214,7 +2229,13 @@
     if (r && t.dataset.open !== undefined) return openPanel(r);
     if (r && t.dataset.act) return tapDrop(r, t.dataset.act);
     if (r && t.dataset.pick) return tapPick(r, "intake", t.dataset.pick);
-    if (r && t.dataset.pt !== undefined) return r.pt_at ? tapPick(r, "pt") : openPt(r);
+    if (r && t.dataset.pt !== undefined) {
+      if (r.pt_at) return tapPick(r, "pt");
+      // Straight into the camera; the PT screen is behind it if the camera won't start.
+      openPt(r);
+      if (!pt.files.length && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ptCamera(r);
+      return;
+    }
     if (t.dataset.impkind) { S.imp = newImport(t.dataset.impkind); render(); return; }
     if (t.dataset.read !== undefined) return readImport();
     if (t.dataset.restart !== undefined) { S.imp = newImport(S.imp.kind); render(); return; }
