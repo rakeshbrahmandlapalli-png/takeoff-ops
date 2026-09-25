@@ -1029,12 +1029,8 @@
              : '<button type="button" class="btn brand ptgo" data-ptregshare>1 · SEND ' + esc(reg) + " TO PT</button>")
       : b ? '<button type="button" class="btn brand ptgo" data-ptshare>2 · ' + esc(ptShareLabel()) + "</button>" : "";
     $("panelBody").innerHTML = '<h2 id="panelTitle">PT · ' + esc(reg) + (r.num ? " <small>#" + r.num + "</small>" : "") + "</h2>" +
-      (sent ? "" : IS_IOS
-        ? (n ? "" : '<p class="sub">Take the photos with the iPhone\'s Camera app, then choose them all here.</p>') +
-          '<label class="btn ' + (n ? "ghost" : "brand") + ' ptpick">' + pick + (n ? "+ ADD MORE PHOTOS" : "CHOOSE PHOTOS") + "</label>" +
-          '<button type="button" class="btn ghost ptgo" data-ptcam>' + (n ? "+ Take more in the app" : "Or take them in the app") + "</button>"
-        : '<button type="button" class="btn ' + (n ? "ghost" : "brand") + ' ptgo" data-ptcam>' + (n ? "+ TAKE MORE" : "TAKE PHOTOS") + "</button>" +
-          '<label class="btn ghost ptpick">' + pick + (n ? "+ Add from gallery" : "Choose from gallery") + "</label>") +
+      (sent ? "" : '<button type="button" class="btn ' + (n ? "ghost" : "brand") + ' ptgo" data-ptcam>' + (n ? "+ TAKE MORE" : "TAKE PHOTOS") + "</button>" +
+        '<label class="btn ghost ptpick">' + pick + (n ? "+ Add from gallery" : "Choose from gallery") + "</label>") +
       (n ? '<div class="ptsteps"><span class="' + (pt.regSent ? "ok" : "") + '">' + (pt.regSent ? "✓" : "1") + " Reg</span><span class=\"" + (sent && sent >= n ? "ok" : "") + '">' + (sent >= n && n ? "✓" : "2") + " Photos " + sent + "/" + n + "</span></div>" : "") +
       (n ? '<div class="ptthumbs">' + pt.items.map(function (x, i) { return ptImg(x, i < sent ? ' class="sent"' : x.state === "prep" ? ' class="wait"' : ""); }).join("") + "</div>" : "") +
       '<p class="hint">' + (!n ? "" : prep ? "Getting " + prep + " photo" + (prep === 1 ? "" : "s") + " ready…"
@@ -1198,14 +1194,7 @@
       if (rec && S.company && S.company.pt_method !== "link") ptRestore(rec);
     }
     openPt(r);
-    if (!pt.items.length && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && await ptCameraFirst()) ptCamera(r);
-  }
-  // iPhones ask for the camera every time in a home-screen app, so there the
-  // in-app camera opens by itself only if the phone says it's already allowed.
-  // Otherwise the PT screen leads with the iPhone's own Camera + gallery.
-  async function ptCameraFirst() {
-    if (!IS_IOS || camLive(camParked)) return true;
-    try { return (await navigator.permissions.query({ name: "camera" })).state === "granted"; } catch (e) { return false; }
+    if (!pt.items.length && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ptCamera(r);
   }
   // After a reload: open the PT that was half sent.
   async function ptResume() {
