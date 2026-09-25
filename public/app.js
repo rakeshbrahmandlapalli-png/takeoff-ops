@@ -619,6 +619,12 @@
     });
     toast(method === "" ? "Charge cleared" : method === "waived" ? "Waived" : money(amt) + " " + method + " recorded");
   }
+  // The flights check couldn't find this number among the day's arrivals, or
+  // it isn't a flight number at all (TBC, …): the office needs to look.
+  function flightToCheck(r) {
+    if (!r.flight || r.flight === "NO FLIGHT" || r.sched_time || r.cleared_at) return false;
+    return /check the flight number$/.test(r.flight_note) || !/^([A-Z0-9]{2}\d{1,5}|[A-Z]{3}\d{1,4})$/.test(r.flight);
+  }
   function dropRow(r) {
     var cmpl = r.clear_word === "COMPLAINT", bang = /^!/.test(r.note), overWord = r.called_word === "Overstay";
     var canc = r.flight_status === "cancelled", over = r.overstay || overWord;
@@ -637,6 +643,7 @@
       '<span class="l2b"> · ' + esc(booked) +
       (eta ? ' &rarr; <span class="eta' + (eta === "DELAY" ? " dly" : "") + (r.flight_status === "expected" ? " exp" : "") + '">' + esc(eta) + "</span>" : "") +
       (r.flight_status === "landed" ? ' <span class="tag ld">LANDED</span>' : "") +
+      (flightToCheck(r) ? ' · <span class="tag ck">CHECK FLIGHT NO.</span>' : "") +
       (canc ? ' · <span class="tag cx">CANCELLED</span>' : "") +
       (over ? ' · <span class="tag ov">OVERSTAY</span>' : "") +
       (cmpl ? ' · <span class="tag cm">COMPLAINT</span>' : "") + chargeTag(r) + "</span></div>" + noteLine(r) + "</div>" +
@@ -1165,6 +1172,7 @@
     if (f === "NO FLIGHT" && collect !== undefined && collect !== (r.est_time || "")) run("set_collect_time", { p_booking: r.id, p_time: collect }, r, function (x) { x.est_time = collect; x.est_at = collect ? collectAt(x, collect) : null; x.flight_status = "noflight"; });
     if (f && f !== "NO FLIGHT" && sched !== undefined && sched !== (r.sched_time || "")) run("set_sched_time", { p_booking: r.id, p_time: sched }, r, function (x) {
       x.sched_time = sched; x.sched_at = sched ? collectAt(x, sched) : null;
+      if (/check the flight number$/.test(x.flight_note)) x.flight_note = "";
       if (sched && !x.flight_status) x.flight_status = "scheduled"; else if (!sched && x.flight_status === "scheduled") x.flight_status = "";
     });
   }

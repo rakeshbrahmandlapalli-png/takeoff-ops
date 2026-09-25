@@ -8,6 +8,8 @@
 --  yet), the office types the time on the car instead. It goes on whichever
 --  day is nearest the booked return, so 00:30 on a 23:30 booking is the next
 --  morning. If the flights check later finds the flight, its time wins.
+--  Typing a time also takes off the flights check's "check the flight
+--  number" note.
 -- ════════════════════════════════════════════════════════════════════════
 
 begin;
@@ -36,7 +38,8 @@ begin
   if t < base - interval '12 hours' then t := t + interval '1 day'; end if;
   if t > base + interval '12 hours' then t := t - interval '1 day'; end if;
   update bookings set sched_at = t at time zone c.time_zone, sched_time = p_time,
-    flight_status = case when flight_status = '' then 'scheduled' else flight_status end, updated_at = now()
+    flight_status = case when flight_status = '' then 'scheduled' else flight_status end,
+    flight_note = case when flight_note like '%check the flight number' then '' else flight_note end, updated_at = now()
   where id = b.id returning * into b;
   perform log_activity(b, 'SCHEDULED', p_time);
   return b;

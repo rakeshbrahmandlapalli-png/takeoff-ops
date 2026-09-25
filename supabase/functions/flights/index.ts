@@ -48,6 +48,9 @@ const DELAY_WITHIN = 60, DELAY_AFTER = 20;
 const MIN_DELAY = 15, MAX_DELAY = 360, MAX_EARLY = 60, MIN_FLIGHT = 20;
 const FR24_BATCH = 15, FR24_GAP_MS = 6500, FR24_MAX_CALLS = 6;
 const AERO_GAP_MS = 1200;
+// On a car whose flight number isn't among the day's arrivals: usually the
+// customer gave the outbound flight, or a typo. The app shows it on the row.
+const NOT_FOUND = "Not in the timetable · check the flight number";
 
 type Company = { id: string; name: string; time_zone: string; drops_day_end: string; airport_iata: string; airport_icao: string; flight_settings?: Partial<Timing> };
 type Booking = {
@@ -232,13 +235,20 @@ async function checkSchedule(admin: SupabaseClient, c: Company, days: string[], 
     for (const b of cars) {
       const k = canon(b.flight), booked = b.return_at ? new Date(b.return_at) : null;
       const runs = arrivals.filter((a) => a.keys.includes(k));
-      if (!runs.length) continue;
+      const flag = (note: string) => {
+        if (!b.flight_status && !b.sched_at && b.flight_note !== note) patchOf(changes, b).flight_note = note;
+      };
+      if (!runs.length) { flag(NOT_FOUND); continue; }
       // A daily number appears more than once in 26 hours: take the run
       // nearest the time the customer booked, and never one 6 h away.
       const timed = runs.filter((a) => a.sched && (!booked || Math.abs(minsBetween(booked, a.sched!)) <= MAX_DELAY))
         .sort((x, y) => booked ? Math.abs(minsBetween(booked, x.sched!)) - Math.abs(minsBetween(booked, y.sched!)) : 0);
       const run = timed[0] ?? (runs.every((a) => a.cancelled) ? runs[0] : null);
-      if (!run) continue;
+      if (!run) {
+        const near = runs.find((a) => a.sched);
+        flag(near ? `Lands ${hhmm(near.sched!, tz)}, over 6 h from the booked time · check the flight number` : NOT_FOUND);
+        continue;
+      }
 
       if (run.cancelled) {
         if (b.flight_status !== "cancelled") {
@@ -251,6 +261,7 @@ async function checkSchedule(admin: SupabaseClient, c: Company, days: string[], 
       if (!run.sched) continue;
 
       const p = patchOf(changes, b);
+      if (/check the flight number$/.test(b.flight_note)) p.flight_note = "";
       if (!b.sched_at || new Date(b.sched_at).getTime() !== run.sched.getTime()) {
         Object.assign(p, { sched_at: run.sched.toISOString(), sched_time: hhmm(run.sched, tz) });
         if (b.sched_at) tally.moved++; else tally.filled++;
