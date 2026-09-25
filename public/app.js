@@ -840,6 +840,7 @@
     if (drops && can("flights")) {
       h += '<label for="flightText">FLIGHT NUMBER</label><input id="flightText" value="' + esc(r.flight) + '" autocomplete="off" autocapitalize="characters" maxlength="12" placeholder="or NO FLIGHT">';
       if (r.flight === "NO FLIGHT") h += '<label for="collectText">COLLECTION TIME</label><input id="collectText" type="time" value="' + esc(/^\d{2}:\d{2}$/.test(r.est_time) ? r.est_time : "") + '">';
+      else h += '<label for="schedText">SCHEDULED LANDING</label><input id="schedText" type="time" value="' + esc(/^\d{2}:\d{2}$/.test(r.sched_time) ? r.sched_time : "") + '">';
     }
     if (can("note")) h += '<label for="noteText">NOTE</label><textarea id="noteText" maxlength="500">' + esc(r.note) + '</textarea>';
     var extra = "";
@@ -862,7 +863,7 @@
     if (e.target === $("panel")) return $("panel").close();          // tap outside the sheet
     var t = e.target.closest("button"); if (!t) return;
     if (t.dataset.close !== undefined) return $("panel").close();
-    if (t.dataset.pickflight && quick) return saveQuickFlight(t.dataset.pickflight);
+    if (t.dataset.pickflight && quick) return saveQuickFlight(t.dataset.pickflight, undefined, t.dataset.picksched);
     if (t.dataset.noflight !== undefined && quick) { quick.noFlight = true; drawQuickFlight(); setTimeout(function () { var i = $("collectTime"); if (i) i.focus(); }, 50); return; }
     if (t.dataset.flightback !== undefined && quick) { quick.noFlight = false; drawQuickFlight(); return; }
     if (t.dataset.copy === "returns" || t.dataset.copy === "stats") { e.stopPropagation(); return putOnClipboard(copyText(t.dataset.copy)); }
@@ -875,9 +876,11 @@
     if (t.dataset.savepanel !== undefined) {
       var saved = false;
       if ($("flightText")) {
-        var f = normFlight($("flightText").value), ct = $("collectText") ? $("collectText").value : undefined;
+        var f = normFlight($("flightText").value), ct = $("collectText") ? $("collectText").value : undefined, st = $("schedText") ? $("schedText").value : undefined;
         if (f === "NO FLIGHT" && r.flight !== "NO FLIGHT") { panelRow = null; quick = { id: r.id, chain: false, suggest: [], noFlight: true }; drawQuickFlight(); return; }
-        if (f !== r.flight || (f === "NO FLIGHT" && ct !== undefined && ct !== (r.est_time || ""))) { setFlight(r, f, ct); saved = true; }
+        // The old flight's time left in the box doesn't carry over to a new flight number.
+        if (f !== r.flight && st === (r.sched_time || "")) st = undefined;
+        if (f !== r.flight || (f === "NO FLIGHT" && ct !== undefined && ct !== (r.est_time || "")) || (st !== undefined && st !== (r.sched_time || ""))) { setFlight(r, f, ct, st); saved = true; }
       }
       if ($("noteText")) {
         var text = $("noteText").value.trim();
@@ -1155,9 +1158,15 @@
     if (diff < -720) diff += 1440; if (diff > 720) diff -= 1440;
     return new Date(new Date(r.return_at).getTime() + diff * 60000).toISOString();
   }
-  function setFlight(r, f, collect) {
+  // sched: the scheduled landing time typed by hand (HH:MM, "" clears it),
+  // for when the flights check can't find the flight.
+  function setFlight(r, f, collect, sched) {
     if (f !== r.flight) run("set_flight", { p_booking: r.id, p_flight: f }, r, function (x) { x.flight = f; x.sched_at = null; x.sched_time = ""; x.est_at = null; x.est_time = ""; x.flight_status = f === "NO FLIGHT" ? "noflight" : ""; x.flight_note = ""; });
     if (f === "NO FLIGHT" && collect !== undefined && collect !== (r.est_time || "")) run("set_collect_time", { p_booking: r.id, p_time: collect }, r, function (x) { x.est_time = collect; x.est_at = collect ? collectAt(x, collect) : null; x.flight_status = "noflight"; });
+    if (f && f !== "NO FLIGHT" && sched !== undefined && sched !== (r.sched_time || "")) run("set_sched_time", { p_booking: r.id, p_time: sched }, r, function (x) {
+      x.sched_time = sched; x.sched_at = sched ? collectAt(x, sched) : null;
+      if (sched && !x.flight_status) x.flight_status = "scheduled"; else if (!sched && x.flight_status === "scheduled") x.flight_status = "";
+    });
   }
 
   // ── quick flight number ───────────────────
@@ -1183,11 +1192,11 @@
   }
   function drawQuickFlight(keepInput) {
     var r = S.rows.filter(function (x) { return x.id === quick.id; })[0]; if (!r) return;
-    var typed = keepInput && $("quickFlight") ? $("quickFlight").value : "";
+    var typed = keepInput && $("quickFlight") ? $("quickFlight").value : "", typedSched = keepInput && $("quickSched") ? $("quickSched").value : "";
     var left = missingFlights().filter(function (x) { return x.id !== r.id; }).length;
     var chips = quick.suggest === null ? '<div class="hint">Looking for flights near ' + esc(hhmm(r.return_at)) + "…</div>"
       : quick.suggest.length ? '<div class="suggest">' + quick.suggest.map(function (f) {
-          return '<button type="button" data-pickflight="' + esc(f.flight) + '"' + (f.status === "cancelled" ? ' class="cx"' : "") + '><b>' + esc(f.flight) + '</b><span class="num">' + esc(hhmm(f.sched_at)) + "</span><small>" + esc(f.origin || "") + (f.status === "cancelled" ? " · cancelled" : "") + "</small></button>";
+          return '<button type="button" data-pickflight="' + esc(f.flight) + '" data-picksched="' + esc(hhmm(f.sched_at)) + '"' + (f.status === "cancelled" ? ' class="cx"' : "") + '><b>' + esc(f.flight) + '</b><span class="num">' + esc(hhmm(f.sched_at)) + "</span><small>" + esc(f.origin || "") + (f.status === "cancelled" ? " · cancelled" : "") + "</small></button>";
         }).join("") + "</div>" : "";
     var saveWord = quick.chain && left ? "Save & next (" + left + " left)" : "Save";
     var head = '<h2 id="panelTitle">' + esc(r.reg || "NO REG") + (r.num ? " <small>#" + r.num + "</small>" : "") + "</h2>" +
@@ -1200,18 +1209,20 @@
     }
     $("panelBody").innerHTML = head +
       '<form id="quickForm" novalidate><label for="quickFlight">FLIGHT NUMBER</label><input id="quickFlight" value="' + esc(typed) + '" autocomplete="off" autocapitalize="characters" maxlength="10" placeholder="e.g. W43451">' +
+      '<label for="quickSched">SCHEDULED LANDING (IF KNOWN)</label><input id="quickSched" type="time" value="' + esc(typedSched) + '">' +
       (chips ? "<label>LANDING NEAR " + esc(hhmm(r.return_at)) + "</label>" + chips : "") +
       '<button type="button" class="noflight" data-noflight>NO FLIGHT NUMBER</button>' +
       '<div class="pbtns"><button type="button" data-close>' + (quick.chain ? "Stop" : "Close") + '</button><button class="save">' + saveWord + "</button></div></form>";
   }
-  function saveQuickFlight(value, collect) {
+  function saveQuickFlight(value, collect, sched) {
     var r = S.rows.filter(function (x) { return x.id === quick.id; })[0];
     var f = normFlight(value);
     if (!r) return;
     if (!f) { toast("Type the flight number or tap one below.", true); return; }
     if (f === "NO FLIGHT" && !/^\d{2}:\d{2}$/.test(collect || "")) { quick.noFlight = true; drawQuickFlight(); return; }
-    setFlight(r, f, collect);
-    toast(r.reg + " · " + f + (collect ? " · " + collect : ""));
+    if (f === "NO FLIGHT" || !/^\d{2}:\d{2}$/.test(sched || "")) sched = undefined;
+    setFlight(r, f, collect, sched);
+    toast(r.reg + " · " + f + (collect ? " · " + collect : sched ? " · sched " + sched : ""));
     var next = quick.chain ? missingFlights()[0] : null;
     if (next) return openQuickFlight(next, true);
     quick = null; $("panel").close();
@@ -2137,7 +2148,7 @@
     if (e.target.id === "quickForm") {
       e.preventDefault();
       if (quick && quick.noFlight) { var ct = $("collectTime").value; if (!/^\d{2}:\d{2}$/.test(ct)) { toast("Type the collection time.", true); return; } return saveQuickFlight("NO FLIGHT", ct); }
-      return saveQuickFlight($("quickFlight").value);
+      return saveQuickFlight($("quickFlight").value, undefined, $("quickSched").value);
     }
     if (e.target.id !== "addStaff") return;
     e.preventDefault();
