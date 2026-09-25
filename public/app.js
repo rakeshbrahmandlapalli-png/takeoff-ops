@@ -778,6 +778,19 @@
     var el = $("camCount"); if (el) el.textContent = camCountText();
     var d = $("camDone"); if (d) d.textContent = camDoneText();
   }
+  // Full-size stills are 4-8 MB; ten of those can make Android drop the app
+  // while WhatsApp is open. 3200 px is still sharper than WhatsApp's HD.
+  var PT_MAX = 3200;
+  async function ptShrink(b) {
+    try {
+      var im = await createImageBitmap(b), k = PT_MAX / Math.max(im.width, im.height);
+      if (k >= 1 && b.type === "image/jpeg") { im.close && im.close(); return b; }
+      k = Math.min(1, k);
+      var c = document.createElement("canvas"); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+      c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); im.close && im.close();
+      return await new Promise(function (ok) { c.toBlob(function (x) { ok(x || b); }, "image/jpeg", 0.9); });
+    } catch (e) { return b; }
+  }
   function ptGrab(r) {
     var v = $("camVideo"); if (!v || !v.videoWidth) return;
     var c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight;
@@ -790,7 +803,7 @@
     if (!camShot) return ptGrab(r);
     camBusy = true;
     var sh = $("panelBody").querySelector("[data-shutter]"); if (sh) sh.disabled = true;
-    try { ptKeep(r, await camShot()); }
+    try { ptKeep(r, await ptShrink(await camShot())); }
     catch (e) { camShot = null; ptGrab(r); }
     // Some phones turn the light off to take a still; put it back on.
     if (camTorch) camLight(true).catch(function () {});
@@ -843,10 +856,17 @@
       return toast("This phone can't pass photos to WhatsApp from the app. Send them from WhatsApp; the reg is copied.", true);
     }
     btn.disabled = true;
+    // Tick PT as the photos go to WhatsApp, not after: Android often reloads the
+    // app while WhatsApp is open, and the tick would be lost with it. The tick is
+    // saved on the phone straight away, so it survives that. Undone if the very
+    // first share is cancelled.
+    var ticked = false;
+    if (!r.pt_at) { tapPick(r, "pt"); ticked = true; }
     // Photos only: text shared with them lands on every photo and breaks the album.
     try { await navigator.share({ files: batch }); }
     catch (e) {
       btn.disabled = false;
+      if (ticked && !pt.sent && r.pt_at) tapPick(r, "pt");
       // An iPhone that turns the whole set down drops to batches of 10 next time.
       if (BIG_SHARE && batch.length > PT_BATCH) { BIG_SHARE = false; toast("Too many photos in one go for this phone. Sending in batches of 10 instead.", true); return openPt(r); }
       if (e.name !== "AbortError") toast("Couldn't open sharing: " + e.message, true);
