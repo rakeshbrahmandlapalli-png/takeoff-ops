@@ -1117,7 +1117,7 @@
     $("panelBody").innerHTML = '<h2 id="panelTitle">PT · ' + esc(reg) + (r.num ? " <small>#" + r.num + "</small>" : "") + "</h2>" +
       (n && (pt.regSent || sent) ? '<div class="ptsteps"><span class="' + (pt.regSent ? "ok" : "") + '">' + (pt.regSent ? "✓" : "1") + " Reg</span><span class=\"" + (sent && sent >= n ? "ok" : "") + '">' + (sent >= n && n ? "✓" : "2") + " Photos " + sent + "/" + n + "</span></div>" : "") +
       step1 + hint +
-      (sent ? "" : '<button type="button" class="btn ' + (n ? "ghost" : "brand") + ' ptgo" data-ptcam>' + (n ? "+ TAKE MORE" : "TAKE PHOTOS") + "</button>" +
+      (sent || pt.pdfSent ? "" : '<button type="button" class="btn ' + (n ? "ghost" : "brand") + ' ptgo" data-ptcam>' + (n ? "+ TAKE MORE" : "TAKE PHOTOS") + "</button>" +
         '<label class="btn ghost ptpick">' + pick + (n ? "+ Add from gallery" : "Choose from gallery") + "</label>") +
       (n ? '<div class="ptthumbs">' + pt.items.map(function (x, i) { return ptImg(x, i < sent ? ' class="sent"' : x.state === "prep" ? ' class="wait"' : ""); }).join("") + "</div>" : "") +
       '<div class="pbtns"><button type="button" data-close>Close</button>' + (n ? '<button type="button" data-ptclear>Start again</button>' : "") + "</div>" +
@@ -1254,7 +1254,7 @@
     var items = cur.items.filter(function (x) { return x.state === "local"; });
     if (cur.pdfMaking === items.length) return;
     cur.pdfMaking = items.length;
-    var P = { count: items.length, parts: [], sent: 0 };
+    var P = { count: items.length, parts: [], sent: cur.pdfSent || 0 };
     try {
       var jpgs = [];
       for (var i = 0; i < items.length; i++) jpgs.push(await ptJpegBytes(items[i].file));
@@ -1266,6 +1266,8 @@
         var name = reg + "-PT-" + items.length + "-photos" + (P.parts.length > 1 ? "-part" + (k + 1) : "") + ".pdf";
         return new File([ptPdfBlob(g, reg + " PT photos")], name, { type: "application/pdf" });
       });
+      // A phone that can't hand a PDF to another app gets the photos way instead.
+      if (!navigator.canShare || !navigator.canShare({ files: [P.parts[0]] })) P.error = true;
     } catch (e) { oopsLog(e); P.error = true; }
     if (pt !== cur || cur.pdfMaking !== items.length) return;
     cur.pdfMaking = 0; cur.pdf = P;
@@ -1321,7 +1323,7 @@
     var P = pt && pt.pdf; if (!P || P.error || !P.parts.length) return;
     var file = P.parts[P.sent || 0]; if (!file) return;
     var data = { files: [file], text: ptCaption(r) + (P.parts.length > 1 ? " (" + ((P.sent || 0) + 1) + " of " + P.parts.length + ")" : "") };
-    if (!navigator.canShare || !navigator.canShare({ files: [file] })) return toast("This phone can't pass a PDF to WhatsApp from the app. Send them as photos instead.", true);
+    if (!navigator.canShare || !navigator.canShare({ files: [file] })) { P.error = true; toast("This phone can't pass a PDF to WhatsApp from the app. Send them as photos instead.", true); return openPt(r); }
     btn.disabled = true;
     var row = S.rows.filter(function (x) { return x.id === r.id; })[0] || r, ticked = false;
     if (!row.pt_at) { tapPick(row, "pt"); ticked = true; }
@@ -1332,8 +1334,8 @@
       if (e.name !== "AbortError") toast("Couldn't open sharing: " + e.message, true);
       return;
     }
-    P.sent = (P.sent || 0) + 1;
-    if (P.sent < P.parts.length) { toast("Part " + P.sent + " of " + P.parts.length + " sent. Now the next part."); return openPt(r); }
+    P.sent = (P.sent || 0) + 1; pt.pdfSent = P.sent;
+    if (P.sent < P.parts.length) { ptStore(); toast("Part " + P.sent + " of " + P.parts.length + " sent. Now the next part."); return openPt(r); }
     pt.sent = pt.items.length; pt.regSent = true;
     if (bkPending(pt)) ptStore(); else ptForget(pt.id);
     ptClear();
@@ -1355,7 +1357,7 @@
     if (!pt || pt.mode !== "photos") return;
     // Taken now, before anything can clear pt.
     var keep = pt.items.filter(function (x) { return x.state === "local"; });
-    var rec = { id: pt.id, reg: pt.reg, at: Date.now(), regSent: !!pt.regSent, sent: pt.sent || 0, token: pt.token,
+    var rec = { id: pt.id, reg: pt.reg, at: Date.now(), regSent: !!pt.regSent, sent: pt.sent || 0, pdfSent: pt.pdfSent || 0, token: pt.token,
       blobs: keep.map(function (x) { return x.file; }), thumbs: keep.map(function (x) { return x.url || ""; }), bk: keep.map(function (x) { return x.bk === "done"; }) };
     try { (await ptDb()).transaction("pt", "readwrite").objectStore("pt").put(rec); } catch (e) {}
   }
@@ -1368,7 +1370,7 @@
   }
   function ptRestore(rec) {
     ptClear();
-    pt = { id: rec.id, reg: rec.reg, mode: "photos", token: rec.token || ptToken(), items: [], saved: 0, sent: rec.sent || 0, regSent: !!rec.regSent };
+    pt = { id: rec.id, reg: rec.reg, mode: "photos", token: rec.token || ptToken(), items: [], saved: 0, sent: rec.sent || 0, pdfSent: rec.pdfSent || 0, regSent: !!rec.regSent };
     (rec.blobs || []).forEach(function (b, i) { pt.items.push({ file: b, url: (rec.thumbs || [])[i] || "", state: "local", n: i + 1, ready: true, bk: (rec.bk || [])[i] ? "done" : undefined }); });
     pt.items.forEach(function (x) { bkQueue(pt.id, pt.token, x); });
   }
