@@ -562,18 +562,23 @@
   }
 
   // ── overstay charges (database part 23) ──
-  // Booked back before the DROPS day end (06:00): free until 12:00 that day.
-  // Booked back at 06:00 or later: free until 23:59 that day. Then one day's
-  // rate at once, and one more at every midnight. Counted to CLEAR, or to now.
+  // Booked back before the DROPS day end (06:00): free until 12:00 that day,
+  // then one day's rate at once and one more at every midnight.
+  // Booked back at 06:00 or later: free until 06:00 the next morning, then one
+  // day's rate at once and one more at every 06:00. Counted to CLEAR, or to now.
   function overstayDue(r) {
     var rate = +(S.company && S.company.overstay_rate) || 0;
     if (!rate || r.kind !== "drops" || !r.return_at) return null;
     var ret = londonParts(new Date(r.return_at)), end = londonParts(r.cleared_at ? new Date(r.cleared_at) : new Date());
     var dayEnd = ((S.company.drops_day_end) || "06:00").slice(0, 5);
-    var later = Math.round((Date.parse(end.key) - Date.parse(ret.key)) / 86400000), days;
-    if (later < 0) days = 0;
-    else if (ret.time < dayEnd) days = later === 0 ? (end.time > "12:00" ? 1 : 0) : 1 + later;
-    else days = later;
+    var dates = function (a, b) { return Math.round((Date.parse(b) - Date.parse(a)) / 86400000); }, days;
+    if (ret.time < dayEnd) {
+      var later = dates(ret.key, end.key);
+      days = later < 0 ? 0 : later === 0 ? (end.time > "12:00" ? 1 : 0) : 1 + later;
+    } else {
+      // Up to and including 06:00 still belongs to the day before.
+      days = dates(ret.key, end.key) - (end.time <= dayEnd ? 1 : 0);
+    }
     return days > 0 ? { days: days, amount: days * rate } : null;
   }
   function money(n) { n = +n || 0; return "£" + (n % 1 ? n.toFixed(2) : n); }
@@ -1819,7 +1824,7 @@
   function overstayRateHtml() {
     var rate = +(S.company && S.company.overstay_rate) || 0;
     return '<div class="box" style="padding:14px;margin-top:14px;max-width:560px"><strong>Overstay charges</strong>' +
-      '<p class="note">Booked back before ' + esc(((S.company.drops_day_end) || "06:00").slice(0, 5)) + ": free until 12:00 that day. Booked back later: free until 23:59 that day. Then one day's rate at once, and one more every midnight. 0 switches charging off." + (rate ? " Now: <b>" + money(rate) + " a day</b>." : " Now: <b>off</b>.") + "</p>" +
+      '<p class="note">Booked back before ' + esc(((S.company.drops_day_end) || "06:00").slice(0, 5)) + ": free until 12:00 that day, then one day's rate and one more every midnight. Booked back later: free until " + esc(((S.company.drops_day_end) || "06:00").slice(0, 5)) + " the next morning, then one day's rate and one more every morning at that time. 0 switches charging off." + (rate ? " Now: <b>" + money(rate) + " a day</b>." : " Now: <b>off</b>.") + "</p>" +
       '<label class="field">Daily rate (£)<input id="ovRate" type="number" inputmode="decimal" min="0" step="0.5" value="' + rate + '"></label>' +
       '<div class="row-actions"><button type="button" class="btn brand" data-saverate>Save rate</button></div></div>';
   }

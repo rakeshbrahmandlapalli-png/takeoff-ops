@@ -2,9 +2,11 @@
 --
 -- Each company sets its own daily rate (0 = charging off). The app works out
 -- what a late collection owes from the booked return time:
---   * return before the DROPS day end (06:00): free until 12:00 noon that day
---   * return at 06:00 or later: free until 23:59 that day
---   * then one day's rate straight away, and one more at every midnight after.
+--   * return before the DROPS day end (06:00): free until 12:00 noon that day,
+--     then one day's rate straight away and one more at every midnight after
+--   * return at 06:00 or later: free until 06:00 the next morning, then one
+--     day's rate straight away and one more at every 06:00 after (25 Sep)
+-- (The sum is worked out in the app, overstayDue() in app.js.)
 -- The office records the money as cash, card, or waived. Safe to run twice.
 
 alter table companies add column if not exists overstay_rate numeric(8,2) not null default 0;
