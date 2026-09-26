@@ -663,6 +663,26 @@ await scenario(async () => {
   check("import (separate date and time columns): the sheet offered is the file's day, not the day before", new RegExp("^" + tomorrow + "(ST|ND|RD|TH) DROPS", "i").test(btn.replace(/^Create /i, "")), btn);
 });
 
+// 18a2. BookingList ".xls" that is really tab-separated text: dates must not move an hour (BST).
+await scenario(async () => {
+  const db = makeDb();
+  const page = await phone(browser, db, { width: 1000 });
+  await open(page);
+  const d1 = addDays(TONIGHT, 1), d2 = addDays(TONIGHT, 2);
+  const tsv = ["Sr# \t Reference Number \t Car Reg \t Booking status \t Client \t Booking From \t Drop off Time \t Booking To \t Collection Time \t Car Make \t Inbound Flight No ",
+    ["1", "TX1", "AB12CDE", "1", "ONE", TONIGHT, "04:00", d1, "14:30", "FORD", ""].join("\t"),
+    ["2", "TX2", "CD34EFG", "1", "TWO", TONIGHT, "09:15", d1, "21:05", "KIA", ""].join("\t"),
+    ["3", "TX3", "EF56GHJ", "1", "THREE", TONIGHT, "10:00", d2, "02:10", "VW", ""].join("\t")].join("\n");
+  await page.click("#menuBtn"); await sleep(300); await page.click('#menu [data-view="import"]'); await sleep(300);
+  await page.setInputFiles('input[data-file="excel"]', { name: "BookingList-test.xls", mimeType: "application/vnd.ms-excel", buffer: Buffer.from(tsv) });
+  await sleep(200); await page.click("[data-read]"); await page.waitForSelector("[data-create]", { timeout: 8000 });
+  const table = await page.locator(".table-wrap").innerText();
+  check("import (text .xls): real times, no hour shift (14:30, 21:05, 02:10)", /14:30/.test(table) && /21:05/.test(table) && !/01:00/.test(table), table.slice(0, 300));
+  await page.click("[data-create]"); await sleep(800);
+  const call = db.calls.find((c) => c.fn === "import_sheet"), x1 = call && call.args.p_rows.find((r) => r.ref === "TX1");
+  check("import (text .xls): drop-off 04:00 and return 14:30 sent as written", !!x1 && x1.drop_local === TONIGHT + " 04:00" && x1.return_local === d1 + " 14:30", x1);
+});
+
 // 18b. import on a phone: the file picker sends the app to the background; the
 // file must still be taken when it comes back (it was lost to a redraw).
 await scenario(async () => {

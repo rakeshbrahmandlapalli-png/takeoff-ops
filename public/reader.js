@@ -70,7 +70,9 @@
 
   async function readExcel(file) {
     await loadScript(LIBS.xlsx);
-    var wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: "array", cellNF: true });
+    // raw: a download that's really a text file (BookingList .xls) keeps its dates as
+    // written ("2026-09-23"); parsed, they became local midnight and moved an hour in summer.
+    var wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: "array", cellNF: true, raw: true });
     var ws = wb.Sheets[wb.SheetNames[0]];
     var from1904 = !!(wb.Workbook && wb.Workbook.WBProps && wb.Workbook.WBProps.date1904);   // old Mac Excel counts from 1904
     // Excel keeps a date as a number of days, the time as the fraction: turned
