@@ -11,13 +11,19 @@
     pdf: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js",
     pdfWorker: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"
   };
+  // One load per library: a second file read while it's still loading waits
+  // for the same load, and a failed load is forgotten so "try again" works.
+  var loading = {};
   function loadScript(src) {
-    return new Promise(function (resolve, reject) {
-      if (document.querySelector('script[src="' + src + '"]')) return resolve();
+    if (loading[src]) return loading[src];
+    return (loading[src] = new Promise(function (resolve, reject) {
       var s = document.createElement("script"); s.src = src; s.onload = resolve;
-      s.onerror = function () { reject(new Error("Couldn't load the file reader. Check your connection and try again.")); };
+      s.onerror = function () {
+        s.remove(); delete loading[src];
+        reject(new Error("Couldn't load the file reader. Check your connection and try again."));
+      };
       document.head.appendChild(s);
-    });
+    }));
   }
   // Header name -> what it is. Checked in this order; each column is used once.
   // Matches the booking site's own export (Reference Number, Car Reg, Client,
@@ -51,7 +57,10 @@
     if (m[1].length === 4) { y = +m[1]; d = +m[3]; }
     if (y < 100) y += 2000;
     var date = new Date(y, mo - 1, d, m[4] ? +m[4] : 0, m[5] ? +m[5] : 0);
-    return isNaN(date) ? null : { date: date, key: y + "-" + pad(mo) + "-" + pad(d), time: m[4] ? pad(+m[4]) + ":" + m[5] : "" };
+    // A day or month that doesn't exist (31/09, or a US-style 09/16) is no date,
+    // not a quietly different one the database would then refuse.
+    if (isNaN(date) || date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) return null;
+    return { date: date, key: y + "-" + pad(mo) + "-" + pad(d), time: m[4] ? pad(+m[4]) + ":" + m[5] : "" };
   }
   function boardName(key, kind) {
     var p = key.split("-"), d = new Date(+p[0], +p[1] - 1, +p[2]), n = d.getDate();
@@ -96,7 +105,7 @@
       // something shaped like a real flight number counts.
       var flight = function (key) { var m = get(row, key).toUpperCase().match(FLIGHT_RE); return m ? m[1] + m[2] : ""; };
       var note = get(row, "note").replace(/&pound;/g, "£");
-      if (/^[d.s]*$/.test(note)) note = "";
+      if (/^[\d.\s]*$/.test(note)) note = "";   // a stray number is not a note
       out.push({ ref: ref, name: name, phone: get(row, "phone"), make: make || "", reg: reg.toUpperCase().replace(/\s+/g, " "),
         flightIn: flight("flightIn") || flight("flight"), flightOut: flight("flightOut") || flight("flight"), note: note,
         meet: parseDateTime(get(row, "meet")), ret: parseDateTime(get(row, "ret")) });

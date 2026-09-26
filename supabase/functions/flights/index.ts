@@ -247,7 +247,10 @@ async function checkSchedule(admin: SupabaseClient, c: Company, days: string[], 
       // nearest the time the customer booked, and never one 6 h away.
       const timed = runs.filter((a) => a.sched && (!booked || Math.abs(minsBetween(booked, a.sched!)) <= MAX_DELAY))
         .sort((x, y) => booked ? Math.abs(minsBetween(booked, x.sched!)) - Math.abs(minsBetween(booked, y.sched!)) : 0);
-      const run = timed[0] ?? (runs.every((a) => a.cancelled) ? runs[0] : null);
+      // A cancelled run only counts if it's this car's run: near the booked time
+      // (above), or a cancellation listed with no time at all. A cancelled run
+      // of the same number on another day is not this car's flight.
+      const run = timed[0] ?? (runs.every((a) => a.cancelled) ? runs.find((a) => !a.sched) ?? null : null);
       if (!run) {
         const near = runs.find((a) => a.sched);
         flag(near ? `Lands ${hhmm(near.sched!, tz)}, over 6 h from the booked time · check the flight number` : NOT_FOUND);
@@ -327,6 +330,9 @@ async function checkLive(admin: SupabaseClient, c: Company, day: string, trigger
   const keys = [...wanted.keys()];
   tally.looked = keys.length;
   const hits = new Map<string, Date>();
+  // Only flights FR24 actually answered for: a failed request or the per-run
+  // limit must not read as "no aircraft in the air" and mark cars DELAY.
+  const asked = new Set<string>();
   const groups: { param: "flights" | "callsigns"; keys: string[] }[] = [];
   for (let i = 0; i < keys.length; i += FR24_BATCH) {
     const chunk = keys.slice(i, i + FR24_BATCH);
@@ -339,7 +345,9 @@ async function checkLive(admin: SupabaseClient, c: Company, day: string, trigger
     if (tally.calls) await sleep(FR24_GAP_MS);   // plan allows 10 requests a minute
     tally.calls++;
     try {
-      for (const rec of await fr24Live(token, c, g.keys, g.param)) {
+      const recs = await fr24Live(token, c, g.keys, g.param);
+      g.keys.forEach((k) => asked.add(k));
+      for (const rec of recs) {
         const k = [canon(rec.flight), canon(rec.callsign)].find((x) => x && wanted.has(x));
         if (!k || hits.has(k)) continue;
         const dest = [rec.dest_iata, rec.dest_icao, rec.dest_icao_actual].map((v) => String(v || "").toUpperCase()).filter(Boolean);
@@ -354,6 +362,7 @@ async function checkLive(admin: SupabaseClient, c: Company, day: string, trigger
   }
 
   for (const [k, cars] of wanted) {
+    if (!asked.has(k)) continue;   // not checked this run: leave as it was
     const eta = hits.get(k);
     for (const b of cars) {
       const p = patchOf(changes, b);
@@ -418,7 +427,8 @@ Deno.serve(async (req) => {
       const { data: ok } = await admin.rpc("timer_secret_ok", { p_secret: req.headers.get("x-timer") ?? "" });
       if (ok !== true) return reply(403, { error: "Not the timer." });
       if (!Deno.env.get("FR24_TOKEN") && !Deno.env.get("AERODATABOX_KEY")) return reply(200, { skipped: "No flight keys yet" });
-      const { data: companies } = await admin.from("companies").select("*");
+      // Suspended clients and the product owner's own login don't use paid credits.
+      const { data: companies } = await admin.from("companies").select("*").is("suspended_at", null).neq("slug", "platform");
       const results = [];
       for (const c of (companies ?? []) as Company[]) {
         try { results.push(await runCompany(admin, c, "timer")); }

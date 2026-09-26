@@ -130,6 +130,9 @@ Deno.serve(async (req) => {
       if (!name) return reply(400, { error: "Enter the person's name." });
       if (!ROLES.includes(role)) return reply(400, { error: "Choose a role." });
       if (role === "owner" && me.role !== "owner") return reply(403, { error: "Only an owner can add another owner." });
+      // Office can add people but not managers: a manager's link and PIN would
+      // give office Settings and staff-access powers (part 17).
+      if (role === "manager" && !["owner", "manager"].includes(me.role)) return reply(403, { error: "Only a manager or the owner can add a manager." });
       return reply(200, await createPerson(me.company_id, name, role));
     }
 
@@ -137,6 +140,7 @@ Deno.serve(async (req) => {
     const { data: person } = await admin.from("staff").select("id, company_id, user_id, name, role, active").eq("id", staffId).maybeSingle();
     if (!person || person.company_id !== me.company_id) return reply(404, { error: "Person not found." });
     if (person.role === "owner" && me.role !== "owner") return reply(403, { error: "Only an owner can change an owner." });
+    if (person.role === "manager" && !["owner", "manager"].includes(me.role)) return reply(403, { error: "Only a manager or the owner can change a manager." });
 
     if (action === "reset") {
       const token = randomToken(), pin = randomPin();

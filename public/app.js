@@ -264,17 +264,24 @@
               S.sheets.filter(function (s) { return s.kind === "drops" && s.day <= key; })[0] || S.sheets[0];
     S.sheetId = hit ? hit.id : null;
   }
+  // Loads can overlap (waking, signal back, refresh, live updates, a sheet
+  // switch). Only the newest one for the sheet on screen may fill the board,
+  // so a late answer can never put one sheet's cars under another's name.
+  var loadSeq = 0;
   async function loadRows() {
     if (!S.sheetId) { S.rows = []; return; }
-    var sh = sheet();
-    try { if (sh && !sh.archived_at) sessionStorage.setItem(openSheetKey(), S.sheetId); } catch (e) {}
-    var r = await sb.from("bookings").select("*").eq("sheet_id", S.sheetId).order(sh && sh.kind === "picks" ? "drop_at" : "return_at", { ascending: true, nullsFirst: false });
+    var sh = sheet(), want = S.sheetId, seq = ++loadSeq;
+    try { if (sh && !sh.archived_at) sessionStorage.setItem(openSheetKey(), want); } catch (e) {}
+    var r = await sb.from("bookings").select("*").eq("sheet_id", want).order(sh && sh.kind === "picks" ? "drop_at" : "return_at", { ascending: true, nullsFirst: false });
+    if (seq !== loadSeq || want !== S.sheetId) return;
     if (r.error) {
       // Keep showing the sheet that's loaded, not another sheet's name over it.
       if (S.rowsSheet && S.rowsSheet !== S.sheetId) S.sheetId = S.rowsSheet;
       toast(isDown(r) ? "The server isn't answering. Still showing what was loaded." : r.error.message, true); return;
     }
-    S.rowsSheet = S.sheetId;
+    // A different sheet: the filters picked on the last one don't apply here.
+    if (S.rowsSheet !== want) { S.catFilter = ""; S.yardFilter = ""; }
+    S.rowsSheet = want;
     S.rows = (r.data || []).filter(function (x) { return !x.removed_at; });
     S.removed = (r.data || []).filter(function (x) { return x.removed_at; });
   }
@@ -329,7 +336,7 @@
     if (!S.offline) return;
     var me; try { me = await sb.rpc("me"); } catch (e) { me = { error: e }; }
     if (me && !me.error && me.data && me.data.id) {
-      try { await loadAppInner(true); toast("Back online. Board up to date."); }
+      try { await loadAppInner(true); if (!S.offline) toast("Back online. Board up to date."); }
       catch (e) { oopsLog(e); if (S.me) { S.offline = true; renderSync(); clearTimeout(S.reconnect); S.reconnect = setTimeout(reconnect, 20000); } }
       return;
     }
@@ -381,7 +388,13 @@
       renderSync(); clearTimeout(retryTimer); retryTimer = setTimeout(flush, S.retryWait); return;
     }
     S.retryWait = 0;
-    if (r.error && isAuth(r.error)) { renderSync(); return; }
+    // Sign-in expired: renew it and try again. If it can't be renewed the app
+    // is signed out and asks for the PIN, and the saved taps go after that.
+    if (r.error && isAuth(r.error)) {
+      renderSync();
+      try { var ref = await sb.auth.refreshSession(); if (!ref.error) { clearTimeout(retryTimer); retryTimer = setTimeout(flush, 1000); } } catch (e) {}
+      return;
+    }
     S.queue.shift(); saveQueue();
     if (op.rowId) { S.pending[op.rowId] = Math.max(0, (S.pending[op.rowId] || 1) - 1); if (!S.pending[op.rowId]) delete S.pending[op.rowId]; }
     if (r.error) {
@@ -962,14 +975,17 @@
     ptRefresh(); ptPump(r);
   }
   async function ptSave(r, cur) {
+    if (cur.saving) return;
+    cur.saving = true;
     var paths = cur.items.filter(function (x) { return x.state === "done"; }).map(function (x) { return x.path; });
-    var res = await sb.rpc("pt_link_save", { p_token: cur.token, p_booking: r.id, p_paths: paths });
+    var res; try { res = await sb.rpc("pt_link_save", { p_token: cur.token, p_booking: r.id, p_paths: paths }); } catch (e) { res = { error: e }; }
+    cur.saving = false;
     if (pt !== cur) return;
     if (res.error) {
       cur.saveFail = true;
       toast("Couldn't save the link yet: " + (isDown(res) ? "no signal or the server is busy." : res.error.message), true);
       setTimeout(function () { if (pt === cur && cur.saveFail) { cur.saveFail = false; ptSave(r, cur); } }, 8000);
-      return openPt(r);
+      return ptRefresh();   // redraws only if this car's PT screen is open
     }
     cur.saveFail = false;
     cur.saved = paths.length;
@@ -1042,6 +1058,15 @@
     return n + " photo" + (n === 1 ? "" : "s") + (n && pt.mode === "link" ? " · " + d + " uploaded" : "");
   }
   function camStop() {
+    var cur = camStream ? pt : null;
+    // However the camera was closed (Done, Back, a tap outside), what was shot
+    // carries on: the link (or the app's copy) is saved once shooting stops.
+    if (cur) setTimeout(function () {
+      if (pt !== cur) return;
+      var row = S.rows.filter(function (x) { return x.id === cur.id; })[0] || { id: cur.id, reg: cur.reg };
+      if (cur.mode === "photos") ptStore();
+      ptPump(row);
+    }, 0);
     if (camStream) {
       if (camTorch) camLight(false).catch(function () {});
       if (IS_IOS && camLive(camStream)) { camParked = camStream; clearTimeout(camParkTimer); camParkTimer = setTimeout(camUnpark, CAM_PARK_MS); }
@@ -1224,7 +1249,8 @@
     catch (e) {
       btn.disabled = false;
       if (ticked && !pt.sent && row.pt_at) tapPick(row, "pt");
-      if (BIG_SHARE && batch.length > PT_BATCH) { BIG_SHARE = false; toast("Too many photos in one go for this phone. Sending 10 at a time instead.", true); return openPt(r); }
+      // Cancel is a person changing their mind, not the phone refusing the set.
+      if (BIG_SHARE && batch.length > PT_BATCH && e.name !== "AbortError") { BIG_SHARE = false; toast("Too many photos in one go for this phone. Sending 10 at a time instead.", true); return openPt(r); }
       if (e.name !== "AbortError") toast("Couldn't open sharing: " + e.message, true);
       return;
     }
@@ -1456,8 +1482,7 @@
       return '<button type="button" class="link" data-undoearly>Undo early return' + (from ? " (back to " + esc(sheetLabel(from)) + ")" : "") + "</button>";
     }
     if (!canEarly(r)) return "";
-    return '<button type="button" class="btn ghost ptgo" data-early>EARLY RETURN · move to ' + esc(sheetLabel({ kind: "drops", day: today })) + "</button>" +
-      '<p class="hint">Booked back ' + esc(dayShort(r.return_at) + " " + hhmm(r.return_at)) + ". Use this when they ring to come back sooner.</p>";
+    return '<button type="button" class="btn ghost ptgo" data-early>EARLY RETURN · move to ' + esc(sheetLabel({ kind: "drops", day: today })) + "</button>";
   }
   async function earlyMove(r, btn, undo, asked) {
     if (!undo && !asked && !confirm("Move " + (r.reg || "this car") + " to tonight's sheet as an early return?")) return;
@@ -1477,6 +1502,7 @@
     function by(at, who) { return at ? esc(hhmm(at)) + (who ? " · " + esc(staffName(who)) : "") : "—"; }
     var det = [["NAME", esc(r.name) || "—"], ["CAR", esc(r.make) || "—"], ["REF", esc(r.ref) || "—"]];
     if (drops) {
+      det.push(["MEET", r.drop_at ? esc(dayShort(r.drop_at) + " " + hhmm(r.drop_at)) : "—"]);
       det.push(["BACK", esc(dayShort(r.return_at) + " " + hhmm(r.return_at))]);
       det.push(["FLIGHT", esc(r.flight || "—") + (r.sched_time ? " · sched " + esc(r.sched_time) : "")]);
       if (r.est_time || r.flight_note) det.push(["ARRIVAL", (r.est_time ? "<b>" + esc(r.est_time) + "</b> " : "") + '<span class="hint">' + esc(r.flight_note) + "</span>"]);
@@ -1496,8 +1522,8 @@
     }
     if (drops && can("flights")) {
       h += '<label for="flightText">FLIGHT NUMBER</label><input id="flightText" value="' + esc(r.flight) + '" autocomplete="off" autocapitalize="characters" maxlength="12" placeholder="or NO FLIGHT">';
-      if (r.flight === "NO FLIGHT") h += '<label for="collectText">COLLECTION TIME</label><input id="collectText" type="time" value="' + esc(/^\d{2}:\d{2}$/.test(r.est_time) ? r.est_time : "") + '">';
-      else h += '<label for="schedText">SCHEDULED LANDING</label><input id="schedText" type="time" value="' + esc(/^\d{2}:\d{2}$/.test(r.sched_time) ? r.sched_time : "") + '">';
+      if (r.flight === "NO FLIGHT") h += '<label for="collectText">COLLECTION TIME</label>' + timeBox("collectText", /^\d{2}:\d{2}$/.test(r.est_time) ? r.est_time : "");
+      else h += '<label for="schedText">SCHEDULED LANDING</label>' + timeBox("schedText", /^\d{2}:\d{2}$/.test(r.sched_time) ? r.sched_time : "");
     }
     if (can("note")) h += '<label for="noteText">NOTE</label><textarea id="noteText" maxlength="500">' + esc(r.note) + '</textarea>';
     var extra = "";
@@ -1530,8 +1556,14 @@
     }).join("");
   }
   $("panel").addEventListener("close", function () { camStop(); panelRow = null; quick = null; staffEdit = null; render(); });
+  // Closes on a tap outside only when the press started outside too: selecting
+  // text in a box and letting go past the edge must not close it.
+  var downOn = {};
+  ["panel", "menu"].forEach(function (id) { $(id).addEventListener("pointerdown", function (e) { downOn[id] = e.target; }); });
+  function outside(id, e) { var hit = e.target === $(id) && downOn[id] === $(id); downOn[id] = null; return hit; }
   $("panel").addEventListener("click", function (e) {
-    if (e.target === $("panel")) return $("panel").close();          // tap outside the sheet
+    if (outside("panel", e)) return $("panel").close();          // tap outside the sheet
+    if (e.target === $("panel")) return;
     var t = e.target.closest("button"); if (!t) return;
     if (t.dataset.close !== undefined) return $("panel").close();
     if (t.dataset.pickflight && quick) return saveQuickFlight(t.dataset.pickflight, undefined, t.dataset.picksched);
@@ -1546,16 +1578,19 @@
     var r = S.rows.filter(function (x) { return x.id === panelRow.id; })[0] || panelRow;
     if (t.dataset.savepanel !== undefined) {
       var saved = false;
+      // The note first: turning a car into NO FLIGHT moves on to the
+      // collection-time screen, and a note typed alongside must not be lost.
+      if ($("noteText")) {
+        var text = $("noteText").value.trim();
+        if (text !== r.note) { run("set_note", { p_booking: r.id, p_note: text }, r, function (x) { x.note = text; }); saved = true; }
+      }
       if ($("flightText")) {
-        var f = normFlight($("flightText").value), ct = $("collectText") ? $("collectText").value : undefined, st = $("schedText") ? $("schedText").value : undefined;
+        var f = normFlight($("flightText").value), ct = readTime("collectText"), st = readTime("schedText");
+        if (ct === null || st === null) return toast("Type the time like 13:20 (or 1320).", true);
         if (f === "NO FLIGHT" && r.flight !== "NO FLIGHT") { panelRow = null; quick = { id: r.id, chain: false, suggest: [], noFlight: true }; drawQuickFlight(); return; }
         // The old flight's time left in the box doesn't carry over to a new flight number.
         if (f !== r.flight && st === (r.sched_time || "")) st = undefined;
         if (f !== r.flight || (f === "NO FLIGHT" && ct !== undefined && ct !== (r.est_time || "")) || (st !== undefined && st !== (r.sched_time || ""))) { setFlight(r, f, ct, st); saved = true; }
-      }
-      if ($("noteText")) {
-        var text = $("noteText").value.trim();
-        if (text !== r.note) { run("set_note", { p_booking: r.id, p_note: text }, r, function (x) { x.note = text; }); saved = true; }
       }
       if (saved) toast("Saved");
       return $("panel").close();
@@ -1631,7 +1666,10 @@
     btn.disabled = true;
     var x = await sb.rpc("restore_booking", { p_booking: btn.dataset.restore });
     if (x.error) { btn.disabled = false; return toast(x.error.message, true); }
-    dropRemoved(x.data.id); S.rows.push(x.data);
+    // The live update may have put it back already: replace, never add twice.
+    dropRemoved(x.data.id);
+    var at = S.rows.findIndex(function (y) { return y.id === x.data.id; });
+    if (at >= 0) S.rows[at] = x.data; else S.rows.push(x.data);
     toast(x.data.reg + " is back on the board");
     openRemoved();
   }
@@ -1842,14 +1880,29 @@
     var box = $("copyBox"); box.focus(); box.setSelectionRange(0, text.length);
   }
 
+  // Landing and collection times are typed, not picked: "1320", "13:20",
+  // "13.20" and "920" all mean what they say. "" is no time; null is not a time.
+  function timeBox(id, value, extra) {
+    return '<input id="' + id + '" class="timebox" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="e.g. 13:20" value="' + esc(value || "") + '"' + (extra || "") + ">";
+  }
+  function cleanTime(v) {
+    var t = String(v || "").trim(); if (!t) return "";
+    var m = t.match(/^(\d{1,2})[:.\s]?(\d{2})$/) || t.replace(/\D/g, "").match(/^(\d{1,2})(\d{2})$/);
+    if (!m || +m[1] > 23 || +m[2] > 59) return null;
+    return pad(+m[1]) + ":" + m[2];
+  }
+  function readTime(id) { var el = $(id); return el ? cleanTime(el.value) : undefined; }
   // "no flight", "no flight no.", "NOFLIGHT" all mean NO FLIGHT.
   function normFlight(v) { var f = String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); return /^NOFLIGHT/.test(f) ? "NO FLIGHT" : f; }
-  // A time on the day nearest the booked return (00:30 on a 23:30 booking is the next morning).
+  // A time on the day nearest the booked return (00:30 on a 23:30 booking is
+  // the next morning); for an early return, nearest when it was brought forward.
+  // Same rule as set_collect_time / set_sched_time in the database (part 31).
   function collectAt(r, time) {
-    if (!r.return_at) return null;
-    var booked = hhmm(r.return_at), diff = (+time.slice(0, 2) * 60 + +time.slice(3)) - (+booked.slice(0, 2) * 60 + +booked.slice(3));
+    var base = r.early ? (r.early_at || nowIso()) : r.return_at;
+    if (!base) return null;
+    var booked = hhmm(base), diff = (+time.slice(0, 2) * 60 + +time.slice(3)) - (+booked.slice(0, 2) * 60 + +booked.slice(3));
     if (diff < -720) diff += 1440; if (diff > 720) diff -= 1440;
-    return new Date(new Date(r.return_at).getTime() + diff * 60000).toISOString();
+    return new Date(new Date(base).getTime() + diff * 60000).toISOString();
   }
   // sched: the scheduled landing time typed by hand (HH:MM, "" clears it),
   // for when the flights check can't find the flight.
@@ -1897,13 +1950,13 @@
       '<p class="sub">' + esc(r.name) + " · back " + esc(hhmm(r.return_at)) + "</p>";
     if (quick.noFlight) {
       $("panelBody").innerHTML = head + '<form id="quickForm" novalidate><label for="collectTime">NO FLIGHT NUMBER · COLLECTION TIME</label>' +
-        '<input id="collectTime" type="time" value="' + esc(hhmm(r.return_at)) + '" required>' +
+        timeBox("collectTime", hhmm(r.return_at), " required") +
         '<div class="pbtns"><button type="button" data-flightback>Back</button><button class="save">' + saveWord + "</button></div></form>";
       return;
     }
     $("panelBody").innerHTML = head +
       '<form id="quickForm" novalidate><label for="quickFlight">FLIGHT NUMBER</label><input id="quickFlight" value="' + esc(typed) + '" autocomplete="off" autocapitalize="characters" maxlength="10" placeholder="e.g. W43451">' +
-      '<label for="quickSched">SCHEDULED LANDING (IF KNOWN)</label><input id="quickSched" type="time" value="' + esc(typedSched) + '">' +
+      '<label for="quickSched">SCHEDULED LANDING (IF KNOWN)</label>' + timeBox("quickSched", typedSched) +
       (chips ? "<label>LANDING NEAR " + esc(hhmm(r.return_at)) + "</label>" + chips : "") +
       '<button type="button" class="noflight" data-noflight>NO FLIGHT NUMBER</button>' +
       '<div class="pbtns"><button type="button" data-close>' + (quick.chain ? "Stop" : "Close") + '</button><button class="save">' + saveWord + "</button></div></form>";
@@ -2429,7 +2482,7 @@
     return '<h2 class="title">Staff</h2>' + (S.issued ? issuedHtml(S.issued) + "<br>" : "") +
       '<form class="box" id="addStaff" style="padding:12px;margin-bottom:14px" novalidate><strong>Add a person</strong>' +
       '<label class="field">Name<input id="newName" maxlength="60" autocomplete="off"></label>' +
-      '<label class="field">Role<select id="newRole">' + ["bongo", "terminal", "office", "manager", "view"].concat(S.me.role === "owner" ? ["owner"] : []).map(function (r) { return '<option value="' + r + '">' + ROLE_LABEL[r] + "</option>"; }).join("") + "</select></label>" +
+      '<label class="field">Role<select id="newRole">' + ["bongo", "terminal", "office", "view"].concat(S.me.role === "owner" || S.me.role === "manager" ? ["manager"] : [], S.me.role === "owner" ? ["owner"] : []).map(function (r) { return '<option value="' + r + '">' + ROLE_LABEL[r] + "</option>"; }).join("") + "</select></label>" +
       '<button class="btn brand" id="addGo">Add and get link</button></form>' +
       '<div class="box">' + people.map(function (p) {
         return '<div class="rowline' + (p.active ? "" : " off") + '"><div class="grow"><strong>' + esc(p.name) + '</strong><div class="note">' + esc(ROLE_LABEL[p.role] || p.role) + (p.active ? "" : " · switched off") + "</div></div>" +
@@ -2473,7 +2526,8 @@
       }).join("") + "</div>";
     }
     h += '<div class="section-label">Days older than ' + PICKER_DAYS + " days</div>";
-    if (!A.days) h += '<div class="msg">Loading…</div>';
+    if (!A.days || A.daysState === "loading") h += '<div class="msg">Loading…</div>';
+    else if (A.daysState === "fail") h += '<p class="note">Couldn\'t load the older days. <button type="button" class="link" data-archretry>Try again</button></p>';
     else if (!A.days.length) h += '<p class="note">None yet.</p>';
     else {
       var months = {};
@@ -2488,9 +2542,9 @@
     return h;
   }
   async function loadArchiveDays() {
-    S.arch.days = [];
+    S.arch.days = []; S.arch.daysState = "loading";
     var r = await sb.from("sheets").select("id, kind, day").lt("day", addDaysKey(londonParts(new Date()).key, -PICKER_DAYS)).order("day", { ascending: false }).order("kind").limit(2000);
-    S.arch.days = r.error ? [] : r.data;
+    S.arch.days = r.error ? [] : r.data; S.arch.daysState = r.error ? "fail" : "ok";
     if (S.view === "archive") render();
   }
   async function searchArchive() {
@@ -2887,6 +2941,7 @@
       if (r.pt_at) return tapPick(r, "pt");
       return ptStart(r);
     }
+    if (t.dataset.archretry !== undefined) { S.arch.days = null; render(); return; }
     if (t.dataset.impkind) { S.imp = newImport(t.dataset.impkind); render(); return; }
     if (t.dataset.read !== undefined) return readImport();
     if (t.dataset.restart !== undefined) { S.imp = newImport(S.imp.kind); render(); return; }
@@ -2917,8 +2972,9 @@
     if (e.target.id === "clientOwnerForm") { e.preventDefault(); return createClientOwner(); }
     if (e.target.id === "quickForm") {
       e.preventDefault();
-      if (quick && quick.noFlight) { var ct = $("collectTime").value; if (!/^\d{2}:\d{2}$/.test(ct)) { toast("Type the collection time.", true); return; } return saveQuickFlight("NO FLIGHT", ct); }
-      return saveQuickFlight($("quickFlight").value, undefined, $("quickSched").value);
+      if (quick && quick.noFlight) { var ct = readTime("collectTime"); if (!ct) { toast("Type the collection time like 13:20 (or 1320).", true); return; } return saveQuickFlight("NO FLIGHT", ct); }
+      var qs = readTime("quickSched"); if (qs === null) { toast("Type the landing time like 13:20 (or 1320).", true); return; }
+      return saveQuickFlight($("quickFlight").value, undefined, qs);
     }
     if (e.target.id !== "addStaff") return;
     e.preventDefault();
@@ -2986,7 +3042,7 @@
       }).join("") + "</div>" + sheetTools + '<div class="pbtns"><button type="button" data-closemenu>Close</button></div>';
     $("menu").showModal();
   }
-  $("menu").addEventListener("click", function (e) { if (e.target === $("menu") || e.target.closest("[data-closemenu]")) $("menu").close(); });
+  $("menu").addEventListener("click", function (e) { if (outside("menu", e) || e.target.closest("[data-closemenu]")) $("menu").close(); });
   // The clock, and the CALLED colours that change with waiting time.
   setInterval(function () {
     if (!S.me) return;

@@ -94,6 +94,7 @@ function rpc(db, fn, a) {
     case "set_note": { const b = row(a.p_booking); b.note = a.p_note; return b; }
     case "set_yard": { const b = row(a.p_booking); b.yard = a.p_yard; return b; }
     case "set_flight": { const b = row(a.p_booking); b.flight = a.p_flight; return b; }
+    case "set_sched_time": { const b = row(a.p_booking); b.sched_time = a.p_time; return b; }
     case "early_return": { const b = row(a.p_booking); b.moved_from = b.sheet_id; b.sheet_id = "d0"; b.early = true; b.early_at = now(); b.num = 105; return b; }
     case "undo_early_return": { const b = row(a.p_booking); b.sheet_id = b.moved_from; b.moved_from = null; b.early = false; return b; }
     case "pt_link_save": {
@@ -177,7 +178,10 @@ const toast = (page) => page.evaluate(() => [...document.querySelectorAll(".toas
 
 // Each section stands alone: if one breaks part-way, it's reported and the rest still run.
 async function scenario(fn) {
-  try { await fn(); } catch (e) { check("section finished without crashing", false, String(e.message || e).split("\n")[0]); }
+  try { await fn(); } catch (e) {
+    const at = (String(e.stack || "").match(/run\.mjs:(\d+)/) || [])[1];
+    check("section finished without crashing", false, String(e.message || e).split("\n")[0] + (at ? " (run.mjs line " + at + ")" : ""));
+  }
 }
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined, args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] });
@@ -236,6 +240,13 @@ await scenario(async () => {
   await page.fill("#noteText", "KEYS IN OFFICE"); await page.click("[data-savepanel]"); await sleep(500);
   check("saving a note reaches the server", db.calls.some((c) => c.fn === "set_note" && c.args.p_note === "KEYS IN OFFICE"));
   check("the note shows on the row", /KEYS IN OFFICE/.test(await text(page, '.row[data-id="b2"]')));
+  await page.click('.row[data-id="b1"] .reg'); await sleep(300);
+  await page.fill("#schedText", "1320"); await page.click("[data-savepanel]"); await sleep(500);
+  check("scheduled landing is typed: '1320' saves as 13:20", db.calls.some((c) => c.fn === "set_sched_time" && c.args.p_time === "13:20"), db.calls.filter((c) => c.fn === "set_sched_time"));
+  await page.click('.row[data-id="b1"] .reg'); await sleep(300);
+  await page.fill("#schedText", "2575"); await page.click("[data-savepanel]"); await sleep(400);
+  check("a time that isn't one is refused with a message", /13:20/.test(await toast(page)) && db.calls.filter((c) => c.fn === "set_sched_time").length === 1);
+  await page.click("[data-close]").catch(() => {}); await sleep(200);
   await page.click('.row[data-id="b1"] .reg'); await sleep(300);
   check("no sideways scrolling in the car panel", await noSideScroll(page));
 });
@@ -362,7 +373,42 @@ await scenario(async () => {
   check("…and the app keeps working afterwards", await page.locator(".row").count() === 3);
 });
 
-// 11. small Android phone width
+// 11. hostile booking data never runs as code (names, notes, regs come from outside)
+await scenario(async () => {
+  const db = makeDb(), bad = '<img src=x onerror="window.__xss=1">';
+  db.bookings.push({ id: "bx", company_id: "c1", sheet_id: "d0", kind: "drops", ref: "RX" + bad, reg: "XS55" + bad, num: 9, name: "EVIL" + bad, make: bad, flight: "U21234", return_at: iso(TONIGHT, "23:00"), phone: bad, note: "!" + bad });
+  db.bookings.push({ id: "px", company_id: "c1", sheet_id: "p0", kind: "picks", ref: "PX", reg: "XS66" + bad, num: 9, name: "EVIL" + bad, drop_at: iso(TONIGHT, "21:00"), return_at: iso(addDays(TONIGHT, 1), "10:00"), intake: "", note: bad });
+  db.staff.push({ id: "sx", name: "STAFF" + bad, role: "office", active: true });
+  db.bookings.find((b) => b.id === "b1").sent_by = "sx"; db.bookings.find((b) => b.id === "b1").sent_at = iso(TONIGHT, "20:00");
+  const page = await phone(browser, db);
+  await open(page);
+  await page.click('.row[data-id="bx"] .reg'); await sleep(400); await page.click("[data-close]");
+  await page.fill("#q", "EVIL"); await sleep(900); await page.fill("#q", "");
+  await page.selectOption("#sheetPick", "p0"); await sleep(700);
+  await page.click('.row[data-id="px"] .l2'); await sleep(400);
+  check("hostile names/notes/regs are shown as text, never run as code", await page.evaluate(() => window.__xss === undefined) && /EVIL/.test(await page.locator("#main").innerText()));
+});
+
+// 12. the DROPS car panel: meet date shown, no hint text, a mouse drag doesn't close it
+await scenario(async () => {
+  const db = makeDb();
+  db.bookings.find((b) => b.id === "b5").drop_at = iso(addDays(TONIGHT, -5), "07:30");
+  const page = await phone(browser, db, { width: 1280 });
+  await open(page);
+  await page.selectOption("#sheetPick", "d1"); await sleep(700);
+  await page.click('.row[data-id="b5"] .reg'); await sleep(400);
+  const body = await page.locator("#panelBody").innerText();
+  check("DROPS panel shows the meet date and time", /MEET\n.*\d+ \w+ \d\d:\d\d\nBACK/.test(body));
+  check("DROPS panel has no \"use this when they ring\" text", !/ring/i.test(body) && await page.locator("[data-early]").count() === 1);
+  const box = await page.locator("#noteText").boundingBox();
+  await page.mouse.move(box.x + 10, box.y + 10); await page.mouse.down();
+  await page.mouse.move(5, box.y + 10, { steps: 5 }); await page.mouse.up(); await sleep(200);
+  check("selecting text and letting go outside keeps the panel open", await page.evaluate(() => document.getElementById("panel").open));
+  await page.mouse.click(5, 5); await sleep(200);
+  check("a click outside still closes it", await page.evaluate(() => !document.getElementById("panel").open));
+});
+
+// 13. small Android phone width
 await scenario(async () => {
   const page = await phone(browser, makeDb(), { width: 360, ua: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36" });
   await open(page);
