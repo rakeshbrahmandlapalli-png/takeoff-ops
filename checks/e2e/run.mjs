@@ -683,6 +683,52 @@ await scenario(async () => {
   check("import (text .xls): drop-off 04:00 and return 14:30 sent as written", !!x1 && x1.drop_local === TONIGHT + " 04:00" && x1.return_local === d1 + " 14:30", x1);
 });
 
+// 18a0. DROPS by hour: morning is up to 17:30, night from 17:31
+await scenario(async () => {
+  const db = makeDb();
+  db.bookings.find((x) => x.id === "b1").return_at = new Date(TONIGHT + "T17:30:00+01:00").toISOString();
+  db.bookings.find((x) => x.id === "b2").return_at = new Date(TONIGHT + "T17:31:00+01:00").toISOString();
+  const page = await phone(browser, db, { width: 1000 });
+  await open(page);
+  await page.click("#psBtn");
+  await sleep(500);
+  const body = await page.locator("#panelBody").innerText().catch(() => "");
+  const m = body.match(/Morning 06:00–17:30\s+(\d+)/), n = body.match(/Night 17:31–05:59\s+(\d+)/);
+  check("DROPS by hour: 17:30 counts as morning, 17:31 as night", !!m && !!n && +m[1] === 1 && +n[1] === 2, body.slice(-400));
+});
+
+// 18a3. a file where every car has the same time is refused (the times weren't read)
+await scenario(async () => {
+  const db = makeDb();
+  const page = await phone(browser, db, { width: 1000 });
+  await open(page);
+  const d1 = addDays(TONIGHT, 1);
+  const rows = [" Reference Number \t Car Reg \t Client \t Booking From \t Drop off Time \t Booking To \t Collection Time "];
+  for (let i = 1; i <= 6; i++) rows.push(["S" + i, "AB1" + i + "CDE", "N" + i, TONIGHT, "01:00", d1, "01:00"].join("\t"));
+  await page.click("#menuBtn"); await sleep(300); await page.click('#menu [data-view="import"]'); await sleep(300);
+  await page.click('[data-impkind="picks"]'); await sleep(200);
+  await page.setInputFiles('input[data-file="excel"]', { name: "same.xls", mimeType: "application/vnd.ms-excel", buffer: Buffer.from(rows.join("\n")) });
+  await sleep(200); await page.click("[data-read]"); await sleep(1500);
+  check("import: every car at the same time is refused, nothing sent", /same drop-off time \(01:00\)/.test(await text(page, ".alert")) && !db.calls.some((c) => c.fn === "import_sheet"), await text(page, ".alert"));
+});
+
+// 18a4. a new version of the app is picked up without anyone reloading
+await scenario(async () => {
+  const db = makeDb();
+  let tag = '"v1"';
+  const page = await phone(browser, db);
+  await page.route("**/app.js", (route) => route.request().method() === "HEAD" ? route.fulfill({ status: 200, headers: { etag: tag } }) : route.continue());
+  await open(page);
+  await sleep(500);
+  await page.evaluate(() => { window.__stillHere = true; });
+  tag = '"v2"';
+  await page.evaluate(() => { Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true }); document.dispatchEvent(new Event("visibilitychange")); });
+  await sleep(2500);
+  check("a new app version reloads the app by itself when nothing is in progress", !(await page.evaluate(() => window.__stillHere === true)));
+  await page.waitForSelector("#main .row, #main .msg", { timeout: 8000 });
+  check("after the update the board is back", await page.locator("#main .row").count() > 0);
+});
+
 // 18b. import on a phone: the file picker sends the app to the background; the
 // file must still be taken when it comes back (it was lost to a redraw).
 await scenario(async () => {

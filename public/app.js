@@ -542,7 +542,7 @@
     snapSave();
     if (flashId) { var el = document.querySelector('[data-id="' + flashId + '"]'); if (el) { el.classList.add("flash"); setTimeout(function () { el.classList.remove("flash"); }, 1500); } flashId = null; }
   }
-  function go(view) { if (S.platform && view !== "me") view = "clients"; if (view === "import") S.recentImports = null; S.view = view; S.settingsDraft = null; if (view === "summary") S.activity = null; if ($("menu").open) $("menu").close(); render(); window.scrollTo(0, 0); }
+  function go(view) { if (S.platform && view !== "me") view = "clients"; if (view === "import" && S.updateReady && !S.queue.length) { location.reload(); return; } if (view === "import") S.recentImports = null; S.view = view; S.settingsDraft = null; if (view === "summary") S.activity = null; if ($("menu").open) $("menu").close(); render(); window.scrollTo(0, 0); }
 
   // ── board ─────────────────────────────────
   // Same rules as the Sheet app, so nobody has to relearn what a count means.
@@ -1940,7 +1940,7 @@
   // Overstays are older returns, so they get their own line, not an hour.
   function dropsStats() {
     var due = {}, sent = {}, done = {}, over = { due: 0, sent: 0, done: 0 }, last30 = 0, last60 = 0, now = Date.now();
-    // Morning shift 06:00–18:00, night shift 18:01–05:59, by the booked return time.
+    // Morning shift 06:00–17:30, night shift 17:31–05:59, by the booked return time.
     var morning = { due: 0, sent: 0, done: 0 }, night = { due: 0, sent: 0, done: 0 };
     var shift = (sheet() || {}).day, start = +((S.company && S.company.drops_day_end) || "06").slice(0, 2);
     S.rows.forEach(function (r) {
@@ -1953,7 +1953,7 @@
         var later = Math.round((Date.parse(p.key) - Date.parse(shift)) / 86400000);
         var h = later * 24 + +p.time.slice(0, 2) - start;
         due[h] = (due[h] || 0) + 1; if (isSent) sent[h] = (sent[h] || 0) + 1; if (isDone) done[h] = (done[h] || 0) + 1;
-        var mins = +p.time.slice(0, 2) * 60 + +p.time.slice(3, 5), sh2 = mins >= 360 && mins <= 1080 ? morning : night;
+        var mins = +p.time.slice(0, 2) * 60 + +p.time.slice(3, 5), sh2 = mins >= 360 && mins <= 1050 ? morning : night;
         sh2.due++; if (isSent) sh2.sent++; if (isDone) sh2.done++;
       }
       if (r.cleared_at) { var m = (now - new Date(r.cleared_at).getTime()) / 60000; if (m >= 0 && m <= 30) last30++; if (m >= 0 && m <= 60) last60++; }
@@ -1987,7 +1987,7 @@
       D.hours.map(function (h) { return line(h.label, h); }).join("") +
       (D.over.due ? line("Overstays", D.over, " sec2") : "") +
       line("TOTAL", D.total, " tot") +
-      line("Morning 06:00–18:00", D.morning, " shift") + line("Night 18:01–05:59", D.night, " shift") +
+      line("Morning 06:00–17:30", D.morning, " shift") + line("Night 17:31–05:59", D.night, " shift") +
       (D.over.due ? '<div class="hint">Overstays are counted on their own, not in a shift.</div>' : "") +
       '<div class="pst4"><b>Collected, last 30 min</b><i class="num">' + D.last30 + '</i><i></i><i></i></div><div class="pst4"><b>Collected, last 60 min</b><i class="num">' + D.last60 + "</i><i></i><i></i></div>" +
       chargeLines().map(function (x, i) { return '<div class="pst4' + (i === 0 ? " owed" : "") + '"><b>' + esc(x[0]) + '</b><i></i><i></i><i class="num">' + x[1] + "</i></div>"; }).join("") +
@@ -2045,8 +2045,8 @@
       lines = ["DROPS BY HOUR — " + sheetName(), "", "Due back   Due   Sent   Collected"].concat(D.hours.map(function (h) { return h.label + "   " + h.due + "   " + h.sent + "   " + h.done; }),
         D.over.due ? ["Overstays   " + D.over.due + "   " + D.over.sent + "   " + D.over.done] : [],
         ["TOTAL   " + D.total.due + "   " + D.total.sent + "   " + D.total.done, "",
-          "Morning 06:00–18:00   " + D.morning.due + "   " + D.morning.sent + "   " + D.morning.done,
-          "Night 18:01–05:59   " + D.night.due + "   " + D.night.sent + "   " + D.night.done, "", "Collected last 30 min   " + D.last30, "Collected last 60 min   " + D.last60],
+          "Morning 06:00–17:30   " + D.morning.due + "   " + D.morning.sent + "   " + D.morning.done,
+          "Night 17:31–05:59   " + D.night.due + "   " + D.night.sent + "   " + D.night.done, "", "Collected last 30 min   " + D.last30, "Collected last 60 min   " + D.last60],
         chargeLines().length ? [""].concat(chargeLines().map(function (x) { return x[0] + "   " + x[1]; })) : []);
     } else {
       var P = picksStats();
@@ -2263,8 +2263,8 @@
           '</strong></div><div class="stat"><span>On the way</span><strong class="num">' + d.filter(function (r) { return r.sent_at && !r.cleared_at; }).length +
           '</strong></div><div class="stat"><span>Overstays</span><strong class="num">' + d.filter(function (r) { return r.overstay; }).length +
           '</strong></div><div class="stat"><span>Complaints</span><strong class="num">' + d.filter(function (r) { return r.clear_word === "COMPLAINT" || /^!/.test(r.note); }).length +
-          '</strong></div><div class="stat"><span>Morning 06:00–18:00</span><strong class="num">' + D.morning.done + " / " + D.morning.due +
-          '</strong></div><div class="stat"><span>Night 18:01–05:59</span><strong class="num">' + D.night.done + " / " + D.night.due + "</strong></div></div>" +
+          '</strong></div><div class="stat"><span>Morning 06:00–17:30</span><strong class="num">' + D.morning.done + " / " + D.morning.due +
+          '</strong></div><div class="stat"><span>Night 17:31–05:59</span><strong class="num">' + D.night.done + " / " + D.night.due + "</strong></div></div>" +
           (due.length ? '<div class="section-label">Money due</div><div class="box">' + due.map(function (r) { return '<div class="rowline"><div class="grow"><strong>' + esc(r.reg) + "</strong> · " + esc(r.name) + '<div class="note">' + esc(r.note) + "</div></div></div>"; }).join("") + "</div>" : "");
       } else {
         var p = S.rows, hours = {};
@@ -2429,6 +2429,12 @@
       }
       if (!isJoblist && I.kind === "drops" && I.pdfFile) R.matchFlights(xl.rows, await R.readPdf(I.pdfFile), "flightIn");
       I.real = { all: xl.rows };
+      // Every car at the same time means the file's times weren't read (26 Sept: all 01:00).
+      var field = I.kind === "drops" ? "ret" : "meet", times = {};
+      xl.rows.forEach(function (r) { if (r[field]) times[r[field].time || "none"] = 1; });
+      if (xl.rows.length >= 5 && Object.keys(times).length === 1)
+        throw new Error("Every car in this file has the same " + (I.kind === "drops" ? "return" : "drop-off") + " time (" + (Object.keys(times)[0] === "none" ? "no time" : Object.keys(times)[0]) +
+          "), so the times weren't read. Nothing was imported. Close the app completely, open it again and retry; if it still happens, send Rakesh the file.");
       groupImport();
       if (!I.real.dates.length) throw new Error("Found " + xl.rows.length + " bookings but no dates in them.");
       var inner = I.real.dates.length >= 3 ? I.real.dates.slice(1, -1) : I.real.dates;
@@ -3277,6 +3283,37 @@
     $("clock").textContent = londonParts(new Date()).time;
     if (S.view === "board" && !$("panel").open && !yardOpen() && document.activeElement !== $("q")) render();
   }, 60000);
+
+  // ── staying up to date ──
+  // A phone or office computer can keep the app open for days, and fixes then
+  // never reach it (26 Sept: an office tab from the morning imported with the
+  // old file reader in the evening). The app's own file is checked every 10
+  // minutes and when it comes back to the front (a HEAD request: no data).
+  // A new version is loaded as soon as nothing is in progress, and always
+  // before an import.
+  var appTag = "", appTagAt = 0;
+  async function appVersion() {
+    try {
+      var r = await fetch("/app.js", { method: "HEAD", cache: "no-store" });
+      return r.ok ? (r.headers.get("etag") || r.headers.get("last-modified") || "") : "";
+    } catch (e) { return ""; }
+  }
+  async function checkForUpdate() {
+    if (S.updateReady || Date.now() - appTagAt < 5 * 60000) return;
+    appTagAt = Date.now();
+    var tag = await appVersion(); if (!tag) return;
+    if (!appTag) { appTag = tag; return; }
+    if (tag !== appTag) { S.updateReady = true; updateIfSafe(); }
+  }
+  function updateSafeNow() {
+    return !$("panel").open && !$("menu").open && !pt && !camStream && !S.queue.length && !BK.length &&
+      !(S.imp && (S.imp.excelFile || S.imp.stage === "preview" || S.imp.saving)) &&
+      !(document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName));
+  }
+  function updateIfSafe() { if (S.updateReady && updateSafeNow()) location.reload(); }
+  appVersion().then(function (t) { appTag = t; appTagAt = Date.now(); });
+  setInterval(function () { checkForUpdate(); updateIfSafe(); }, 60000);
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") { appTagAt = 0; checkForUpdate(); } });
 
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("/sw.js").catch(function () {});
   start().catch(function (err) { oopsLog(err); bootTrouble(); });
