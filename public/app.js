@@ -764,7 +764,7 @@
     var eta = canc ? "" : r.est_time;
     return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' +
       '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" + yardChip(r) +
-      (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + '<span class="pin">' + esc(r.name) + "</span></div>" +
+      (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + catTag(r) + '<span class="pin">' + esc(r.name) + "</span></div>" +
       '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(makeOnly(r.make)) + "</span> · " : "") +
       (r.flight ? esc(r.flight) : can("flights") ? '<button type="button" class="addflight" data-addflight>+ FLIGHT</button>' : "—") + "</span>" +
       '<span class="l2b">' + (booked ? " · " + esc(booked) : "") +
@@ -783,7 +783,15 @@
   }
 
   // Short words on the row, so the customer's name still fits on a phone.
-  function catTag(r) { var c = catOf(r); return c ? '<span class="cat ' + c + '">' + c.toUpperCase() + "</span>" : ""; }
+  // DROPS: SAME DAY when the car was met on the sheet's day, NEXT DAY when it
+  // was met the day before (one night away).
+  function dropCat(r) {
+    var sh = sheet();
+    if (!sh || sh.kind !== "drops" || !r.drop_at || r.early) return "";
+    var d = londonParts(new Date(r.drop_at)).key;
+    return d === sh.day ? "same" : d === addDaysKey(sh.day, -1) ? "next" : "";
+  }
+  function catTag(r) { var c = r.kind === "drops" ? dropCat(r) : catOf(r); return c ? '<span class="cat ' + c + '">' + c.toUpperCase() + "</span>" : ""; }
   function pickRow(r) {
     var bang = /^!/.test(r.note);
     var cls = r.intake === "Collected" ? " coll" : r.intake === "No Show" ? " nosh" : r.intake === "RTC" ? " rtc" : bang ? " cmpl" : "";

@@ -408,7 +408,19 @@ await scenario(async () => {
   check("a click outside still closes it", await page.evaluate(() => !document.getElementById("panel").open));
 });
 
-// 13. small Android phone width
+// 13. DROPS rows tag SAME DAY / NEXT DAY from the meet date
+await scenario(async () => {
+  const db = makeDb(), b = (id) => db.bookings.find((x) => x.id === id);
+  b("b1").drop_at = iso(TONIGHT, "05:30"); b("b2").drop_at = iso(addDays(TONIGHT, -1), "09:00"); b("b3").drop_at = iso(addDays(TONIGHT, -4), "09:00");
+  const page = await phone(browser, db);
+  await open(page);
+  const tag = (id) => page.locator('.row[data-id="' + id + '"] .cat').allInnerTexts().then((t) => t.join(""));
+  check("DROPS: met today shows SAME", /SAME/.test(await tag("b1")));
+  check("DROPS: met yesterday shows NEXT", /NEXT/.test(await tag("b2")));
+  check("DROPS: met earlier shows no day tag", (await tag("b3")) === "");
+});
+
+// 14. small Android phone width
 await scenario(async () => {
   const page = await phone(browser, makeDb(), { width: 360, ua: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36" });
   await open(page);
