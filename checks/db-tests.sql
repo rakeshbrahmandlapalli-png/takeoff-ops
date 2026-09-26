@@ -121,6 +121,29 @@ begin
   begin perform set_pt_method('fax'); ok := false; exception when others then ok := true; end;
   total := total + 1; res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'PT setting refuses an unknown way'); if not ok then fails := fails + 1; end if;
 
+  -- ════ PT copies in Cloudflare R2 (part 43) ════
+  perform pt_link_save('R2token_abcdefghijklmnopq', car_pick, array['r2:' || a_co || '/' || car_pick || '/R2token_abcdefghijklmnopq/01.jpg', 'r2:' || a_co || '/' || car_pick || '/R2token_abcdefghijklmnopq/02.jpg']);
+  j := pt_photos_for(car_pick);
+  total := total + 1; ok := jsonb_array_length(j) = 2;
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'R2: the car panel lists the Cloudflare set too'); if not ok then fails := fails + 1; end if;
+  perform set_config('role', 'postgres', true);
+  total := total + 1; ok := exists (select 1 from activity where company_id = a_co and action = 'PT PHOTOS' and value = '2 photos uploaded (Cloudflare)');
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'R2: activity says the set went to Cloudflare'); if not ok then fails := fails + 1; end if;
+  select count(*) into n from pt_links where token = 'R2token_abcdefghijklmnopq' and cardinality(paths) = 2 and expires_at > now() + interval '29 days';
+  total := total + 1; ok := n = 1 and (select expires_at < now() + interval '4 days' from pt_links where token = tok);
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'R2: a set in Cloudflare is kept 30 days, one in Supabase 3'); if not ok then fails := fails + 1; end if;
+  update pt_links set expires_at = now() - interval '1 minute' where token = 'R2token_abcdefghijklmnopq';
+  total := total + 1; ok := exists (select 1 from pt_links_expired() x where x.token = 'R2token_abcdefghijklmnopq' and cardinality(x.paths) = 0)
+                          and not exists (select 1 from pt_links_expired() x, unnest(x.paths) p where p like 'r2:%');
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'R2: an expired Cloudflare set is forgotten, its files never sent to Supabase''s clean-up'); if not ok then fails := fails + 1; end if;
+  total := total + 1; ok := (select pt_copy_store from companies where id = a_co) = 'supabase';
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'R2: a company''s copies stay in Supabase until switched'); if not ok then fails := fails + 1; end if;
+  perform set_config('role', 'authenticated', true);
+  begin perform pt_link_save('R2token_abcdefghijklmnopq', car_pick, array['r2:' || b_co || '/' || car_pick || '/R2token_abcdefghijklmnopq/03.jpg']); ok := false; exception when others then ok := true; end;
+  total := total + 1; res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'R2: PT save refuses a Cloudflare photo outside the car''s folder'); if not ok then fails := fails + 1; end if;
+  begin perform pt_link_save('R2token_abcdefghijklmnopq', car_pick, array['r2:' || a_co || '/' || car_pick || '/R2token_abcdefghijklmnopq/../x.jpg']); ok := false; exception when others then ok := true; end;
+  total := total + 1; res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'R2: PT save refuses ".." in a Cloudflare path'); if not ok then fails := fails + 1; end if;
+
   -- ════ the other company can never reach company A ════
   perform set_config('request.jwt.claims', json_build_object('sub', b_own, 'role', 'authenticated')::text, true);
   begin perform early_return(car_tmrw); ok := false; exception when others then ok := true; end;

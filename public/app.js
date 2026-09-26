@@ -1239,10 +1239,13 @@
 
   // ── The copy kept for the app ──
   // In the WhatsApp-chat way a copy of the photos uploads quietly in the
-  // background (same store as the link way, kept 15 days), so the car's panel
-  // can show them. PT still gets every full photo on WhatsApp. To fit 15 days
-  // of 100+ cars in the free plan's 1 GB, the copy is 10 photos spread evenly
-  // round the car, about 35 KB each (800 px).
+  // background, so the car's panel can show them. PT still gets every full
+  // photo on WhatsApp. The copy is small, about 35 KB a photo (800 px).
+  // Where it goes is companies.pt_copy_store:
+  //   "r2"        Cloudflare R2 (10 GB free): every photo, kept 30 days. The
+  //               pt-r2 function hands out upload addresses; paths start "r2:".
+  //   otherwise   Supabase's store (1 GB on the free plan): 10 photos spread
+  //               evenly round the car.
   // It waits while the camera is open or PT's photos are still being sent:
   // making copies alongside the share sheet stopped PT on an iPhone.
   var BK = [], bkActive = 0, BK_TRIES = 4, BK_MAX = 800, BK_Q = 0.5, BK_KEEP = 10;
@@ -1273,9 +1276,11 @@
   // In the store's cache setting, so a phone's copies can be checked: small or not.
   var BK_MARK = { bitmap: "3600", img: "3601", orig: "3602" };
   // The photos of a set kept as the copy: BK_KEEP of them, first to last.
+  function bkR2() { return !!(S.company && S.company.pt_copy_store === "r2"); }
+  function bkPath(rowId, token, n) { return (bkR2() ? "r2:" : "") + S.me.company_id + "/" + rowId + "/" + token + "/" + String(n).padStart(2, "0") + ".jpg"; }
   function bkPick(items) {
     var ns = items.map(function (x) { return x.n; }).sort(function (a, b) { return a - b; }), keep = {};
-    if (ns.length <= BK_KEEP) { ns.forEach(function (n) { keep[n] = true; }); return keep; }
+    if (bkR2() || ns.length <= BK_KEEP) { ns.forEach(function (n) { keep[n] = true; }); return keep; }
     for (var k = 0; k < BK_KEEP; k++) keep[ns[Math.round(k * (ns.length - 1) / (BK_KEEP - 1))]] = true;
     return keep;
   }
@@ -1286,7 +1291,7 @@
     var mine = items.filter(function (x) { return keep[x.n]; });
     if (mine.length && mine.every(function (x) { return x.bk === "done"; })) {
       BK = BK.filter(function (y) { return y.token !== token; });
-      bkSave(rowId, token, mine.map(function (x) { return x.path || S.me.company_id + "/" + rowId + "/" + token + "/" + String(x.n).padStart(2, "0") + ".jpg"; }), true, 0);
+      bkSave(rowId, token, mine.map(function (x) { return x.path || bkPath(rowId, token, x.n); }), true, 0);
     }
   }
   function bkHold() { return !!camStream || !!(pt && pt.mode === "photos" && $("panel").open && (pt.sent || 0) < pt.items.length); }
@@ -1294,7 +1299,7 @@
   function bkQueue(rowId, token, x) {
     if (x.queued) return;
     x.queued = true;
-    x.path = S.me.company_id + "/" + rowId + "/" + token + "/" + String(x.n).padStart(2, "0") + ".jpg";
+    x.path = bkPath(rowId, token, x.n);
     if (x.bk !== "done") x.bk = "wait";
     BK.push({ row: rowId, token: token, x: x }); bkPump();
   }
@@ -1309,8 +1314,14 @@
     var x = j.x;
     try {
       var small = await bkSmall(x.file);
-      var up = await sb.storage.from("pt-photos").upload(x.path, small.blob, { contentType: "image/jpeg", cacheControl: BK_MARK[small.how] });
-      x.bk = !up.error || /exist|duplicate/i.test(up.error.message || "") ? "done" : "fail";
+      if (/^r2:/.test(x.path)) {
+        var put = await timedFetch(await bkR2Url(j), { method: "PUT", body: small.blob, headers: { "Content-Type": "image/jpeg" } });
+        x.bk = put.ok ? "done" : "fail";
+        if (put.status === 403) delete R2URLS[j.token];   // address too old: ask again
+      } else {
+        var up = await sb.storage.from("pt-photos").upload(x.path, small.blob, { contentType: "image/jpeg", cacheControl: BK_MARK[small.how] });
+        x.bk = !up.error || /exist|duplicate/i.test(up.error.message || "") ? "done" : "fail";
+      }
     } catch (e) { x.bk = "fail"; }
     bkActive--;
     if (x.bk === "fail") { x.tries = (x.tries || 0) + 1; if (x.tries < BK_TRIES) setTimeout(function () { if (x.bk === "fail") { x.bk = "wait"; bkPump(); } }, 5000 * x.tries); }
@@ -1321,6 +1332,20 @@
       bkSave(j.row, j.token, paths, paths.length === mine.length, 0);
     }
     bkPump();
+  }
+  // R2 upload addresses, asked for once per car (they last 15 minutes; asked
+  // again after 10, or when one is missing or refused).
+  var R2URLS = {};
+  async function bkR2Url(j) {
+    var name = j.x.path.split("/").pop(), c = R2URLS[j.token];
+    if (!c || Date.now() - c.at > 10 * 60000) {
+      var names = [name].concat(BK.filter(function (y) { return y.token === j.token && y.x.bk !== "done"; }).map(function (y) { return y.x.path.split("/").pop(); }).filter(function (n) { return n !== name; })).slice(0, 60);
+      c = R2URLS[j.token] = { at: Date.now(), p: callFunction("pt-r2", { action: "upload", booking: j.row, token: j.token, names: names }, true).then(function (d) { return d.urls || {}; }) };
+    }
+    var urls;
+    try { urls = await c.p; } catch (e) { if (R2URLS[j.token] === c) delete R2URLS[j.token]; throw e; }
+    if (!urls[name]) { if (R2URLS[j.token] === c) delete R2URLS[j.token]; throw new Error("No upload address."); }
+    return urls[name];
   }
   // The set is saved as one link; until that has worked the phone keeps its copy
   // (tried again a few times, then again next time the app opens).
@@ -1528,7 +1553,7 @@
     var items = (rec.blobs || []).map(function (b, i) { return { file: b, n: i + 1, bk: (rec.bk || [])[i] ? "done" : undefined }; });
     // All up already, but maybe not saved as a set before the reload: save it (saving twice is harmless).
     if (items.every(function (x) { return x.bk === "done"; })) {
-      items.forEach(function (x) { x.path = S.me.company_id + "/" + rec.id + "/" + token + "/" + String(x.n).padStart(2, "0") + ".jpg"; });
+      items.forEach(function (x) { x.path = bkPath(rec.id, token, x.n); });
       sb.rpc("pt_link_save", { p_token: token, p_booking: rec.id, p_paths: items.map(function (x) { return x.path; }) }).then(function (res) { if (!res.error) ptForget(rec.id); });
       return;
     }

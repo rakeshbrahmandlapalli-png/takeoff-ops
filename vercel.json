@@ -57,7 +57,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self'; connect-src 'self' blob: https://oioqjfrlwrjovnouhusp.supabase.co wss://oioqjfrlwrjovnouhusp.supabase.co; img-src 'self' data: blob: https://oioqjfrlwrjovnouhusp.supabase.co; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+          "value": "default-src 'self'; script-src 'self'; connect-src 'self' blob: https://oioqjfrlwrjovnouhusp.supabase.co wss://oioqjfrlwrjovnouhusp.supabase.co https://1b2139c185037dcd7e0328869b8b6fcf.r2.cloudflarestorage.com; img-src 'self' data: blob: https://oioqjfrlwrjovnouhusp.supabase.co https://1b2139c185037dcd7e0328869b8b6fcf.r2.cloudflarestorage.com; media-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
         },
         {
           "key": "X-Frame-Options",

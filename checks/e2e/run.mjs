@@ -52,7 +52,7 @@ const iso = (key, hhmm) => new Date(key + "T" + hhmm + ":00Z").toISOString();
 function makeDb(opts = {}) {
   const db = {
     me: { id: "s1", name: "RAKESH", role: "owner", company_id: "c1" },
-    company: { id: "c1", name: "TAKEOFF", slug: "takeoff", yards: ["NB", "S"], drops_day_end: "06:00:00", brand: {}, time_zone: "Europe/London", pt_whatsapp: "447900000000", pt_method: opts.ptMethod || "photos", overstay_rate: 0 },
+    company: { id: "c1", name: "TAKEOFF", slug: "takeoff", yards: ["NB", "S"], drops_day_end: "06:00:00", brand: {}, time_zone: "Europe/London", pt_whatsapp: "447900000000", pt_method: opts.ptMethod || "photos", pt_copy_store: opts.ptStore || "supabase", overstay_rate: 0 },
     staff: [{ id: "s1", name: "RAKESH", role: "owner", active: true }, { id: "s2", name: "SUGU", role: "office", active: true }],
     sheets: [
       { id: "d0", company_id: "c1", kind: "drops", day: TONIGHT },
@@ -122,6 +122,7 @@ function rpc(db, fn, a) {
     default: return null;
   }
 }
+const R2 = "https://1b2139c185037dcd7e0328869b8b6fcf.r2.cloudflarestorage.com";
 async function backend(ctx, db) {
   await ctx.route("**/*.supabase.co/**", async (route) => {
     const req = route.request(), u = new URL(req.url()), p = u.pathname;
@@ -136,6 +137,12 @@ async function backend(ctx, db) {
       return reply(200, rpc(db, fn, args));
     }
     if (p.startsWith("/storage/v1/object/pt-photos/")) { db.uploads.push(p.slice(29)); (db.uploadMarks = db.uploadMarks || []).push(((req.postDataBuffer() || Buffer.alloc(0)).toString("latin1").match(/name="cacheControl"\r\n\r\n(\d+)/) || [])[1] || ""); return reply(200, { Key: "pt-photos/" + p.slice(29) }); }
+    if (p.startsWith("/functions/v1/pt-r2")) {
+      const a = JSON.parse(req.postData() || "{}");
+      (db.r2Asks = db.r2Asks || []).push({ ...a, auth: req.headers()["authorization"] || "" });
+      if (db.r2Down) return reply(503, { error: "Photo store not set up yet." });
+      return reply(200, { urls: Object.fromEntries(a.names.map((n) => [n, `${R2}/takeoff-pt-photos/c1/${a.booking}/${a.token}/${n}?X-Amz-Signature=x`])) });
+    }
     if (p.startsWith("/functions/v1/pt-photos")) {
       const l = db.ptLinks.find((x) => x.token === JSON.parse(req.postData()).token);
       return l ? reply(200, { reg: "DY16MYO", company: "TAKEOFF", by: "RAKESH", created_at: l.at, photos: l.paths.map((x, i) => ({ url: BASE + "/icons/icon-192.png", download: BASE + "/icons/icon-192.png", name: "DY16MYO-0" + (i + 1) + ".jpg" })) }) : reply(404, { error: "These photos have expired or the link isn't right." });
@@ -157,6 +164,13 @@ async function backend(ctx, db) {
       return reply(200, rows);
     }
     return reply(200, []);
+  });
+  // Cloudflare R2: signed PUTs of the app's copies.
+  await ctx.route(R2 + "/**", async (route) => {
+    const req = route.request(), cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type", "access-control-allow-methods": "PUT, GET" };
+    if (req.method() === "OPTIONS") return route.fulfill({ status: 200, headers: cors });
+    if (req.method() === "PUT") { (db.r2Puts = db.r2Puts || []).push({ key: new URL(req.url()).pathname.slice(1), size: (req.postDataBuffer() || Buffer.alloc(0)).length, type: req.headers()["content-type"] }); return route.fulfill({ status: 200, headers: cors, body: "" }); }
+    return route.fulfill({ status: 404, headers: cors, body: "" });
   });
   await ctx.route("https://wa.me/**", (r) => r.fulfill({ status: 200, contentType: "text/html", body: "WhatsApp" }));
 }
@@ -306,8 +320,8 @@ async function ptNoBitmap() {
   await page.click("[data-ptshare]"); await sleep(2500);
   check("PT on a phone that refuses createImageBitmap: sharing works, copies made small (marked 3601)", (await page.evaluate(() => window.__shares.length)) >= 1 && (db.uploadMarks || []).length === 3 && db.uploadMarks.every((m) => m === "3601"), db.uploadMarks);
 }
-async function ptRun(method, shots, opts) {
-  const db = makeDb({ ptMethod: method }), page = await phone(browser, db, opts);
+async function ptRun(method, shots, opts = {}) {
+  const db = makeDb({ ptMethod: method, ptStore: opts.store }), page = await phone(browser, db, opts);
   await open(page);
   await page.selectOption("#sheetPick", "p0"); await sleep(700);
   await page.click('.row[data-id="p1"] [data-pt]');
@@ -335,6 +349,44 @@ await scenario(async () => {
   check("PT (photos): no errors", page.__errors.length === 0, page.__errors);
 });
 await scenario(ptNoBitmap);
+// Copies in Cloudflare R2: every photo, small, after PT's photos are sent.
+await scenario(async () => {
+  const { db, page } = await ptRun("photos", 12, { store: "r2" });
+  await sleep(1500);
+  check("PT (R2): no copy is made while PT's photos are still to send", !(db.r2Puts || []).length && !(db.r2Asks || []).length && !db.uploads.length);
+  await page.click("[data-ptreg]"); await sleep(700);
+  await page.click("[data-ptshare]"); await sleep(500);
+  await page.click("[data-ptshare]"); await sleep(3000);
+  const puts = db.r2Puts || [], nums = puts.map((x) => +x.key.match(/(\d+)\.jpg$/)[1]).sort((a, b) => a - b);
+  check("PT (R2): all 12 photos go to Cloudflare, none to Supabase's store", puts.length === 12 && nums.join() === "1,2,3,4,5,6,7,8,9,10,11,12" && db.uploads.length === 0, { puts: nums, sb: db.uploads.length });
+  check("PT (R2): upload addresses asked for once for the car, signed in", (db.r2Asks || []).length === 1 && db.r2Asks[0].action === "upload" && db.r2Asks[0].booking === "p1" && db.r2Asks[0].names.length === 12 && /^Bearer /.test(db.r2Asks[0].auth), db.r2Asks);
+  check("PT (R2): copies are small JPEGs", puts.every((x) => x.type === "image/jpeg" && x.size > 0 && x.size < 120000), puts.map((x) => x.size));
+  const l = db.ptLinks[0] || { paths: [] };
+  check("PT (R2): saved as one set of 12, each marked r2:", db.ptLinks.length === 1 && l.paths.length === 12 && l.paths.every((x) => /^r2:c1\/p1\/[A-Za-z0-9_-]+\/\d\d\.jpg$/.test(x)), l.paths);
+  check("PT (R2): the browser's security rules let the uploads through", !cspBlocked.length, cspBlocked);
+  check("PT (R2): no errors", page.__errors.length === 0, page.__errors);
+  // The car's panel lists the set.
+  await page.click('.row[data-id="p1"] .reg'); await sleep(800);
+  check("PT (R2): the car's panel shows the 12 photos", /12 photos/.test(await text(page, "#ptPhotos")), await text(page, "#ptPhotos"));
+});
+// The iPhone way (no createImageBitmap) with R2: sharing still works, copies still small.
+await scenario(async () => {
+  const { db, page } = await ptRun("photos", 3, { store: "r2", noBitmap: true });
+  await page.click("[data-ptreg]"); await sleep(700);
+  await page.click("[data-ptshare]"); await sleep(2500);
+  const puts = db.r2Puts || [];
+  check("PT (R2, iPhone-like): sharing works and 3 small copies go to Cloudflare", (await page.evaluate(() => window.__shares.length)) >= 1 && puts.length === 3 && puts.every((x) => x.size < 120000) && db.ptLinks.length === 1, puts);
+  check("PT (R2, iPhone-like): PT ticked, no errors", db.calls.some((c) => c.fn === "tap_pick" && c.args.p_key === "pt") && page.__errors.length === 0, page.__errors);
+});
+// Cloudflare's side down: PT itself is untouched, nothing crashes.
+await scenario(async () => {
+  const { db, page } = await ptRun("photos", 3, { store: "r2" });
+  db.r2Down = true;
+  await page.click("[data-ptreg]"); await sleep(700);
+  await page.click("[data-ptshare]"); await sleep(2500);
+  check("PT (R2 down): sharing and the PT tick still work", (await page.evaluate(() => window.__shares.length)) >= 1 && db.calls.some((c) => c.fn === "tap_pick" && c.args.p_key === "pt"));
+  check("PT (R2 down): no copies saved, no errors", db.ptLinks.length === 0 && !(db.r2Puts || []).length && page.__errors.length === 0, page.__errors);
+});
 await scenario(async () => {
   const { db, page } = await ptRun("pdf", 8);
   await page.waitForSelector("[data-ptpdf]:not([disabled])", { timeout: 8000 });

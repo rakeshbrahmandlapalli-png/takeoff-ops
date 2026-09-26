@@ -10,6 +10,8 @@
 //       { urls: { "01.jpg": "https://...signed PUT..." } }, valid 15 minutes.
 //   { action: "selftest" }  x-timer header: puts, reads and deletes a small
 //       file, so the set-up can be checked without a phone.
+//   { action: "sizes", prefix? }  x-timer header: the files (the first
+//       1000) under a folder and their sizes, to check copies came out small.
 //
 // Objects are named <company>/<booking>/<token>/<NN>.jpg, like Supabase's
 // store. R2 deletes them itself after 30 days (bucket lifecycle rule).
@@ -57,6 +59,22 @@ Deno.serve(async (req) => {
       const back = got && got.ok ? await got.text() : "";
       const del = await r2.fetch(objectUrl(key), { method: "DELETE" });
       return reply(200, { put: put.status, get: got?.status ?? null, same: back === text, delete: del.status, bucket: BUCKET });
+    }
+
+    if (body.action === "sizes") {
+      const { data: ok } = await admin.rpc("timer_secret_ok", { p_secret: req.headers.get("x-timer") ?? "" });
+      if (ok !== true) return reply(403, { error: "Not the timer." });
+      const u = new URL(`https://${ACCOUNT}.r2.cloudflarestorage.com/${BUCKET}`);
+      u.searchParams.set("list-type", "2"); u.searchParams.set("prefix", String(body.prefix ?? ""));
+      const res = await r2.fetch(u.toString());
+      const xml = await res.text();
+      if (!res.ok) return reply(502, { error: "R2 said " + res.status });
+      const files = [...xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)].map((m) => ({
+        key: (m[1].match(/<Key>(.*?)<\/Key>/) ?? [])[1] ?? "", size: +((m[1].match(/<Size>(\d+)<\/Size>/) ?? [])[1] ?? 0),
+        at: (m[1].match(/<LastModified>(.*?)<\/LastModified>/) ?? [])[1] ?? "",
+      }));
+      const bytes = files.reduce((a, f) => a + f.size, 0);
+      return reply(200, { files: files.length, mb: Math.round(bytes / 1048576 * 10) / 10, biggest: Math.max(0, ...files.map((f) => f.size)), list: files.slice(-200) });
     }
 
     if (body.action === "upload") {
