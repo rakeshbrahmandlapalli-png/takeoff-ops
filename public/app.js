@@ -851,7 +851,7 @@
       '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" +
       (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + catTag(r) + '<span class="pin">' + esc(r.name) + "</span></div>" +
       // Just the make on the row; the full car and booking ref are in the car's panel.
-      '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(makeOnly(r.make)) + "</span> · " : "") + "drop " + esc(hhmm(r.drop_at) || "—") + (r.pick_called ? ' · <span class="tag">' + esc(r.pick_called) + "</span> " + esc(hhmm(r.pick_called_at)) : "") + "</span></div>" +
+      '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(makeOnly(r.make)) + "</span> · " : "") + "drop " + esc(hhmm(r.drop_at) || "—") + (r.pick_called ? ' · <span class="tag' + (r.pick_called === "New Booking" ? ' nb">NEW BOOKING' : '">' + esc(r.pick_called)) + "</span> " + esc(hhmm(r.pick_called_at)) : "") + "</span></div>" +
       noteLine(r) + "</div>" +
       '<div class="acts">' + b("Collected", "k", "COLL") + b("No Show", "n", "NO SHOW") + b("RTC", "r", "RTC", "rtc") +
       actBtn(r, "data-pt", "p", "PT", !!r.pt_at, r.pt_at, can("intake"), r.pt_by) + "</div></div>";
@@ -2349,7 +2349,7 @@
     await loadSheets();
     S.sheetId = r.data.sheet_id; S.view = "board"; S.filter = "all"; S.imp = newImport(I.kind);
     await loadRows(); render();
-    toast("✓ " + r.data.added + " added, " + r.data.updated + " updated" + (r.data.moved ? ", " + r.data.moved + " moved here from an earlier day (return changed)" : "") + ". On every phone now.");
+    toast("✓ " + r.data.added + " added" + (r.data.new_marked ? " (" + r.data.new_marked + " marked NEW BOOKING)" : "") + ", " + r.data.updated + " updated" + (r.data.moved ? ", " + r.data.moved + " moved here from an earlier day (return changed)" : "") + ". On every phone now.");
     // A re-import adds and updates but never takes a car away. Cars the booking
     // site no longer lists (usually cancelled) are shown for someone to confirm.
     var inFile = {}; rows.forEach(function (x) { if (x.ref) inFile[x.ref] = 1; });

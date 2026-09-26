@@ -392,6 +392,8 @@ td input{width:100px;min-height:36px;padding:0 8px;border:1px solid var(--bad);b
 
 .l2 .tag.due{color:#fff;background:#b42318;padding:0 5px;border-radius:4px;}
 .l2 .tag.pd{color:#137333;background:#e6f4ea;padding:0 5px;border-radius:4px;}
+/* A PICKS car that came in on a re-import (or marked by hand). */
+.l2 .tag.nb{color:#7a3e00;background:#f9cb9c;padding:0 5px;border-radius:4px;font-weight:700;}
 .chgbox{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:10px 12px;border-radius:7px;background:#fce8e6;color:#8c1d18;}
 .chgbox b{font-size:17px;}
 .chgbox span{font-size:13px;}

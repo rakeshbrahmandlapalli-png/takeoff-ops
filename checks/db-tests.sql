@@ -241,6 +241,21 @@ begin
   perform set_config('role', 'postgres', true);
   perform set_config('request.jwt.claims', '', true);
 
+  -- ════ re-imported PICKS: new cars marked NEW BOOKING (part 40) ════
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', a_own, 'role', 'authenticated')::text, true);
+  j := import_sheet('picks', shift + 20, '[{"ref":"NB-A","reg":"ZZ21AAA"},{"ref":"NB-B","reg":"ZZ21BBB"}]', '{}');
+  total := total + 1; ok := (j->>'new_marked')::int = 0 and not exists (select 1 from bookings where company_id = a_co and ref like 'NB-%' and pick_called <> '');
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'new booking: the first import of a day marks nothing'); if not ok then fails := fails + 1; end if;
+  j := import_sheet('picks', shift + 20, '[{"ref":"NB-A","reg":"ZZ21AAA"},{"ref":"NB-B","reg":"ZZ21BBB"},{"ref":"NB-C","reg":"ZZ21CCC"}]', '{}');
+  total := total + 1; ok := (j->>'new_marked')::int = 1 and (select pick_called from bookings where company_id = a_co and ref = 'NB-C') = 'New Booking'
+    and (select count(*) from bookings where company_id = a_co and ref like 'NB-%' and pick_called = 'New Booking') = 1;
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'new booking: a re-import marks only the car that is new'); if not ok then fails := fails + 1; end if;
+  begin perform delete_sheet((j->>'sheet_id')::uuid); ok := true; exception when others then ok := false; end;
+  total := total + 1; res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'new booking: the mark alone doesn''t stop deleting the sheet'); if not ok then fails := fails + 1; end if;
+  perform set_config('role', 'postgres', true);
+  perform set_config('request.jwt.claims', '', true);
+
   -- ════ who can call what, from outside ════
   total := total + 1; ok := not has_function_privilege('anon', 'pt_link_view(text)', 'execute') and not has_function_privilege('authenticated', 'pt_link_view(text)', 'execute')
                           and not has_function_privilege('anon', 'early_return(uuid)', 'execute') and not has_function_privilege('authenticated', 'carry_overstays(uuid)', 'execute')

@@ -477,7 +477,19 @@ await scenario(async () => {
   check("backup reminder: only the owner sees it", await page2.locator(".nudge").count() === 0);
 });
 
-// 17. a big night: 400 cars on one sheet stays quick
+// 17. a PICKS car added by a re-import shows NEW BOOKING
+await scenario(async () => {
+  const db = makeDb();
+  Object.assign(db.bookings.find((x) => x.id === "p2"), { pick_called: "New Booking", pick_called_at: iso(TONIGHT, "16:05") });
+  const page = await phone(browser, db);
+  await open(page);
+  await page.selectOption("#sheetPick", "p0"); await sleep(700);
+  const tag = page.locator('.row[data-id="p2"] .tag.nb');
+  check("re-imported PICKS car: NEW BOOKING tag on the row", await tag.count() === 1 && /NEW BOOKING/.test(await tag.innerText()));
+  check("other PICKS cars have no NEW BOOKING tag", await page.locator('.row[data-id="p1"] .tag.nb').count() === 0);
+});
+
+// 18. a big night: 400 cars on one sheet stays quick
 await scenario(async () => {
   const db = makeDb();
   for (let i = 0; i < 400; i++) {
@@ -501,7 +513,7 @@ await scenario(async () => {
   check("400 cars: no sideways scrolling", await noSideScroll(page));
 });
 
-// 18. small Android phone width
+// 19. small Android phone width
 await scenario(async () => {
   const page = await phone(browser, makeDb(), { width: 360, ua: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36" });
   await open(page);
