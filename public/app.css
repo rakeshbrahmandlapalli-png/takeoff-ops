@@ -404,3 +404,6 @@ td input{width:100px;min-height:36px;padding:0 8px;border:1px solid var(--bad);b
 /* Big boards: the phone skips drawing rows that are off screen, so a tap on a
    400-car night redraws in a blink instead of half a second. */
 .row{content-visibility:auto;contain-intrinsic-size:auto 64px;}
+/* Weekly reminder to the owner to keep their own copy of the data. */
+.nudge{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between;padding:8px 12px;margin:8px 10px;border-left:4px solid #b45309;background:#fef3c7;color:#78350f;font-size:14px;}
+.nudge .btn{padding:6px 12px;}

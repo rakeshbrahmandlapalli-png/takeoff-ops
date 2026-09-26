@@ -9,6 +9,6 @@ Run these before merging a change. Every line must say ok / PASS.
 | `dates.cjs` | `node checks/dates.cjs` | Shift day, return day and overstay charges across the clocks going back (25 Oct) and forward (29 Mar), and a changed return charged from its first date. |
 | `joblist.cjs` | See the top of the file; needs the sample PDFs, which hold real customer data and aren't in the repo. | Reading the booking PDFs. |
 
-`setup/09-isolation-check.sql` and `setup/11-function-isolation-check.sql` are the older isolation checks (they leave a small results table behind).
+`setup/09-isolation-check.sql` and `setup/11-function-isolation-check.sql` are the older isolation checks. They leave a small results table behind; drop it afterwards (`setup/39-drop-old-check-results.sql`).
 
 To prove the browser tests can fail, point them at a deliberately broken copy: `APP_ROOT=/path/to/copy/of/public node run.mjs`.

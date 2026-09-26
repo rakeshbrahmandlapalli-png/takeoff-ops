@@ -238,6 +238,7 @@
     render();
     flush();
     ptResume();
+    loadLastDownload();
   }
   var PICKER_DAYS = 90;
   async function loadSheets() {
@@ -638,7 +639,24 @@
     $("catTally").innerHTML = cells + pick;
   }
 
-  function renderBoard() { return renderSheet() + otherDaysHtml(); }
+  function renderBoard() { return backupNudge() + renderSheet() + otherDaysHtml(); }
+  // The free plan's nightly backups live inside Supabase itself: the owner is
+  // reminded weekly to keep a copy of their own somewhere else.
+  var BACKUP_EVERY_DAYS = 7;
+  function backupNudge() {
+    if (!S.me || S.me.role !== "owner" || S.platform || S.lastDownload === undefined) return "";
+    var days = S.lastDownload ? Math.floor((Date.now() - Date.parse(S.lastDownload)) / 864e5) : null;
+    if (days !== null && days < BACKUP_EVERY_DAYS) return "";
+    return '<div class="nudge"><span>Keep your own copy of the company data: ' + (days === null ? "never downloaded yet." : "last downloaded " + days + " days ago.") +
+      '</span><button type="button" class="btn ghost" data-backup>Download now</button></div>';
+  }
+  async function loadLastDownload() {
+    if (!S.me || S.me.role !== "owner" || S.platform) return;
+    var r = await sb.from("activity").select("at").eq("action", "SETTINGS").like("value", "Downloaded a backup%").order("at", { ascending: false }).limit(1);
+    if (r.error) return;   // unknown: no nudge rather than a wrong one
+    S.lastDownload = r.data && r.data[0] ? r.data[0].at : null;
+    if (S.view === "board" && !$("panel").open) render();
+  }
   // ── search: other days ──
   // Three characters or more also look at every other sheet (not removed cars),
   // so a reg typed on today's board finds it on yesterday's or on PICKS.
@@ -2718,7 +2736,7 @@
   function backupHtml() {
     if (!S.me || S.me.role !== "owner") return "";
     return '<div class="box" style="padding:14px;margin-top:14px;max-width:560px"><strong>Backup</strong>' +
-      '<p class="note">A copy of everything is kept automatically every night for 14 days. To keep one of your own as well, download it and save it somewhere safe, like OneDrive. PINs, links and Discord links are not included.</p>' +
+      '<p class="note">A copy of everything is kept automatically every night for 7 days. To keep one of your own as well, download it and save it somewhere safe, like OneDrive. PINs, links and Discord links are not included.</p>' +
       '<div class="row-actions"><button type="button" class="btn ghost" data-backup>Download a backup</button></div></div>';
   }
   async function downloadBackup(btn) {
@@ -2732,7 +2750,8 @@
     a.download = (S.company.slug || "company") + "-backup-" + londonParts(new Date()).key + ".json";
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
-    toast("Backup downloaded: " + (r.data.bookings || []).length + " cars");
+    S.lastDownload = new Date().toISOString(); if (S.view === "board") render();
+    toast("Backup downloaded: " + (r.data.bookings || []).length + " cars. Save it somewhere safe, like OneDrive.");
   }
   function ptNumberHtml() {
     var n = (S.company && S.company.pt_whatsapp) || "";

@@ -96,6 +96,7 @@ function rpc(db, fn, a) {
       return b;
     }
     case "set_note": { const b = row(a.p_booking); b.note = a.p_note; return b; }
+    case "download_my_company": return { format: "takeoff-ops-company-export", bookings: db.bookings };
     case "set_reg": { const b = row(a.p_booking); b.reg = a.p_reg; return b; }
     case "set_yard": { const b = row(a.p_booking); b.yard = a.p_yard; return b; }
     case "set_flight": { const b = row(a.p_booking); b.flight = a.p_flight; return b; }
@@ -136,6 +137,8 @@ async function backend(ctx, db) {
     }
     const q = Object.fromEntries(u.searchParams);
     if (p === "/rest/v1/companies") return reply(200, db.company);
+    // The owner's last "download company data" (backup reminder): today, unless a test says otherwise.
+    if (p === "/rest/v1/activity" && q.action === "eq.SETTINGS") return reply(200, db.lastDownload === null ? [] : [{ at: db.lastDownload || new Date().toISOString() }]);
     if (p === "/rest/v1/staff") return reply(200, db.staff);
     if (p === "/rest/v1/sheets") return reply(200, db.sheets);
     if (p === "/rest/v1/bookings") {
@@ -460,7 +463,21 @@ await scenario(async () => {
   check("a reg with odd characters is refused with a message", /letters and numbers/.test(await toast(page)) && !db.calls.some((c) => c.fn === "set_reg" && c.args.p_reg === "AB12-CDE"));
 });
 
-// 16. a big night: 400 cars on one sheet stays quick
+// 16. the owner is reminded weekly to keep their own copy of the data
+await scenario(async () => {
+  const db = makeDb(); db.lastDownload = new Date(Date.now() - 9 * 864e5).toISOString();
+  const page = await phone(browser, db);
+  await open(page); await sleep(500);
+  check("backup reminder: shows when the last download was 9 days ago", /last downloaded 9 days ago/.test(await text(page, ".nudge")));
+  await page.click(".nudge [data-backup]"); await sleep(500);
+  check("backup reminder: Download now fetches the data and the reminder goes", db.calls.some((c) => c.fn === "download_my_company") && await page.locator(".nudge").count() === 0);
+  const db2 = makeDb(); db2.me.role = "office"; db2.lastDownload = null;
+  const page2 = await phone(browser, db2);
+  await open(page2); await sleep(500);
+  check("backup reminder: only the owner sees it", await page2.locator(".nudge").count() === 0);
+});
+
+// 17. a big night: 400 cars on one sheet stays quick
 await scenario(async () => {
   const db = makeDb();
   for (let i = 0; i < 400; i++) {
@@ -484,7 +501,7 @@ await scenario(async () => {
   check("400 cars: no sideways scrolling", await noSideScroll(page));
 });
 
-// 17. small Android phone width
+// 18. small Android phone width
 await scenario(async () => {
   const page = await phone(browser, makeDb(), { width: 360, ua: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36" });
   await open(page);

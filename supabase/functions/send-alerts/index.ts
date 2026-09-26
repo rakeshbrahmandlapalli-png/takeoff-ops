@@ -13,6 +13,10 @@
 //       and recent, and alert_log makes sure each one goes out once.
 //   { type: "test", discord? }  by the "Send a test" buttons, with a sign-in.
 //       Sends to the caller's own phones; Discord only for owner/manager.
+//   { type: "usage" }  by the morning timer (setup/38-usage-warning.sql), with
+//       the x-timer header. If usage_status() finds a free-plan limit getting
+//       close (or no backup last night), the owners and managers of the
+//       companies in private.settings 'usage_alert_to' are told, once a day.
 //
 // Secrets (Edge Functions → Secrets):
 //   VAPID_PUBLIC_KEY   same value as VAPID_PUBLIC_KEY in public/app.js
@@ -47,10 +51,11 @@ async function once(key: string) {
   throw error;
 }
 
-async function pushTo(staffIds: string[], kind: Kind, note: Note) {
+// kind null: an account warning, sent whatever the person's alert choices.
+async function pushTo(staffIds: string[], kind: Kind | null, note: Note) {
   if (!staffIds.length) return 0;
-  const { data: prefs } = await db.from("alert_prefs").select("*").in("staff_id", staffIds);
-  const off = new Set((prefs ?? []).filter((p) => p[kind] === false).map((p) => p.staff_id));
+  const { data: prefs } = kind ? await db.from("alert_prefs").select("*").in("staff_id", staffIds) : { data: [] };
+  const off = new Set((prefs ?? []).filter((p) => kind && p[kind] === false).map((p) => p.staff_id));
   const wanted = staffIds.filter((id) => !off.has(id));
   if (!wanted.length) return 0;
   const { data: subs } = await db.from("push_subscriptions").select("id, endpoint, p256dh, auth").in("staff_id", wanted);
@@ -124,6 +129,24 @@ async function onBooking(id: string) {
   return { sent };
 }
 
+async function onUsage(req: Request) {
+  const { data: ok } = await db.rpc("timer_secret_ok", { p_secret: req.headers.get("x-timer") ?? "" });
+  if (ok !== true) return reply(403, { error: "Not the timer." });
+  const { data: u, error } = await db.rpc("usage_status");
+  if (error) throw error;
+  const warnings: string[] = u?.warnings ?? [];
+  if (!warnings.length) return reply(200, { warnings: 0 });
+  if (!(await once("usage:" + new Date().toISOString().slice(0, 10)))) return reply(200, { warnings: warnings.length, sent: "already today" });
+  const { data: cos } = await db.from("companies").select("id, slug").in("slug", (u.to ?? []).map((x: string) => x.trim()));
+  const ids = (cos ?? []).map((c) => c.id);
+  const { data: people } = ids.length ? await db.from("staff").select("id").in("company_id", ids).eq("active", true).in("role", ["owner", "manager"]) : { data: [] };
+  const title = "⚠️ TakeOff: free plan check";
+  const body = warnings.join(" ") + " Tell whoever looks after the app.";
+  const sent = await pushTo((people ?? []).map((p) => p.id), null, { title, body, url: "/", tag: "usage" });
+  for (const c of cos ?? []) await discord(c.id, "drops", title, body);
+  return reply(200, { warnings: warnings.length, sent });
+}
+
 async function onTest(req: Request, body: Record<string, unknown>) {
   const asCaller = createClient(URL_, Deno.env.get("SUPABASE_ANON_KEY")!, {
     auth: { persistSession: false }, global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
@@ -150,6 +173,7 @@ Deno.serve(async (req) => {
   try {
     if (msg.type === "booking" && /^[0-9a-f-]{36}$/i.test(String(msg.id))) return reply(200, await onBooking(String(msg.id)));
     if (msg.type === "test") return await onTest(req, msg);
+    if (msg.type === "usage") return await onUsage(req);
     return reply(400, { error: "Unknown message." });
   } catch (e) {
     console.error(e);
