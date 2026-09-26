@@ -70,16 +70,23 @@
 
   async function readExcel(file) {
     await loadScript(LIBS.xlsx);
-    var wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: "array", cellDates: true });
-    // Raw values, not Excel's display text: SheetJS shows dates US-style (9/16/26),
-    // which would read as the 9th of the 16th month. Real dates become yyyy-mm-dd.
-    var grid = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: "" }).map(function (row) {
-      return row.map(function (v) {
-        // A plain date arrives as UTC midnight (01:00 in British Summer Time): keep it a date.
-        if (v instanceof Date && !v.getUTCHours() && !v.getUTCMinutes()) return v.getUTCFullYear() + "-" + pad(v.getUTCMonth() + 1) + "-" + pad(v.getUTCDate());
-        if (v instanceof Date) return v.getFullYear() + "-" + pad(v.getMonth() + 1) + "-" + pad(v.getDate()) + " " + pad(v.getHours()) + ":" + pad(v.getMinutes());
-        return v == null ? "" : String(v);
-      });
+    var wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: "array", cellNF: true });
+    var ws = wb.Sheets[wb.SheetNames[0]];
+    var from1904 = !!(wb.Workbook && wb.Workbook.WBProps && wb.Workbook.WBProps.date1904);   // old Mac Excel counts from 1904
+    // Excel keeps a date as a number of days, the time as the fraction: turned
+    // into "yyyy-mm-dd" or "yyyy-mm-dd HH:MM" straight from that number, rounded
+    // to the minute. Not through JavaScript dates, which moved a 01:00 return by
+    // the summer-time hour and read 13:20 as 13:19. Not Excel's display text
+    // either: SheetJS shows dates US-style (9/16/26).
+    Object.keys(ws).forEach(function (k) {
+      var cell = ws[k];
+      if (k.charAt(0) === "!" || !cell || cell.t !== "n" || !cell.z || !XLSX.SSF.is_date(cell.z)) return;
+      var mins = Math.round(cell.v * 1440), day = Math.floor(mins / 1440), m = mins - day * 1440;
+      var d = new Date(Date.UTC(1899, 11, 30) + (day + (from1904 ? 1462 : 0)) * 864e5);
+      cell.t = "s"; cell.v = d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate()) + (m ? " " + pad(Math.floor(m / 60)) + ":" + pad(m % 60) : "");
+    });
+    var grid = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: "" }).map(function (row) {
+      return row.map(function (v) { return v == null ? "" : String(v); });
     });
     var headRow = -1, cols = null;
     for (var r = 0; r < Math.min(grid.length, 20) && headRow < 0; r++) {

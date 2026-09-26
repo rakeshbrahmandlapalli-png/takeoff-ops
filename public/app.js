@@ -2374,7 +2374,8 @@
   function openGone(gone) {
     panelRow = null;
     $("panelBody").innerHTML = '<h2 id="panelTitle">' + gone.length + (gone.length === 1 ? " car isn't" : " cars aren't") + " in this file any more</h2>" +
-      '<p class="sub">They were in an earlier import but the booking site no longer lists them. Usually that means cancelled. Check before removing.</p>' +
+      '<p class="sub">They were in an earlier import but this file no longer lists them: cancelled, or the date was changed to another day. Only remove cars you know are cancelled.' +
+        (gone[0] && gone[0].kind === "drops" ? " A car whose return moved to another day goes there, with its yard and notes, when that day is imported; removing it here loses them." : "") + '</p>' +
       '<div class="rmlist">' + gone.map(function (r) {
         return '<div><span><b>' + esc(r.reg || "NO REG") + "</b>" + (r.num ? " #" + r.num : "") + " " + esc(r.name) + "<small>Ref " + esc(r.ref) + (r.drop_at ? " · drop " + esc(dayShort(r.drop_at) + " " + hhmm(r.drop_at)) : "") + (r.return_at ? " · back " + esc(dayShort(r.return_at) + " " + hhmm(r.return_at)) : "") +
           '</small></span><button type="button" data-gone="' + r.id + '">Remove as cancelled</button></div>';

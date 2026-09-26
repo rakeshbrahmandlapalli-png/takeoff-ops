@@ -97,6 +97,7 @@ function rpc(db, fn, a) {
     }
     case "set_note": { const b = row(a.p_booking); b.note = a.p_note; return b; }
     case "download_my_company": return { format: "takeoff-ops-company-export", bookings: db.bookings };
+    case "import_sheet": { const sh = db.sheets.find((x) => x.kind === a.p_kind && x.day === a.p_day); return { sheet_id: sh ? sh.id : "p0", added: a.p_rows.length, updated: 0, early: 0, moved: 0, new_marked: 0 }; }
     case "set_reg": { const b = row(a.p_booking); b.reg = a.p_reg; return b; }
     case "set_yard": { const b = row(a.p_booking); b.yard = a.p_yard; return b; }
     case "set_flight": { const b = row(a.p_booking); b.flight = a.p_flight; return b; }
@@ -489,7 +490,39 @@ await scenario(async () => {
   check("other PICKS cars have no NEW BOOKING tag", await page.locator('.row[data-id="p1"] .tag.nb').count() === 0);
 });
 
-// 18. a big night: 400 cars on one sheet stays quick
+// 18. import: an Excel file with real Excel date cells, read, previewed and sent
+await scenario(async () => {
+  const db = makeDb();
+  const page = await phone(browser, db, { width: 1000 });
+  await open(page);
+  // Build the file in the browser with the app's own spreadsheet library.
+  const b64 = await page.evaluate(async (day) => {
+    await new Promise((ok, no) => { const s = document.createElement("script"); s.src = "/vendor/xlsx-0.18.5.full.min.js"; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+    const [y, m, d] = day.split("-").map(Number);
+    const serial = (dd, h, mi) => (Date.UTC(y, m - 1, dd, h, mi) - Date.UTC(1899, 11, 30)) / 864e5;
+    const ws = XLSX.utils.aoa_to_sheet([["Ref", "Name", "Vehicle", "Booking From", "Booking To"], ["X1", "ONE", "FORD FIESTA AB12CDE", 0, 0], ["X2", "TWO", "KIA RIO CD34EFG", 0, 0]]);
+    ws.D2 = { t: "n", v: serial(d, 13, 20), z: "dd/mm/yyyy hh:mm" }; ws.E2 = { t: "n", v: serial(d + 3, 1, 0), z: "dd/mm/yyyy hh:mm" };
+    ws.D3 = { t: "n", v: serial(d, 9, 5), z: "dd/mm/yyyy hh:mm" };  ws.E3 = { t: "n", v: serial(d + 5, 22, 40), z: "dd/mm/yyyy hh:mm" };
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "S");
+    return XLSX.write(wb, { type: "base64", bookType: "xlsx" });
+  }, TONIGHT);
+  await page.click("#menuBtn"); await sleep(300); await page.click('#menu [data-view="import"]'); await sleep(300);
+  await page.click('[data-impkind="picks"]'); await sleep(200);
+  await page.setInputFiles('input[data-file="excel"]', { name: "picks.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: Buffer.from(b64, "base64") });
+  await sleep(200); await page.click("[data-read]"); await page.waitForSelector("[data-create]", { timeout: 8000 });
+  const table = await page.locator(".table-wrap").innerText();
+  check("import: Excel date cells keep their exact minutes (13:20, not 13:19)", /13:20/.test(table) && /09:05/.test(table) && !/13:19/.test(table), table.slice(0, 200));
+  check("import: the reg is taken from the car description", /AB12CDE/.test(table) && /CD34EFG/.test(table));
+  await page.click("[data-create]"); await sleep(800);
+  const call = db.calls.find((c) => c.fn === "import_sheet");
+  const x1 = call && call.args.p_rows.find((r) => r.ref === "X1");
+  check("import: sent to the server with the right day, times and cars", !!x1 && call.args.p_kind === "picks" && call.args.p_day === TONIGHT && call.args.p_rows.length === 2
+    && x1.drop_local === TONIGHT + " 13:20" && /01:00$/.test(x1.return_local) && x1.reg === "AB12CDE", x1);
+  const gone = await page.locator("#panelBody").innerText().catch(() => "");
+  check("import: cars missing from the file are listed, with the moved-day warning", /no longer lists them/.test(gone) && /Only remove cars you know are cancelled/.test(gone));
+});
+
+// 19. a big night: 400 cars on one sheet stays quick
 await scenario(async () => {
   const db = makeDb();
   for (let i = 0; i < 400; i++) {
@@ -513,7 +546,7 @@ await scenario(async () => {
   check("400 cars: no sideways scrolling", await noSideScroll(page));
 });
 
-// 19. small Android phone width
+// 20. small Android phone width
 await scenario(async () => {
   const page = await phone(browser, makeDb(), { width: 360, ua: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36" });
   await open(page);
