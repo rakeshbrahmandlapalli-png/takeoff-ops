@@ -295,13 +295,14 @@
 
   function subscribe() {
     if (channel) sb.removeChannel(channel);
-    channel = sb.channel("bookings-" + S.company.id)
-      .on("postgres_changes", { event: "*", schema: "public", table: "bookings", filter: "company_id=eq." + S.company.id }, onChange)
+    var ch = channel = sb.channel("bookings-" + S.company.id);
+    ch.on("postgres_changes", { event: "*", schema: "public", table: "bookings", filter: "company_id=eq." + S.company.id }, onChange)
       // A new import on any phone shows up in everyone's sheet list.
       .on("postgres_changes", { event: "*", schema: "public", table: "sheets", filter: "company_id=eq." + S.company.id }, function () {
         loadSheets().then(function () { var had = S.sheetId; pickDefaultSheet(); return had === S.sheetId ? null : loadRows(); }).then(function () { if (!$("panel").open && !yardOpen()) render(); });
       })
       .subscribe(function (status) {
+        if (ch !== channel) return;   // an old link closing late (after sign-out and back in)
         var was = S.live; S.live = status === "SUBSCRIBED"; renderSync();
         // Back after the live link dropped: changes made meanwhile were missed, so fetch once.
         if (S.live && liveLost) { liveLost = false; loadRows().then(function () { if (!$("panel").open && !yardOpen()) render(); }); }
@@ -1553,7 +1554,7 @@
     panelRow = r;
     var drops = r.kind === "drops";
     function by(at, who) { return at ? esc(hhmm(at)) + (who ? " · " + esc(staffName(who)) : "") : "—"; }
-    var det = [["NAME", esc(r.name) || "—"], ["CAR", esc(r.make) || "—"], ["REF", esc(r.ref) || "—"]];
+    var det = [["NAME", esc(r.name) || "—"], ["CAR", /^[-\s.]*$/.test(r.make || "") ? "—" : esc(r.make)], ["REF", esc(r.ref) || "—"]];
     if (drops) {
       det.push(["MEET", r.drop_at ? esc(dayShort(r.drop_at) + " " + hhmm(r.drop_at)) : "—"]);
       det.push(["BACK", esc(dayShort(r.return_at) + " " + hhmm(r.return_at)) + (r.orig_return_at ? ' <span class="hint">· was ' + esc(dayShort(r.orig_return_at) + " " + hhmm(r.orig_return_at)) + "</span>" : "")]);
