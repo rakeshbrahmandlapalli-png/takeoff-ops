@@ -1251,22 +1251,24 @@
   // ── The copy kept for the app ──
   // In the WhatsApp-chat way a copy of the photos uploads quietly in the
   // background, so the car's panel can show them. PT still gets every full
-  // photo on WhatsApp. The copy is small, about 35 KB a photo (800 px).
-  // Where it goes is companies.pt_copy_store:
-  //   "r2"        Cloudflare R2 (10 GB free): every photo, kept 30 days. The
-  //               pt-r2 function hands out upload addresses; paths start "r2:".
+  // photo on WhatsApp. Where the copy goes is companies.pt_copy_store:
+  //   "r2"        Cloudflare R2: every photo, "good" quality (1280 px, about
+  //               120 KB), kept 30 days: ~14 GB, a few pence a month over
+  //               the free 10 GB. The pt-r2 function hands out upload
+  //               addresses; paths start "r2:".
   //   otherwise   Supabase's store (1 GB on the free plan): 10 photos spread
-  //               evenly round the car.
+  //               evenly round the car, small (800 px, about 35 KB).
   // It waits while the camera is open or PT's photos are still being sent:
   // making copies alongside the share sheet stopped PT on an iPhone.
-  var BK = [], bkActive = 0, BK_TRIES = 4, BK_MAX = 800, BK_Q = 0.5, BK_KEEP = 10;
+  var BK = [], bkActive = 0, BK_TRIES = 4, BK_MAX = 800, BK_Q = 0.5, BK_KEEP = 10, R2_MAX = 1280, R2_Q = 0.6;
   // Returns { blob, how }: "bitmap" or "img" (made small), "orig" (couldn't be).
-  async function bkSmall(f) {
+  async function bkSmall(f, good) {
+    var max = good ? R2_MAX : BK_MAX, q = good ? R2_Q : BK_Q;
     async function draw(src, w, h) {
-      var k = Math.min(1, BK_MAX / Math.max(w, h));
+      var k = Math.min(1, max / Math.max(w, h));
       var c = document.createElement("canvas"); c.width = Math.round(w * k); c.height = Math.round(h * k);
       c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
-      var b = await new Promise(function (ok) { c.toBlob(ok, "image/jpeg", BK_Q); });
+      var b = await new Promise(function (ok) { c.toBlob(ok, "image/jpeg", q); });
       c.width = c.height = 0;   // free the canvas memory at once (iPhones are strict about it)
       return b && b.size < f.size ? b : null;
     }
@@ -1324,7 +1326,7 @@
   async function bkUpload(j) {
     var x = j.x;
     try {
-      var small = await bkSmall(x.file);
+      var small = await bkSmall(x.file, /^r2:/.test(x.path));
       if (/^r2:/.test(x.path)) {
         var put = await timedFetch(await bkR2Url(j), { method: "PUT", body: small.blob, headers: { "Content-Type": "image/jpeg" } });
         x.bk = put.ok ? "done" : "fail";

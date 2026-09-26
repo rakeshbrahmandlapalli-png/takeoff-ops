@@ -360,7 +360,7 @@ await scenario(async () => {
   const puts = db.r2Puts || [], nums = puts.map((x) => +x.key.match(/(\d+)\.jpg$/)[1]).sort((a, b) => a - b);
   check("PT (R2): all 12 photos go to Cloudflare, none to Supabase's store", puts.length === 12 && nums.join() === "1,2,3,4,5,6,7,8,9,10,11,12" && db.uploads.length === 0, { puts: nums, sb: db.uploads.length });
   check("PT (R2): upload addresses asked for once for the car, signed in", (db.r2Asks || []).length === 1 && db.r2Asks[0].action === "upload" && db.r2Asks[0].booking === "p1" && db.r2Asks[0].names.length === 12 && /^Bearer /.test(db.r2Asks[0].auth), db.r2Asks);
-  check("PT (R2): copies are small JPEGs", puts.every((x) => x.type === "image/jpeg" && x.size > 0 && x.size < 120000), puts.map((x) => x.size));
+  check("PT (R2): copies are JPEGs made smaller than PT's photos", puts.every((x) => x.type === "image/jpeg" && x.size > 0 && x.size < 400000), puts.map((x) => x.size));
   const l = db.ptLinks[0] || { paths: [] };
   check("PT (R2): saved as one set of 12, each marked r2:", db.ptLinks.length === 1 && l.paths.length === 12 && l.paths.every((x) => /^r2:c1\/p1\/[A-Za-z0-9_-]+\/\d\d\.jpg$/.test(x)), l.paths);
   check("PT (R2): the browser's security rules let the uploads through", !cspBlocked.length, cspBlocked);
