@@ -96,6 +96,7 @@ function rpc(db, fn, a) {
       return b;
     }
     case "set_note": { const b = row(a.p_booking); b.note = a.p_note; return b; }
+    case "set_reg": { const b = row(a.p_booking); b.reg = a.p_reg; return b; }
     case "set_yard": { const b = row(a.p_booking); b.yard = a.p_yard; return b; }
     case "set_flight": { const b = row(a.p_booking); b.flight = a.p_flight; return b; }
     case "set_sched_time": { const b = row(a.p_booking); b.sched_time = a.p_time; return b; }
@@ -405,6 +406,7 @@ await scenario(async () => {
   const body = await page.locator("#panelBody").innerText();
   check("DROPS panel shows the meet date and time", /MEET\n.*\d+ \w+ \d\d:\d\d\nBACK/.test(body));
   check("DROPS panel has no \"use this when they ring\" text", !/ring/i.test(body) && await page.locator("[data-early]").count() === 1);
+  await page.locator("#noteText").scrollIntoViewIfNeeded();
   const box = await page.locator("#noteText").boundingBox();
   await page.mouse.move(box.x + 10, box.y + 10); await page.mouse.down();
   await page.mouse.move(5, box.y + 10, { steps: 5 }); await page.mouse.up(); await sleep(200);
@@ -441,7 +443,24 @@ await scenario(async () => {
   check("the car panel shows the first booked return", /BACK\n.*was /.test(await page.locator("#panelBody").innerText()));
 });
 
-// 15. a big night: 400 cars on one sheet stays quick
+// 15. a booking with no reg: the reg is typed in the car's panel
+await scenario(async () => {
+  const db = makeDb();
+  db.bookings.find((x) => x.id === "p1").reg = "";
+  const page = await phone(browser, db);
+  await open(page);
+  await page.selectOption("#sheetPick", "p0"); await sleep(700);
+  check("a car with no reg says NO REG", /NO REG/.test(await text(page, '.row[data-id="p1"] .reg')));
+  await page.click('.row[data-id="p1"] .reg'); await sleep(400);
+  await page.fill("#regText", "ab12  cde"); await page.click("[data-savepanel]"); await sleep(600);
+  check("the typed reg reaches the server, tidied", db.calls.some((c) => c.fn === "set_reg" && c.args.p_reg === "AB12 CDE"));
+  check("the row shows the new reg", /AB12 CDE/.test(await text(page, '.row[data-id="p1"] .reg')));
+  await page.click('.row[data-id="p1"] .reg'); await sleep(400);
+  await page.fill("#regText", "AB12-CDE"); await page.click("[data-savepanel]"); await sleep(300);
+  check("a reg with odd characters is refused with a message", /letters and numbers/.test(await toast(page)) && !db.calls.some((c) => c.fn === "set_reg" && c.args.p_reg === "AB12-CDE"));
+});
+
+// 16. a big night: 400 cars on one sheet stays quick
 await scenario(async () => {
   const db = makeDb();
   for (let i = 0; i < 400; i++) {
@@ -465,7 +484,7 @@ await scenario(async () => {
   check("400 cars: no sideways scrolling", await noSideScroll(page));
 });
 
-// 16. small Android phone width
+// 17. small Android phone width
 await scenario(async () => {
   const page = await phone(browser, makeDb(), { width: 360, ua: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36" });
   await open(page);

@@ -21,7 +21,7 @@ declare
   car_tmrw uuid; car_tonight uuid; car_yday uuid; car_gone uuid; car_pick uuid; car_b uuid;
   car_over uuid; car_early_home uuid; car_early_far uuid; car_removed uuid;
   res text[] := '{}'; fails int := 0; total int := 0;
-  s_was uuid; s_now uuid; car_px uuid; car_qq uuid; car_ss uuid;
+  s_was uuid; s_now uuid; car_px uuid; car_qq uuid; car_ss uuid; car_nr uuid; car_nr2 uuid;
   b bookings; j jsonb; n int; ok boolean; tok text := 'TESTtoken_abcdefghijklmnop';
 begin
   -- ── fixtures ────────────────────────────────────────────────────────────
@@ -139,6 +139,8 @@ begin
   total := total + 1; res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'nobody signed in can read the PT link table directly'); if not ok then fails := fails + 1; end if;
   begin perform tap_drop(car_tonight, 'sent', false, ''); ok := false; exception when others then ok := true; end;
   total := total + 1; res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'company B can NOT tap company A''s car'); if not ok then fails := fails + 1; end if;
+  begin perform set_reg(car_tonight, 'ZZ00 BAD'); ok := false; exception when others then ok := true; end;
+  total := total + 1; res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'company B can NOT change company A''s reg'); if not ok then fails := fails + 1; end if;
 
   -- ════ PT photo store (storage rule) ════
   perform set_config('request.jwt.claims', json_build_object('sub', a_own, 'role', 'authenticated')::text, true);
@@ -220,9 +222,29 @@ begin
   perform set_config('role', 'postgres', true);
   perform set_config('request.jwt.claims', '', true);
 
+  -- ════ typing a reg (part 36) ════
+  insert into bookings (company_id, sheet_id, kind, ref, reg, name, num) values (a_co, sh_picks, 'picks', 'REF-NOREG', '', 'No reg', 9) returning id into car_nr;
+  insert into bookings (company_id, sheet_id, kind, ref, reg, name, num) values (a_co, sh_tmrw, 'drops', 'REF-NOREG', '', 'No reg', 9) returning id into car_nr2;
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', a_own, 'role', 'authenticated')::text, true);
+  b := set_reg(car_nr, ' zz12  nrg ');
+  total := total + 1; ok := b.reg = 'ZZ12 NRG' and (select reg from bookings where id = car_nr2) = 'ZZ12 NRG';
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'reg: typed reg is tidied and reaches the DROPS row of the same booking'); if not ok then fails := fails + 1; end if;
+  begin perform set_reg(car_nr, 'ZZ12-NRG'); ok := false; exception when others then ok := true; end;
+  total := total + 1; res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'reg: odd characters refused'); if not ok then fails := fails + 1; end if;
+  j := import_sheet('drops', shift + 1, jsonb_build_array(jsonb_build_object('ref', 'REF-NOREG', 'reg', '', 'name', '')), '{}');
+  total := total + 1; ok := (select reg from bookings where id = car_nr2) = 'ZZ12 NRG' and (select name from bookings where id = car_nr2) = 'No reg';
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'reg: a blank in a re-imported file doesn''t wipe the reg or name'); if not ok then fails := fails + 1; end if;
+  perform set_config('request.jwt.claims', json_build_object('sub', a_term, 'role', 'authenticated')::text, true);
+  begin perform set_reg(car_nr, 'ZZ99 XXX'); ok := false; exception when others then ok := true; end;
+  total := total + 1; res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'reg: a terminal can''t change a reg that is already there'); if not ok then fails := fails + 1; end if;
+  perform set_config('role', 'postgres', true);
+  perform set_config('request.jwt.claims', '', true);
+
   -- ════ who can call what, from outside ════
   total := total + 1; ok := not has_function_privilege('anon', 'pt_link_view(text)', 'execute') and not has_function_privilege('authenticated', 'pt_link_view(text)', 'execute')
-                          and not has_function_privilege('anon', 'early_return(uuid)', 'execute') and not has_function_privilege('authenticated', 'carry_overstays(uuid)', 'execute');
+                          and not has_function_privilege('anon', 'early_return(uuid)', 'execute') and not has_function_privilege('authenticated', 'carry_overstays(uuid)', 'execute')
+                          and not has_function_privilege('anon', 'set_reg(uuid,text)', 'execute');
   res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'server-only functions can''t be called from a phone'); if not ok then fails := fails + 1; end if;
 
   -- always roll back: the results travel in the error message

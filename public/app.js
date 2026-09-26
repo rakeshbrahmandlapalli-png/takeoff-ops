@@ -301,9 +301,15 @@
       .on("postgres_changes", { event: "*", schema: "public", table: "sheets", filter: "company_id=eq." + S.company.id }, function () {
         loadSheets().then(function () { var had = S.sheetId; pickDefaultSheet(); return had === S.sheetId ? null : loadRows(); }).then(function () { if (!$("panel").open && !yardOpen()) render(); });
       })
-      .subscribe(function (status) { S.live = status === "SUBSCRIBED"; renderSync(); });
+      .subscribe(function (status) {
+        var was = S.live; S.live = status === "SUBSCRIBED"; renderSync();
+        // Back after the live link dropped: changes made meanwhile were missed, so fetch once.
+        if (S.live && liveLost) { liveLost = false; loadRows().then(function () { if (!$("panel").open && !yardOpen()) render(); }); }
+        if (was && !S.live) liveLost = true;
+      });
   }
-  function teardown() { if (channel) sb.removeChannel(channel); channel = null; S.rows = []; snapForget(); }
+  var liveLost = false;
+  function teardown() { if (channel) sb.removeChannel(channel); channel = null; liveLost = false; S.rows = []; snapForget(); }
 
   // ── the last board, kept on the phone ──
   // If the server can't be reached when the app opens, the team still sees the
@@ -417,8 +423,17 @@
     if (r.data && idx >= 0) S.rows[idx] = r.data;
   }
   window.addEventListener("online", function () { flush(); if (S.me) loadRows().then(render); });
+  // Coming back to the app: a quick trip away (WhatsApp for PT, a call) with
+  // the live link still up needs no fetch, the board is already current. A
+  // longer one, or a dropped link, reloads. (Reloading on every return was
+  // ~3,000 full-sheet downloads a night: most of the free plan's traffic.)
+  var hiddenAt = 0, QUICK_BACK = 90000;
   document.addEventListener("visibilitychange", function () {
-    if (document.visibilityState === "visible" && S.me) { flush(); loadSheets().then(loadRows).then(function () { if (!$("panel").open) render(); }); }
+    if (document.visibilityState === "hidden") { hiddenAt = Date.now(); return; }
+    if (!S.me) return;
+    flush();
+    if (S.live && hiddenAt && Date.now() - hiddenAt < QUICK_BACK) { if (!$("panel").open) render(); return; }
+    loadSheets().then(loadRows).then(function () { if (!$("panel").open) render(); });
   });
 
   function renderSync() {
@@ -1553,6 +1568,10 @@
       '<p class="sub">' + esc(sheetLabel(sheet() || { day: "", kind: r.kind })) + "</p>" +
       (r.phone ? '<a class="tel" href="tel:' + esc(dialable(r.phone)) + '">Call ' + esc(phoneLabel(r.phone)) + "</a>" : "") +
       '<div class="det">' + det.map(function (x) { return "<div><b>" + x[0] + "</b><span>" + x[1] + "</span></div>"; }).join("") + "</div>";
+    // A booking can come with no reg: the office can type or correct it, a
+    // driver can fill in a missing one when the car comes in.
+    var canReg = can("import") || (can("intake") && !r.reg);
+    if (canReg) h += '<label for="regText">REG</label><input id="regText" value="' + esc(r.reg) + '" autocomplete="off" autocapitalize="characters" maxlength="12" placeholder="Type the reg">';
     if (drops && can("yard")) {
       h += '<label>YARD</label><div class="pseg yard">' + (S.company.yards || []).map(function (y) {
         return '<button type="button" data-setyard="' + esc(y) + '" class="' + (r.yard === y ? "on y-" + esc(y) : "") + '">' + esc(YARD_LABEL[y] || y) + "</button>";
@@ -1578,7 +1597,7 @@
     // PT photos from when the car came in (PICKS), also on its DROPS row: same booking ref.
     h += '<div id="ptPhotos"></div>';
     if (can("import")) h += '<button type="button" class="link rmcar" data-removecar>Remove this car (no show, cancelled)</button>';
-    h += '<div class="pbtns"><button type="button" data-close>Close</button>' + (can("note") || can("flights") ? '<button type="button" class="save" data-savepanel>Save</button>' : "") + "</div>";
+    h += '<div class="pbtns"><button type="button" data-close>Close</button>' + (can("note") || can("flights") || canReg ? '<button type="button" class="save" data-savepanel>Save</button>' : "") + "</div>";
     $("panelBody").innerHTML = h;
     if (!$("panel").open) $("panel").showModal();
     ptPhotosList(r);
@@ -1616,6 +1635,13 @@
     var r = S.rows.filter(function (x) { return x.id === panelRow.id; })[0] || panelRow;
     if (t.dataset.savepanel !== undefined) {
       var saved = false;
+      if ($("regText")) {
+        var g = $("regText").value.trim().toUpperCase().replace(/\s+/g, " ");
+        if (g !== r.reg) {
+          if (!/^[A-Z0-9 ]{0,12}$/.test(g)) return toast("Check the reg: letters and numbers only.", true);
+          run("set_reg", { p_booking: r.id, p_reg: g }, r, function (x) { x.reg = g; }); saved = true;
+        }
+      }
       // The note first: turning a car into NO FLIGHT moves on to the
       // collection-time screen, and a note typed alongside must not be lost.
       if ($("noteText")) {

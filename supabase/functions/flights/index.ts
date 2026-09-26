@@ -115,8 +115,10 @@ type Arrival = { keys: string[]; number: string; origin: string; codeshare: bool
 async function aeroFetch(key: string, airport: string, from: string, to: string) {
   const url = `https://aerodatabox.p.rapidapi.com/flights/airports/iata/${airport}/${from}/${to}?direction=Arrival&withLeg=true&withCancelled=true&withCodeshared=true&withLocation=false`;
   const opts = { headers: { "x-rapidapi-key": key, "x-rapidapi-host": "aerodatabox.p.rapidapi.com" } };
+  // Per-second limit: a button press can land on top of the timer's own run,
+  // so wait a little longer each time (2.4 s, 4.8 s, 7.2 s) before giving up.
   let res = await fetch(url, opts);
-  if (res.status === 429) { await sleep(AERO_GAP_MS * 2); res = await fetch(url, opts); }   // per-second limit
+  for (let i = 1; res.status === 429 && i <= 3; i++) { await sleep(AERO_GAP_MS * 2 * i); res = await fetch(url, opts); }
   if (res.status === 204) return [];
   const text = await res.text();
   if (!res.ok) throw new Error(`AeroDataBox ${res.status}: ${text.slice(0, 200)}`);
@@ -206,6 +208,7 @@ async function checkSchedule(admin: SupabaseClient, c: Company, days: string[], 
   if (!key) return { skipped: "No AeroDataBox key yet" };
   const now = new Date(), tz = c.time_zone;
   const tally = { filled: 0, moved: 0, expected: 0, landed: 0, cancelled: 0, notfound: 0, sheets: 0, error: "" };
+  let fetchedDays = 0;
 
   for (const day of days) {
     const { data: sheet } = await admin.from("sheets").select("id").eq("company_id", c.id).eq("kind", "drops").eq("day", day).maybeSingle();
@@ -218,6 +221,9 @@ async function checkSchedule(admin: SupabaseClient, c: Company, days: string[], 
     tally.sheets++;
 
     let arrivals: Arrival[];
+    // The API allows about one request a second: the gap between days too, not
+    // just between one day's three windows (two back to back drew a 429).
+    if (fetchedDays++) await sleep(AERO_GAP_MS);
     try { arrivals = await aeroDay(key, c, day); }
     catch (err) { tally.error = (err as Error).message; continue; }
 
