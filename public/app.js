@@ -1245,33 +1245,15 @@
   // night, 3 days of them must fit the free plan's 1 GB. PT still gets the
   // full photos on WhatsApp.
   var BK = [], bkActive = 0, BK_TRIES = 4, BK_MAX = 900, BK_Q = 0.55;
-  // Returns { blob, how }: "bitmap" or "img" (made small), "orig" (couldn't be).
-  // iPhones can refuse createImageBitmap on a photo, so an <img> is tried next.
   async function bkSmall(f) {
-    async function draw(src, w, h) {
-      var k = Math.min(1, BK_MAX / Math.max(w, h));
-      var c = document.createElement("canvas"); c.width = Math.round(w * k); c.height = Math.round(h * k);
-      c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+    try {
+      var im = await createImageBitmap(f), k = Math.min(1, BK_MAX / Math.max(im.width, im.height));
+      var c = document.createElement("canvas"); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+      c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); if (im.close) im.close();
       var b = await new Promise(function (ok) { c.toBlob(ok, "image/jpeg", BK_Q); });
-      c.width = c.height = 0;   // free the canvas memory at once (iPhones are strict about it)
-      return b && b.size < f.size ? b : null;
-    }
-    try {
-      var im = await createImageBitmap(f), b1 = await draw(im, im.width, im.height); if (im.close) im.close();
-      if (b1) return { blob: b1, how: "bitmap" };
-    } catch (e) {}
-    var url = "";
-    try {
-      url = URL.createObjectURL(f);
-      var img = new Image(); img.src = url;
-      await (img.decode ? img.decode() : new Promise(function (ok, no) { img.onload = ok; img.onerror = no; }));
-      var b2 = await draw(img, img.naturalWidth, img.naturalHeight);
-      if (b2) return { blob: b2, how: "img" };
-    } catch (e) {} finally { if (url) URL.revokeObjectURL(url); }
-    return { blob: f, how: "orig" };
+      return b && b.size < f.size ? b : f;
+    } catch (e) { return f; }
   }
-  // Shown in the store's cache setting, so the office can check phones make small copies.
-  var BK_MARK = { bitmap: "3600", img: "3601", orig: "3602" };
   // Photos already up (before a reload) join the set too, so it's saved whole.
   function bkQueue(rowId, token, x) {
     if (x.queued) return;
@@ -1290,7 +1272,7 @@
     var x = j.x;
     try {
       var small = await bkSmall(x.file);
-      var up = await sb.storage.from("pt-photos").upload(x.path, small.blob, { contentType: "image/jpeg", cacheControl: BK_MARK[small.how] });
+      var up = await sb.storage.from("pt-photos").upload(x.path, small, { contentType: "image/jpeg" });
       x.bk = !up.error || /exist|duplicate/i.test(up.error.message || "") ? "done" : "fail";
     } catch (e) { x.bk = "fail"; }
     bkActive--;

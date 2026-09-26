@@ -135,7 +135,7 @@ async function backend(ctx, db) {
       db.calls.push({ fn, args });
       return reply(200, rpc(db, fn, args));
     }
-    if (p.startsWith("/storage/v1/object/pt-photos/")) { db.uploads.push(p.slice(29)); (db.uploadMarks = db.uploadMarks || []).push(((req.postDataBuffer() || Buffer.alloc(0)).toString("latin1").match(/name="cacheControl"\r\n\r\n(\d+)/) || [])[1] || req.headers()["cache-control"] || ""); return reply(200, { Key: "pt-photos/" + p.slice(29) }); }
+    if (p.startsWith("/storage/v1/object/pt-photos/")) { db.uploads.push(p.slice(29)); return reply(200, { Key: "pt-photos/" + p.slice(29) }); }
     if (p.startsWith("/functions/v1/pt-photos")) {
       const l = db.ptLinks.find((x) => x.token === JSON.parse(req.postData()).token);
       return l ? reply(200, { reg: "DY16MYO", company: "TAKEOFF", by: "RAKESH", created_at: l.at, photos: l.paths.map((x, i) => ({ url: BASE + "/icons/icon-192.png", download: BASE + "/icons/icon-192.png", name: "DY16MYO-0" + (i + 1) + ".jpg" })) }) : reply(404, { error: "These photos have expired or the link isn't right." });
@@ -162,10 +162,10 @@ async function backend(ctx, db) {
 }
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 const JWT = b64({ alg: "HS256" }) + "." + b64({ sub: "u1", role: "authenticated", exp: 4102444800 }) + ".sig";
-async function phone(browser, db, { signedIn = true, ua, width = 390, noBitmap = false } = {}) {
+async function phone(browser, db, { signedIn = true, ua, width = 390 } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, userAgent: ua, permissions: ["camera"] });
   await backend(ctx, db);
-  await ctx.addInitScript(([jwt, signedIn, noBitmap]) => {
+  await ctx.addInitScript(([jwt, signedIn]) => {
     if (signedIn && !sessionStorage.getItem("seeded")) {
       sessionStorage.setItem("seeded", "1");
       localStorage.setItem("takeoff_link", "x".repeat(40));
@@ -175,9 +175,7 @@ async function phone(browser, db, { signedIn = true, ua, width = 390, noBitmap =
     navigator.canShare = () => true;
     navigator.share = async (d) => { window.__shares.push({ n: (d.files || []).length, names: (d.files || []).map((f) => f.name), types: (d.files || []).map((f) => f.type), text: d.text || "" }); };
     try { navigator.clipboard.writeText = async () => {}; } catch (e) {}
-    // Like an iPhone that won't decode a photo this way.
-    if (noBitmap) window.createImageBitmap = () => Promise.reject(new Error("not supported"));
-  }, [JWT, signedIn, noBitmap]);
+  }, [JWT, signedIn]);
   const page = await ctx.newPage();
   page.setDefaultTimeout(6000);
   page.__errors = [];
@@ -299,8 +297,8 @@ await scenario(async () => {
 });
 
 // 7. PT three ways
-async function ptRun(method, shots, opts) {
-  const db = makeDb({ ptMethod: method }), page = await phone(browser, db, opts);
+async function ptRun(method, shots) {
+  const db = makeDb({ ptMethod: method }), page = await phone(browser, db);
   await open(page);
   await page.selectOption("#sheetPick", "p0"); await sleep(700);
   await page.click('.row[data-id="p1"] [data-pt]');
@@ -321,14 +319,7 @@ await scenario(async () => {
   check("PT (photos): PT gets ticked", db.calls.some((c) => c.fn === "tap_pick" && c.args.p_key === "pt"));
   await sleep(1500);
   check("PT (photos): the app keeps a copy (12 uploaded, saved as one set)", db.uploads.length === 12 && db.ptLinks.length === 1 && db.ptLinks[0].paths.length === 12, { up: db.uploads.length, links: db.ptLinks.map((l) => l.paths.length) });
-  check("PT (photos): the copies are made small (marked 3600)", (db.uploadMarks || []).length === 12 && db.uploadMarks.every((m) => /3600/.test(m)), db.uploadMarks);
   check("PT (photos): no errors", page.__errors.length === 0, page.__errors);
-});
-await scenario(async () => {
-  const { db } = await ptRun("photos", 3, { noBitmap: true });
-  const page = null;
-  await sleep(300);
-  check("PT on a phone that refuses createImageBitmap: copies still made small (marked 3601)", (db.uploadMarks || []).length > 0 && db.uploadMarks.every((m) => /3601/.test(m)), db.uploadMarks);
 });
 await scenario(async () => {
   const { db, page } = await ptRun("pdf", 8);
