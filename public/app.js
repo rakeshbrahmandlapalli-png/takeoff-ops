@@ -542,7 +542,7 @@
     snapSave();
     if (flashId) { var el = document.querySelector('[data-id="' + flashId + '"]'); if (el) { el.classList.add("flash"); setTimeout(function () { el.classList.remove("flash"); }, 1500); } flashId = null; }
   }
-  function go(view) { if (S.platform && view !== "me") view = "clients"; S.view = view; S.settingsDraft = null; if (view === "summary") S.activity = null; if ($("menu").open) $("menu").close(); render(); window.scrollTo(0, 0); }
+  function go(view) { if (S.platform && view !== "me") view = "clients"; if (view === "import") S.recentImports = null; S.view = view; S.settingsDraft = null; if (view === "summary") S.activity = null; if ($("menu").open) $("menu").close(); render(); window.scrollTo(0, 0); }
 
   // ── board ─────────────────────────────────
   // Same rules as the Sheet app, so nobody has to relearn what a count means.
@@ -1742,6 +1742,7 @@
     if (t.dataset.copy === "returns" || t.dataset.copy === "stats") { e.stopPropagation(); return putOnClipboard(copyText(t.dataset.copy)); }
     if (t.dataset.restore) return restoreCar(t);
     if (t.dataset.gone) return removeGone([t.dataset.gone], t);
+    if (t.dataset.undoimport) return undoImport(t.dataset.undoimport, t);
     if (t.dataset.goneall !== undefined) return removeGone(Array.prototype.map.call($("panelBody").querySelectorAll("[data-gone]"), function (b) { return b.dataset.gone; }), t);
     if (staffEdit && (t.dataset.saveaccess !== undefined || t.dataset.roledefault !== undefined || t.dataset.savepin !== undefined || t.dataset.removestaff !== undefined)) return staffPanelAction(t);
     if (!panelRow) return;
@@ -2379,6 +2380,12 @@
     var h = '<h2 class="title">Import bookings</h2><div class="toolbar"><div class="seg" role="group" aria-label="Sheet type">' +
       '<button type="button" data-impkind="drops" aria-pressed="' + (I.kind === "drops") + '">Drops</button><button type="button" data-impkind="picks" aria-pressed="' + (I.kind === "picks") + '">Picks</button></div></div>';
     if (I.stage !== "preview") {
+      if (!S.recentImports) loadRecentImports();
+      var undoable = (S.recentImports || []).filter(function (x) { return !x.undone && x.latest; });
+      if (undoable.length) h += '<div class="impundo"><strong>Imported in the last 24 hours</strong>' + undoable.map(function (x) {
+        return "<div><span>" + esc(x.kind.toUpperCase() + " " + R.boardName(x.day, x.kind)) + "<small>" + esc(dayShort(x.at) + " " + hhmm(x.at) + " · " + x.by + " · " + x.added + " added, " + x.changed + " changed") +
+          '</small></span><button type="button" class="btn ghost small" data-undoimport="' + esc(x.id) + '">Undo</button></div>';
+      }).join("") + "</div>";
       var joblist = I.excelFile && /\.pdf$/i.test(I.excelFile.name || "");
       h += '<div class="steps">' + dropZone("excel", "1. Bookings", I.kind === "drops" ? "The booking list covering two days, e.g. 17th to 18th, exactly as downloaded. Excel or a Joblist PDF." : "The booking list for the day, exactly as downloaded. Excel or a Joblist PDF.", I.excelFile) +
         (I.kind === "drops" && !joblist ? dropZone("pdf", "2. Flight numbers (PDF)", "Return Report PDF for the same days. Not needed with a Joblist PDF, which already carries the flights.", I.pdfFile) : "") + "</div>" +
@@ -2459,19 +2466,45 @@
     // Overstays were carried in from older days and early returns from later
     // ones, so they're never in today's file.
     var gone = S.rows.filter(function (x) { return x.ref && !inFile[x.ref] && !x.overstay && !x.early; });
-    if (gone.length) openGone(gone);
+    if (gone.length) openGone(gone, r.data.undo_id);
+    S.recentImports = null;
   }
-  function openGone(gone) {
+  function openGone(gone, undoId) {
     panelRow = null;
-    $("panelBody").innerHTML = '<h2 id="panelTitle">' + gone.length + (gone.length === 1 ? " car isn't" : " cars aren't") + " in this file any more</h2>" +
+    var top = '<div class="pbtns top"><button type="button" data-close>Keep them all</button>' + (undoId ? '<button type="button" class="undo" data-undoimport="' + esc(undoId) + '">Undo this import</button>' : "") + "</div>";
+    $("panelBody").innerHTML = '<button type="button" class="pclose" data-close aria-label="Close">✕</button><h2 id="panelTitle">' + gone.length + (gone.length === 1 ? " car isn't" : " cars aren't") + " in this file any more</h2>" +
       '<p class="sub">They were in an earlier import but this file no longer lists them: cancelled, or the date was changed to another day. Only remove cars you know are cancelled.' +
         (gone[0] && gone[0].kind === "drops" ? " A car whose return moved to another day goes there, with its yard and notes, when that day is imported; removing it here loses them." : "") + '</p>' +
+      (undoId ? '<p class="sub"><b>Wrong file?</b> Undo this import puts the sheet back as it was before.</p>' : "") + top +
       '<div class="rmlist">' + gone.map(function (r) {
         return '<div><span><b>' + esc(r.reg || "NO REG") + "</b>" + (r.num ? " #" + r.num : "") + " " + esc(r.name) + "<small>Ref " + esc(r.ref) + (r.drop_at ? " · drop " + esc(dayShort(r.drop_at) + " " + hhmm(r.drop_at)) : "") + (r.return_at ? " · back " + esc(dayShort(r.return_at) + " " + hhmm(r.return_at)) : "") +
           '</small></span><button type="button" data-gone="' + r.id + '">Remove as cancelled</button></div>';
       }).join("") + "</div>" +
       '<div class="pbtns"><button type="button" data-close>Keep them</button>' + (gone.length > 1 ? '<button type="button" class="save" data-goneall>Remove all ' + gone.length + " as cancelled</button>" : "") + "</div>";
     if (!$("panel").open) $("panel").showModal();
+  }
+  // Undo an import (database part 44): cars it added go, what it changed comes back.
+  async function undoImport(id, btn) {
+    var it = (S.recentImports || []).filter(function (x) { return String(x.id) === String(id); })[0];
+    if (!confirm("Undo this import?" + (it ? "\n\n" + it.kind.toUpperCase() + " " + it.day + ", imported " + hhmm(it.at) + " by " + it.by + ": " + it.added + " cars added, " + it.changed + " changed." : "") +
+      "\n\nThe cars it added are taken off, and what it changed goes back to how it was. Taps made since are kept.")) return;
+    btn.disabled = true;
+    var r = await sb.rpc("undo_import", { p_id: +id });
+    btn.disabled = false;
+    if (r.error) return toast(r.error.message, true);
+    toast("Import undone: " + r.data.removed + " cars taken off, " + r.data.restored + " put back" + (r.data.kept ? ", " + r.data.kept + " kept (already worked on)" : "") + ".");
+    S.recentImports = null;
+    if ($("panel").open) $("panel").close();
+    await loadSheets();
+    if (r.data.sheet_gone && S.sheetId === r.data.sheet_id) S.sheetId = null;
+    if (!S.sheetId) pickDefaultSheet();
+    await loadRows(); render();
+  }
+  async function loadRecentImports() {
+    S.recentImports = [];
+    var r = await sb.rpc("recent_imports");
+    S.recentImports = r.error ? [] : (r.data || []);
+    if (S.view === "import") render();
   }
   async function removeGone(ids, btn) {
     btn.disabled = true;
@@ -2484,7 +2517,8 @@
     toast(ids.length + (ids.length === 1 ? " car" : " cars") + " removed as cancelled");
     var left = Array.prototype.map.call($("panelBody").querySelectorAll("[data-gone]"), function (b) { return b.dataset.gone; }).filter(function (id) { return ids.indexOf(id) === -1; });
     if (!left.length) return $("panel").close();
-    openGone(S.rows.filter(function (y) { return left.indexOf(y.id) !== -1; }));
+    var u = $("panelBody").querySelector("[data-undoimport]");
+    openGone(S.rows.filter(function (y) { return left.indexOf(y.id) !== -1; }), u ? u.dataset.undoimport : null);
   }
 
   // ── staff ─────────────────────────────────
@@ -3133,6 +3167,7 @@
     }
     if (t.dataset.archretry !== undefined) { S.arch.days = null; render(); return; }
     if (t.dataset.impkind) { S.imp = newImport(t.dataset.impkind); render(); return; }
+    if (t.dataset.undoimport && !t.closest("#panel")) return undoImport(t.dataset.undoimport, t);
     if (t.dataset.read !== undefined) return readImport();
     if (t.dataset.restart !== undefined) { S.imp = newImport(S.imp.kind); render(); return; }
     if (t.dataset.create !== undefined) return createSheet();

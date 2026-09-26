@@ -97,7 +97,9 @@ function rpc(db, fn, a) {
     }
     case "set_note": { const b = row(a.p_booking); b.note = a.p_note; return b; }
     case "download_my_company": return { format: "takeoff-ops-company-export", bookings: db.bookings };
-    case "import_sheet": { const sh = db.sheets.find((x) => x.kind === a.p_kind && x.day === a.p_day); return { sheet_id: sh ? sh.id : "p0", added: a.p_rows.length, updated: 0, early: 0, moved: 0, new_marked: 0 }; }
+    case "import_sheet": { const sh = db.sheets.find((x) => x.kind === a.p_kind && x.day === a.p_day); (db.imports = db.imports || []).push({ id: 70 + db.imports.length, kind: a.p_kind, day: a.p_day, at: now(), by: "RAKESH", added: a.p_rows.length, changed: 0, undone: false, latest: true }); return { sheet_id: sh ? sh.id : "p0", added: a.p_rows.length, updated: 0, early: 0, moved: 0, new_marked: 0, undo_id: 70 + db.imports.length - 1 }; }
+    case "recent_imports": return db.imports || [];
+    case "undo_import": { const i = (db.imports || []).find((x) => x.id === a.p_id); if (i) i.undone = true; return { removed: 2, kept: 0, restored: 0, sheet_id: "p0", sheet_gone: false }; }
     case "add_booking": { const n = { id: "new" + db.bookings.length, company_id: "c1", sheet_id: a.p_sheet, kind: db.sheets.find((x) => x.id === a.p_sheet).kind, ref: a.p.ref || "", reg: String(a.p.reg).toUpperCase(), name: a.p.name || "", num: 99, return_at: a.p.return_local ? new Date(a.p.return_local.replace(" ", "T") + ":00+01:00").toISOString() : null, note: a.p.note || "" }; db.bookings.push(n); return n; }
     case "set_overstay_paid": { const b = row(a.p_booking); Object.assign(b, { charge_amount: a.p_amount, charge_method: a.p_method, charge_at: a.p_method ? new Date().toISOString() : null, charge_by: a.p_method ? "s1" : null }); return b; }
     case "remove_booking": { const b = row(a.p_booking); Object.assign(b, { removed_at: new Date().toISOString(), removed_reason: a.p_reason, removed_by: "s1" }); return b; }
@@ -631,6 +633,36 @@ await scenario(async () => {
   check("import: cars missing from the file are listed, with the moved-day warning", /no longer lists them/.test(gone) && /Only remove cars you know are cancelled/.test(gone));
 });
 
+// 18a. DROPS file with the date and the time in separate columns (BookingList .xls):
+// the time must be read, or every car lands at midnight on the day before.
+await scenario(async () => {
+  const db = makeDb();
+  const page = await phone(browser, db, { width: 1000 });
+  await open(page);
+  const b64 = await page.evaluate(async (day) => {
+    await new Promise((ok, no) => { const s = document.createElement("script"); s.src = "/vendor/xlsx-0.18.5.full.min.js"; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+    const [y, m, d] = day.split("-").map(Number);
+    const date = (dd) => (Date.UTC(y, m - 1, dd) - Date.UTC(1899, 11, 30)) / 864e5;
+    const ws = XLSX.utils.aoa_to_sheet([["Reference", "Name", "Vehicle", "Drop Off Date", "Drop Off Time", "Return Date", "Return Time"],
+      ["T1", "ONE", "FORD FIESTA AB12CDE", 0, 0, 0, 0], ["T2", "TWO", "KIA RIO CD34EFG", 0, 0, 0, 0], ["T3", "THREE", "VW GOLF EF56GHJ", 0, 0, 0, 0]]);
+    const put = (c, v, z) => { ws[c] = { t: "n", v, z }; };
+    // back on day+1 at 14:30, 21:05 and 03:15 (that one is the night before's shift)
+    [[2, 14, 30], [3, 21, 5], [4, 3, 15]].forEach(([r, h, mi]) => {
+      put("D" + r, date(d - 5), "dd/mm/yyyy"); put("E" + r, 10 / 24, "hh:mm");
+      put("F" + r, date(d + 1), "dd/mm/yyyy"); put("G" + r, (h * 60 + mi) / 1440, "hh:mm");
+    });
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "S");
+    return XLSX.write(wb, { type: "base64", bookType: "xlsx" });
+  }, TONIGHT);
+  await page.click("#menuBtn"); await sleep(300); await page.click('#menu [data-view="import"]'); await sleep(300);
+  await page.setInputFiles('input[data-file="excel"]', { name: "BookingList.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: Buffer.from(b64, "base64") });
+  await sleep(200); await page.click("[data-read]"); await page.waitForSelector("[data-create]", { timeout: 8000 });
+  const table = await page.locator(".table-wrap").innerText(), btn = await page.locator("[data-create]").innerText();
+  const tomorrow = +addDays(TONIGHT, 1).split("-")[2];
+  check("import (separate date and time columns): times are read (14:30, 21:05)", /14:30/.test(table) && /21:05/.test(table) && !/00:00/.test(table), table.slice(0, 300));
+  check("import (separate date and time columns): the sheet offered is the file's day, not the day before", new RegExp("^" + tomorrow + "(ST|ND|RD|TH) DROPS", "i").test(btn.replace(/^Create /i, "")), btn);
+});
+
 // 18b. import on a phone: the file picker sends the app to the background; the
 // file must still be taken when it comes back (it was lost to a redraw).
 await scenario(async () => {
@@ -644,6 +676,35 @@ await scenario(async () => {
   await input.setInputFiles({ name: "drops.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: Buffer.from("x") });
   await sleep(400);
   check("import on a phone: the chosen file is taken after the file picker (app back from the background)", /drops\.xlsx/.test(await page.locator(".steps").innerText()) && await page.locator("[data-read]:not([disabled])").count() === 1);
+});
+
+// 18c. after an import: ✕ and Undo at the top of the "not in this file" box; Undo on the Import screen
+await scenario(async () => {
+  const db = makeDb();
+  const page = await phone(browser, db, { width: 1000 });
+  await open(page);
+  const b64 = await page.evaluate(async (day) => {
+    await new Promise((ok, no) => { const s = document.createElement("script"); s.src = "/vendor/xlsx-0.18.5.full.min.js"; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+    const [y, m, d] = day.split("-").map(Number);
+    const serial = (dd, h, mi) => (Date.UTC(y, m - 1, dd, h, mi) - Date.UTC(1899, 11, 30)) / 864e5;
+    const ws = XLSX.utils.aoa_to_sheet([["Ref", "Name", "Vehicle", "Booking From", "Booking To"], ["X1", "ONE", "FORD FIESTA AB12CDE", 0, 0]]);
+    ws.D2 = { t: "n", v: serial(d, 13, 20), z: "dd/mm/yyyy hh:mm" }; ws.E2 = { t: "n", v: serial(d + 3, 1, 0), z: "dd/mm/yyyy hh:mm" };
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "S");
+    return XLSX.write(wb, { type: "base64", bookType: "xlsx" });
+  }, TONIGHT);
+  await page.click("#menuBtn"); await sleep(300); await page.click('#menu [data-view="import"]'); await sleep(300);
+  await page.click('[data-impkind="picks"]'); await sleep(200);
+  await page.setInputFiles('input[data-file="excel"]', { name: "picks.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: Buffer.from(b64, "base64") });
+  await sleep(200); await page.click("[data-read]"); await page.waitForSelector("[data-create]", { timeout: 8000 });
+  await page.click("[data-create]"); await sleep(900);
+  check("after import: the 'not in this file' box has a ✕ and Undo this import at the top", await page.locator("#panelBody .pclose").count() === 1 && await page.locator("#panelBody .pbtns.top [data-undoimport]").count() === 1);
+  await page.click("#panelBody .pclose"); await sleep(300);
+  check("after import: ✕ closes the box and removes nothing", !(await page.evaluate(() => document.getElementById("panel").open)) && !db.calls.some((c) => c.fn === "remove_booking"));
+  await page.click("#menuBtn"); await sleep(300); await page.click('#menu [data-view="import"]'); await sleep(600);
+  check("Import screen lists the import with an Undo button", await page.locator(".impundo [data-undoimport]").count() === 1, await page.locator(".impundo").innerText().catch(() => ""));
+  await page.click(".impundo [data-undoimport]"); await sleep(800);
+  check("Undo asks, then undoes that import on the server", db.calls.some((c) => c.fn === "undo_import" && c.args.p_id === 70) && /Import undone/.test(await toast(page)), await toast(page));
+  check("undo: no errors", page.__errors.length === 0, page.__errors);
 });
 
 // 19. the office adds a car by hand; takes an overstay payment; removes a car and puts it back

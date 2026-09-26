@@ -51,7 +51,7 @@
   var UKREG = /([A-Z]{2}\d{2}\s?[A-Z]{3}|[A-Z]\d{1,3}\s?[A-Z]{3}|[A-Z]{3}\s?\d{1,3}[A-Z])\s*$/i;
 
   function parseDateTime(text) {
-    var m = String(text || "").match(/(\d{1,4})[-\/.](\d{1,2})[-\/.](\d{2,4})(?:\D+(\d{1,2}):(\d{2}))?/);
+    var m = String(text || "").match(/(\d{1,4})[-\/.](\d{1,2})[-\/.](\d{2,4})(?:.*?\b(\d{1,2}):(\d{2}))?/);
     if (!m) return null;
     var y = +m[3], d = +m[1], mo = +m[2];
     if (m[1].length === 4) { y = +m[1]; d = +m[3]; }
@@ -82,6 +82,8 @@
       var cell = ws[k];
       if (k.charAt(0) === "!" || !cell || cell.t !== "n" || !cell.z || !XLSX.SSF.is_date(cell.z)) return;
       var mins = Math.round(cell.v * 1440), day = Math.floor(mins / 1440), m = mins - day * 1440;
+      // A time-only cell (a separate "Return Time" column) is just the time.
+      if (day === 0 && !from1904) { cell.t = "s"; cell.v = pad(Math.floor(m / 60)) + ":" + pad(m % 60); return; }
       var d = new Date(Date.UTC(1899, 11, 30) + (day + (from1904 ? 1462 : 0)) * 864e5);
       cell.t = "s"; cell.v = d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate()) + (m ? " " + pad(Math.floor(m / 60)) + ":" + pad(m % 60) : "");
     });
