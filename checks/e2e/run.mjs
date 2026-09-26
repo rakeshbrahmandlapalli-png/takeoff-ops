@@ -98,6 +98,10 @@ function rpc(db, fn, a) {
     case "set_note": { const b = row(a.p_booking); b.note = a.p_note; return b; }
     case "download_my_company": return { format: "takeoff-ops-company-export", bookings: db.bookings };
     case "import_sheet": { const sh = db.sheets.find((x) => x.kind === a.p_kind && x.day === a.p_day); return { sheet_id: sh ? sh.id : "p0", added: a.p_rows.length, updated: 0, early: 0, moved: 0, new_marked: 0 }; }
+    case "add_booking": { const n = { id: "new" + db.bookings.length, company_id: "c1", sheet_id: a.p_sheet, kind: db.sheets.find((x) => x.id === a.p_sheet).kind, ref: a.p.ref || "", reg: String(a.p.reg).toUpperCase(), name: a.p.name || "", num: 99, return_at: a.p.return_local ? new Date(a.p.return_local.replace(" ", "T") + ":00+01:00").toISOString() : null, note: a.p.note || "" }; db.bookings.push(n); return n; }
+    case "set_overstay_paid": { const b = row(a.p_booking); Object.assign(b, { charge_amount: a.p_amount, charge_method: a.p_method, charge_at: a.p_method ? new Date().toISOString() : null, charge_by: a.p_method ? "s1" : null }); return b; }
+    case "remove_booking": { const b = row(a.p_booking); Object.assign(b, { removed_at: new Date().toISOString(), removed_reason: a.p_reason, removed_by: "s1" }); return b; }
+    case "restore_booking": { const b = db.bookings.find((x) => x.id === a.p_booking); Object.assign(b, { removed_at: null, removed_reason: "" }); return b; }
     case "set_reg": { const b = row(a.p_booking); b.reg = a.p_reg; return b; }
     case "set_yard": { const b = row(a.p_booking); b.yard = a.p_yard; return b; }
     case "set_flight": { const b = row(a.p_booking); b.flight = a.p_flight; return b; }
@@ -522,7 +526,43 @@ await scenario(async () => {
   check("import: cars missing from the file are listed, with the moved-day warning", /no longer lists them/.test(gone) && /Only remove cars you know are cancelled/.test(gone));
 });
 
-// 19. a big night: 400 cars on one sheet stays quick
+// 19. the office adds a car by hand; takes an overstay payment; removes a car and puts it back
+await scenario(async () => {
+  const db = makeDb(); db.company.overstay_rate = 30;
+  db.bookings.find((x) => x.id === "b3").return_at = iso(addDays(TONIGHT, -3), "22:15");
+  const page = await phone(browser, db, { width: 800 });
+  await open(page);
+  // Add a car: a time after midnight on the sheet's own date is the next morning.
+  await page.click("#menuBtn"); await sleep(300); await page.click("#menu [data-addcar]"); await sleep(300);
+  await page.fill("#acReg", "zz12 new");
+  await page.click("#acGo"); await sleep(300);
+  check("add a car: DROPS without a BACK time is refused", /date and the time/.test(await toast(page)) && !db.calls.some((c) => c.fn === "add_booking"));
+  await page.fill("#acRetT", "0130"); await page.click("#acGo"); await sleep(600);
+  const add = db.calls.find((c) => c.fn === "add_booking");
+  check("add a car: 01:30 on the sheet's date is saved as the next morning", !!add && add.args.p.return_local === addDays(TONIGHT, 1) + " 01:30", add && add.args.p);
+  // Overstay payment
+  await page.click('.row[data-id="b3"] .reg'); await sleep(400);
+  const due = await page.locator(".chgbox").innerText().catch(() => "");
+  check("overstay: the panel shows what's due", /£\d+ due/.test(due), due);
+  await page.fill("#chgAmount", "85"); await page.click('[data-charge="cash"]'); await sleep(500);
+  const pay = db.calls.find((c) => c.fn === "set_overstay_paid");
+  check("overstay: CASH records the amount typed", !!pay && pay.args.p_amount === 85 && pay.args.p_method === "cash", pay && pay.args);
+  if (await page.locator("#panel[open]").count()) await page.click("[data-close]").catch(() => {});
+  await sleep(300);
+  check("overstay: the row shows it paid", /£85 CASH/.test(await text(page, '.row[data-id="b3"]')));
+  // Remove and put back
+  await page.click('.row[data-id="b2"] .reg'); await sleep(400);
+  await page.click("[data-removecar]"); await sleep(300);
+  const reasonBtn = page.locator("[data-removewhy]").first();
+  if (await reasonBtn.count()) { await reasonBtn.click(); await sleep(500); }
+  check("remove: the car leaves the board", db.calls.some((c) => c.fn === "remove_booking") && await page.locator('.row[data-id="b2"]').count() === 0);
+  await page.click("#menuBtn"); await sleep(300); await page.click("#menu [data-removedlist]"); await sleep(300);
+  await page.click('[data-restore="b2"]'); await sleep(500);
+  await page.click("[data-close]").catch(() => {}); await sleep(300);
+  check("put back: the car is on the board again, once", await page.locator('.row[data-id="b2"]').count() === 1);
+});
+
+// 20. a big night: 400 cars on one sheet stays quick
 await scenario(async () => {
   const db = makeDb();
   for (let i = 0; i < 400; i++) {
@@ -546,7 +586,7 @@ await scenario(async () => {
   check("400 cars: no sideways scrolling", await noSideScroll(page));
 });
 
-// 20. small Android phone width
+// 21. small Android phone width
 await scenario(async () => {
   const page = await phone(browser, makeDb(), { width: 360, ua: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36" });
   await open(page);

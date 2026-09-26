@@ -1773,7 +1773,7 @@
     var sh = sheet(); if (!sh) return;
     var drops = sh.kind === "drops";
     function f(id, label, attrs) { return '<label for="' + id + '">' + label + '</label><input id="' + id + '" ' + (attrs || "") + ">"; }
-    function when(id, label, day) { return '<label>' + label + '</label><div class="when2"><input id="' + id + 'D" type="date" value="' + esc(day || "") + '"><input id="' + id + 'T" type="time"></div>'; }
+    function when(id, label, day) { return '<label>' + label + '</label><div class="when2"><input id="' + id + 'D" type="date" value="' + esc(day || "") + '">' + timeBox(id + "T", "") + "</div>"; }
     $("panelBody").innerHTML = '<h2 id="panelTitle">Add a car <small>' + esc(sheetLabel(sh)) + "</small></h2>" +
       '<form id="addCarForm" novalidate>' +
       f("acReg", "REG", 'autocomplete="off" autocapitalize="characters" maxlength="12" required') +
@@ -1789,18 +1789,27 @@
     if (!$("panel").open) $("panel").showModal();
     setTimeout(function () { $("acReg").focus(); }, 50);
   }
+  // "" when no date; null when the typed time isn't one.
   function localWhen(id) {
-    var d = $(id + "D"), t = $(id + "T");
+    var d = $(id + "D"), t = readTime(id + "T");
     if (!d || !d.value) return "";
-    return d.value + " " + (t.value || "00:00");
+    if (t === null) return null;
+    return d.value + " " + (t || "00:00");
   }
   async function addCar() {
     var sh = sheet(), reg = $("acReg").value.trim();
     if (!reg) return toast("Enter the registration.", true);
-    var ret = localWhen("acRet");
-    if (sh.kind === "drops" && !ret) return toast("Enter when the car is back.", true);
+    var ret = localWhen("acRet"), drop = sh.kind === "picks" ? localWhen("acDrop") : "";
+    if (ret === null || drop === null) return toast("Type the time like 13:20 (or 1320).", true);
+    if (sh.kind === "drops") {
+      if (!ret || !readTime("acRetT")) return toast("Enter when the car is back: the date and the time.", true);
+      // The DROPS day runs to 06:00 next morning: 01:30 typed on the sheet's own
+      // date means the early hours after it, not the morning before.
+      var end = ((S.company && S.company.drops_day_end) || "06:00").slice(0, 5);
+      if (ret.slice(0, 10) === sh.day && ret.slice(11) <= end) ret = addDaysKey(sh.day, 1) + ret.slice(10);
+    }
     var p = { reg: reg, name: $("acName").value, phone: $("acPhone").value, make: $("acMake").value, ref: $("acRef").value, note: $("acNote").value,
-      return_local: ret, drop_local: sh.kind === "picks" ? localWhen("acDrop") : "",
+      return_local: ret, drop_local: drop,
       flight: $("acFlight") ? normFlight($("acFlight").value) || "" : "", yard: $("acYard") ? $("acYard").value : "" };
     $("acGo").disabled = true;
     var x = await sb.rpc("add_booking", { p_sheet: sh.id, p: p });
