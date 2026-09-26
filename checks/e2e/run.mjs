@@ -135,7 +135,7 @@ async function backend(ctx, db) {
       db.calls.push({ fn, args });
       return reply(200, rpc(db, fn, args));
     }
-    if (p.startsWith("/storage/v1/object/pt-photos/")) { db.uploads.push(p.slice(29)); return reply(200, { Key: "pt-photos/" + p.slice(29) }); }
+    if (p.startsWith("/storage/v1/object/pt-photos/")) { db.uploads.push(p.slice(29)); (db.uploadMarks = db.uploadMarks || []).push(((req.postDataBuffer() || Buffer.alloc(0)).toString("latin1").match(/name="cacheControl"\r\n\r\n(\d+)/) || [])[1] || ""); return reply(200, { Key: "pt-photos/" + p.slice(29) }); }
     if (p.startsWith("/functions/v1/pt-photos")) {
       const l = db.ptLinks.find((x) => x.token === JSON.parse(req.postData()).token);
       return l ? reply(200, { reg: "DY16MYO", company: "TAKEOFF", by: "RAKESH", created_at: l.at, photos: l.paths.map((x, i) => ({ url: BASE + "/icons/icon-192.png", download: BASE + "/icons/icon-192.png", name: "DY16MYO-0" + (i + 1) + ".jpg" })) }) : reply(404, { error: "These photos have expired or the link isn't right." });
@@ -162,10 +162,10 @@ async function backend(ctx, db) {
 }
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 const JWT = b64({ alg: "HS256" }) + "." + b64({ sub: "u1", role: "authenticated", exp: 4102444800 }) + ".sig";
-async function phone(browser, db, { signedIn = true, ua, width = 390 } = {}) {
+async function phone(browser, db, { signedIn = true, ua, width = 390, noBitmap = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, userAgent: ua, permissions: ["camera"] });
   await backend(ctx, db);
-  await ctx.addInitScript(([jwt, signedIn]) => {
+  await ctx.addInitScript(([jwt, signedIn, noBitmap]) => {
     if (signedIn && !sessionStorage.getItem("seeded")) {
       sessionStorage.setItem("seeded", "1");
       localStorage.setItem("takeoff_link", "x".repeat(40));
@@ -175,7 +175,9 @@ async function phone(browser, db, { signedIn = true, ua, width = 390 } = {}) {
     navigator.canShare = () => true;
     navigator.share = async (d) => { window.__shares.push({ n: (d.files || []).length, names: (d.files || []).map((f) => f.name), types: (d.files || []).map((f) => f.type), text: d.text || "" }); };
     try { navigator.clipboard.writeText = async () => {}; } catch (e) {}
-  }, [JWT, signedIn]);
+    // Like an iPhone that won't decode a photo this way.
+    if (noBitmap) window.createImageBitmap = () => Promise.reject(new Error("not supported"));
+  }, [JWT, signedIn, noBitmap]);
   const page = await ctx.newPage();
   page.setDefaultTimeout(6000);
   page.__errors = [];
@@ -297,8 +299,15 @@ await scenario(async () => {
 });
 
 // 7. PT three ways
-async function ptRun(method, shots) {
-  const db = makeDb({ ptMethod: method }), page = await phone(browser, db);
+// A phone that refuses createImageBitmap (like the iPhone did): copies still small.
+async function ptNoBitmap() {
+  const { db, page } = await ptRun("photos", 3, { noBitmap: true });
+  await page.click("[data-ptreg]"); await sleep(700);
+  await page.click("[data-ptshare]"); await sleep(2500);
+  check("PT on a phone that refuses createImageBitmap: sharing works, copies made small (marked 3601)", (await page.evaluate(() => window.__shares.length)) >= 1 && (db.uploadMarks || []).length === 3 && db.uploadMarks.every((m) => m === "3601"), db.uploadMarks);
+}
+async function ptRun(method, shots, opts) {
+  const db = makeDb({ ptMethod: method }), page = await phone(browser, db, opts);
   await open(page);
   await page.selectOption("#sheetPick", "p0"); await sleep(700);
   await page.click('.row[data-id="p1"] [data-pt]');
@@ -311,6 +320,8 @@ await scenario(async () => {
   const { db, page } = await ptRun("photos", 12);
   check("PT (photos): the camera took 12 photos", await page.locator(".ptthumbs img").count() === 12);
   check("PT (photos): no sideways scrolling on the PT screen", await noSideScroll(page));
+  await sleep(1500);
+  check("PT (photos): no copy is made while PT's photos are still to send", db.uploads.length === 0, db.uploads.length);
   await page.click("[data-ptreg]"); await sleep(700);
   await page.click("[data-ptshare]"); await sleep(500);
   await page.click("[data-ptshare]"); await sleep(800);
@@ -318,9 +329,12 @@ await scenario(async () => {
   check("PT (photos): photos go 10 then 2, as photos only (no text)", sh.length === 2 && sh[0].n === 10 && sh[1].n === 2 && !sh[0].text, sh);
   check("PT (photos): PT gets ticked", db.calls.some((c) => c.fn === "tap_pick" && c.args.p_key === "pt"));
   await sleep(1500);
-  check("PT (photos): the app keeps a copy (12 uploaded, saved as one set)", db.uploads.length === 12 && db.ptLinks.length === 1 && db.ptLinks[0].paths.length === 12, { up: db.uploads.length, links: db.ptLinks.map((l) => l.paths.length) });
+  const nums = db.uploads.map((u) => +u.match(/(\d+)\.jpg$/)[1]).sort((a, b) => a - b);
+  check("PT (photos): the app keeps 10 of the 12, first to last, saved as one set", db.uploads.length === 10 && nums[0] === 1 && nums[9] === 12 && db.ptLinks.length === 1 && db.ptLinks[0].paths.length === 10, { up: nums, links: db.ptLinks.map((l) => l.paths.length) });
+  check("PT (photos): the copies are made small (marked 3600)", (db.uploadMarks || []).length === 10 && db.uploadMarks.every((m) => m === "3600"), db.uploadMarks);
   check("PT (photos): no errors", page.__errors.length === 0, page.__errors);
 });
+await scenario(ptNoBitmap);
 await scenario(async () => {
   const { db, page } = await ptRun("pdf", 8);
   await page.waitForSelector("[data-ptpdf]:not([disabled])", { timeout: 8000 });

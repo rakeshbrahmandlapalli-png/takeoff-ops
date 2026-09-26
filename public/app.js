@@ -1233,27 +1233,63 @@
     }
     cur.prepping = false;
     // The copy starts once shooting's finished, so it's saved as one set.
-    if (!camStream) cur.items.forEach(function (y) { if (y.state === "local") bkQueue(cur.id, cur.token, y); });
+    if (!camStream) bkQueueSet(cur.id, cur.token, cur.items.filter(function (y) { return y.state === "local"; }));
     ptStore(); ptRefresh();
   }
 
   // ── The copy kept for the app ──
   // In the WhatsApp-chat way a copy of the photos uploads quietly in the
-  // background (same store as the link way, kept 3 days), so the car's panel
-  // can show them. It never holds up sending; a failed upload tries again.
-  // The copy is small (about 60 KB, 900 px): ~30 photos a car, 100+ cars a
-  // night, 3 days of them must fit the free plan's 1 GB. PT still gets the
-  // full photos on WhatsApp.
-  var BK = [], bkActive = 0, BK_TRIES = 4, BK_MAX = 900, BK_Q = 0.55;
+  // background (same store as the link way, kept 15 days), so the car's panel
+  // can show them. PT still gets every full photo on WhatsApp. To fit 15 days
+  // of 100+ cars in the free plan's 1 GB, the copy is 10 photos spread evenly
+  // round the car, about 35 KB each (800 px).
+  // It waits while the camera is open or PT's photos are still being sent:
+  // making copies alongside the share sheet stopped PT on an iPhone.
+  var BK = [], bkActive = 0, BK_TRIES = 4, BK_MAX = 800, BK_Q = 0.5, BK_KEEP = 10;
+  // Returns { blob, how }: "bitmap" or "img" (made small), "orig" (couldn't be).
   async function bkSmall(f) {
-    try {
-      var im = await createImageBitmap(f), k = Math.min(1, BK_MAX / Math.max(im.width, im.height));
-      var c = document.createElement("canvas"); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
-      c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); if (im.close) im.close();
+    async function draw(src, w, h) {
+      var k = Math.min(1, BK_MAX / Math.max(w, h));
+      var c = document.createElement("canvas"); c.width = Math.round(w * k); c.height = Math.round(h * k);
+      c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
       var b = await new Promise(function (ok) { c.toBlob(ok, "image/jpeg", BK_Q); });
-      return b && b.size < f.size ? b : f;
-    } catch (e) { return f; }
+      c.width = c.height = 0;   // free the canvas memory at once (iPhones are strict about it)
+      return b && b.size < f.size ? b : null;
+    }
+    try {
+      var im = await createImageBitmap(f), b1 = await draw(im, im.width, im.height); if (im.close) im.close();
+      if (b1) return { blob: b1, how: "bitmap" };
+    } catch (e) {}
+    var url = "";
+    try {
+      url = URL.createObjectURL(f);
+      var img = new Image(); img.src = url;
+      await (img.decode ? img.decode() : new Promise(function (ok, no) { img.onload = ok; img.onerror = no; }));
+      var b2 = await draw(img, img.naturalWidth, img.naturalHeight);
+      if (b2) return { blob: b2, how: "img" };
+    } catch (e) {} finally { if (url) URL.revokeObjectURL(url); }
+    return { blob: f, how: "orig" };
   }
+  // In the store's cache setting, so a phone's copies can be checked: small or not.
+  var BK_MARK = { bitmap: "3600", img: "3601", orig: "3602" };
+  // The photos of a set kept as the copy: BK_KEEP of them, first to last.
+  function bkPick(items) {
+    var ns = items.map(function (x) { return x.n; }).sort(function (a, b) { return a - b; }), keep = {};
+    if (ns.length <= BK_KEEP) { ns.forEach(function (n) { keep[n] = true; }); return keep; }
+    for (var k = 0; k < BK_KEEP; k++) keep[ns[Math.round(k * (ns.length - 1) / (BK_KEEP - 1))]] = true;
+    return keep;
+  }
+  function bkQueueSet(rowId, token, items) {
+    var keep = bkPick(items);
+    items.forEach(function (x) { if (keep[x.n]) bkQueue(rowId, token, x); else if (x.bk !== "done") { x.bk = "skip"; x.queued = true; } });
+    // Every kept photo already up (from before a reload): save the set now.
+    var mine = items.filter(function (x) { return keep[x.n]; });
+    if (mine.length && mine.every(function (x) { return x.bk === "done"; })) {
+      BK = BK.filter(function (y) { return y.token !== token; });
+      bkSave(rowId, token, mine.map(function (x) { return x.path || S.me.company_id + "/" + rowId + "/" + token + "/" + String(x.n).padStart(2, "0") + ".jpg"; }), true, 0);
+    }
+  }
+  function bkHold() { return !!camStream || !!(pt && pt.mode === "photos" && $("panel").open && (pt.sent || 0) < pt.items.length); }
   // Photos already up (before a reload) join the set too, so it's saved whole.
   function bkQueue(rowId, token, x) {
     if (x.queued) return;
@@ -1263,7 +1299,8 @@
     BK.push({ row: rowId, token: token, x: x }); bkPump();
   }
   function bkPump() {
-    while (bkActive < 3) {
+    if (bkHold()) return;
+    while (bkActive < (IS_IOS ? 1 : 2)) {
       var j = BK.filter(function (y) { return y.x.bk === "wait"; })[0]; if (!j) break;
       j.x.bk = "up"; bkActive++; bkUpload(j);
     }
@@ -1272,7 +1309,7 @@
     var x = j.x;
     try {
       var small = await bkSmall(x.file);
-      var up = await sb.storage.from("pt-photos").upload(x.path, small, { contentType: "image/jpeg" });
+      var up = await sb.storage.from("pt-photos").upload(x.path, small.blob, { contentType: "image/jpeg", cacheControl: BK_MARK[small.how] });
       x.bk = !up.error || /exist|duplicate/i.test(up.error.message || "") ? "done" : "fail";
     } catch (e) { x.bk = "fail"; }
     bkActive--;
@@ -1302,7 +1339,7 @@
     var rec = (await ptSaved()).filter(function (x) { return x.id === rowId; })[0];
     if (allUp && rec && rec.sent >= (rec.blobs || []).length) ptForget(rowId);
   }
-  function bkPending(p) { return !BK_SAVED[p.token] || p.items.some(function (x) { return x.state === "local" && x.bk !== "done"; }); }
+  function bkPending(p) { return !BK_SAVED[p.token] || p.items.some(function (x) { return x.state === "local" && x.bk !== "done" && x.bk !== "skip"; }); }
   function ptBatch() {
     if (!pt) return null;
     var left = pt.items.slice(pt.sent || 0).filter(function (x) { return x.state === "local"; });
@@ -1483,7 +1520,7 @@
     ptClear();
     pt = { id: rec.id, reg: rec.reg, mode: "photos", token: rec.token || ptToken(), items: [], saved: 0, sent: rec.sent || 0, pdfSent: rec.pdfSent || 0, regSent: !!rec.regSent };
     (rec.blobs || []).forEach(function (b, i) { pt.items.push({ file: b, url: (rec.thumbs || [])[i] || "", state: "local", n: i + 1, ready: true, bk: (rec.bk || [])[i] ? "done" : undefined }); });
-    pt.items.forEach(function (x) { bkQueue(pt.id, pt.token, x); });
+    bkQueueSet(pt.id, pt.token, pt.items);
   }
   // All sent but the app's copy didn't finish uploading before a reload: finish it quietly.
   function bkRestore(rec) {
@@ -1495,7 +1532,7 @@
       sb.rpc("pt_link_save", { p_token: token, p_booking: rec.id, p_paths: items.map(function (x) { return x.path; }) }).then(function (res) { if (!res.error) ptForget(rec.id); });
       return;
     }
-    items.forEach(function (x) { bkQueue(rec.id, token, x); });
+    bkQueueSet(rec.id, token, items);
   }
   // Tapping PT on a car: carry on where it left off, or straight into the camera.
   async function ptStart(r) {
@@ -1644,7 +1681,7 @@
       return '<a class="ptset" href="/p/' + esc(x.token) + '" target="_blank" rel="noopener"><span><b>' + x.n + " photo" + (x.n === 1 ? "" : "s") + "</b> · " + esc(dayShort(x.at) + " " + hhmm(x.at)) + (x.by ? " · " + esc(x.by) : "") + "</span><i>View ›</i></a>";
     }).join("");
   }
-  $("panel").addEventListener("close", function () { camStop(); panelRow = null; quick = null; staffEdit = null; render(); });
+  $("panel").addEventListener("close", function () { camStop(); panelRow = null; quick = null; staffEdit = null; render(); setTimeout(bkPump, 500); });
   // Closes on a tap outside only when the press started outside too: selecting
   // text in a box and letting go past the edge must not close it.
   var downOn = {};
