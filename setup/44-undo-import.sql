@@ -1,7 +1,7 @@
 -- Parking Ops — database part 44: undo an import.
 --
--- A wrong file imported onto a sheet (26 Sept: a file with dates but no
--- times added 161 cars and set 23 cars' times to midnight) can be undone
+-- A wrong import (26 Sept: a file read with every time as 01:00 put the
+-- 27th's cars on the 26th and changed 23 cars' times) can be undone
 -- from the Import screen within 24 hours, by anyone who may import.
 --
 --   • import_sheet (part 40) is renamed import_sheet_core and left as it is.
