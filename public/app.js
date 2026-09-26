@@ -433,7 +433,7 @@
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "hidden") { hiddenAt = Date.now(); return; }
     if (!S.me) return;
-    flush();
+    flush(); companyFresh();
     if (S.live && hiddenAt && Date.now() - hiddenAt < QUICK_BACK) {
       // Belt and braces: just the cars changed while away (usually none), in
       // case a live update went astray while the phone was asleep.
@@ -444,6 +444,17 @@
     loadSheets().then(loadRows).then(function () { if (!$("panel").open) render(); });
   });
 
+  // Settings that can change mid-shift (where PT copies go, the PT way) are
+  // read again when the app comes back and when PT starts: at most once a
+  // minute, a few bytes. Switching the copies back to Supabase then reaches
+  // phones that are already open, not only ones that reload.
+  var companyAt = Date.now();
+  function companyFresh() {
+    if (!S.company || Date.now() - companyAt < 60000) return;
+    companyAt = Date.now();
+    sb.from("companies").select("pt_copy_store, pt_method").eq("id", S.company.id).single()
+      .then(function (r) { if (r.data && S.company) Object.assign(S.company, r.data); }, function () {});
+  }
   async function catchUp(sinceMs) {
     var want = S.sheetId; if (!want) return;
     var r = await sb.from("bookings").select("*").eq("sheet_id", want).gte("updated_at", new Date(sinceMs).toISOString());
@@ -1561,6 +1572,7 @@
   }
   // Tapping PT on a car: carry on where it left off, or straight into the camera.
   async function ptStart(r) {
+    companyFresh();
     if (!pt || pt.id !== r.id) {
       var rec = (await ptSaved()).filter(function (x) { return x.id === r.id && Date.now() - x.at < PT_KEEP_MS; })[0];
       if (rec && S.company && S.company.pt_method !== "link") ptRestore(rec);
@@ -1696,7 +1708,7 @@
     if (!$("panel").open) $("panel").showModal();
     ptPhotosList(r);
   }
-  // The car's PT photos (kept 3 days). View opens the same page PT gets.
+  // The car's PT photos (kept 3 days in Supabase, 30 in Cloudflare). View opens the same page PT gets.
   async function ptPhotosList(r) {
     var res = await sb.rpc("pt_photos_for", { p_booking: r.id });
     var el = $("ptPhotos"); if (!el || panelRow !== r || res.error) return;
@@ -2594,6 +2606,8 @@
     ["staff", "Staff: add people, new links, switch off"], ["settings", "Settings"]];
   function roleCan(role, a) { if (role === "owner") return true; var l = ROLE_CAN[a]; return l ? l.indexOf(role) !== -1 : role !== "view"; }
   function personCan(p, a) { var x = p.extra || []; if (x.indexOf("-" + a) !== -1) return false; if (x.indexOf(a) !== -1) return true; return roleCan(p.role, a); }
+  // New link / switch off: the same rule as manage-staff (owners by an owner, managers by a manager or owner).
+  function canChange(p) { return p.id !== S.me.id && (p.role !== "owner" || S.me.role === "owner") && (p.role !== "manager" || S.me.role === "owner" || S.me.role === "manager"); }
   function canManage(p) { return (S.me.role === "manager" || S.me.role === "owner") && p.id !== S.me.id && (p.role !== "owner" || S.me.role === "owner"); }
   async function reloadStaff() {
     var list = await sb.from("staff").select("id, name, role, active, created_at, extra, removed_at").order("name");
@@ -2655,7 +2669,7 @@
       '<div class="box">' + people.map(function (p) {
         return '<div class="rowline' + (p.active ? "" : " off") + '"><div class="grow"><strong>' + esc(p.name) + '</strong><div class="note">' + esc(ROLE_LABEL[p.role] || p.role) + (p.active ? "" : " · switched off") + "</div></div>" +
           (p.id === S.me.id ? '<span class="note">You</span>' : (canManage(p) ? '<button type="button" class="btn ghost small" data-manage="' + p.id + '">PIN and access</button>' : "") +
-            '<button type="button" class="btn ghost small" data-reset="' + p.id + '">New link</button><button type="button" class="btn ghost small" data-onoff="' + p.id + '">' + (p.active ? "Switch off" : "Switch on") + "</button>") + "</div>";
+            (canChange(p) ? '<button type="button" class="btn ghost small" data-reset="' + p.id + '">New link</button><button type="button" class="btn ghost small" data-onoff="' + p.id + '">' + (p.active ? "Switch off" : "Switch on") + "</button>" : "")) + "</div>";
       }).join("") + "</div>";
   }
   async function staffAction(body, busyEl) {

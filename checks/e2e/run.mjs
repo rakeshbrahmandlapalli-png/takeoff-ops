@@ -378,6 +378,45 @@ await scenario(async () => {
   check("PT (R2, iPhone-like): sharing works and 3 small copies go to Cloudflare", (await page.evaluate(() => window.__shares.length)) >= 1 && puts.length === 3 && puts.every((x) => x.size < 120000) && db.ptLinks.length === 1, puts);
   check("PT (R2, iPhone-like): PT ticked, no errors", db.calls.some((c) => c.fn === "tap_pick" && c.args.p_key === "pt") && page.__errors.length === 0, page.__errors);
 });
+// The switch reaches a phone that's already open (no reload): read again when PT starts.
+await scenario(async () => {
+  const db = makeDb(), page = await phone(browser, db);
+  await open(page);
+  await page.selectOption("#sheetPick", "p0"); await sleep(700);
+  db.company.pt_copy_store = "r2";
+  await page.evaluate(() => { const real = Date.now; Date.now = () => real() + 120000; });
+  await page.click('.row[data-id="p1"] [data-pt]');
+  await page.waitForFunction(() => document.getElementById("camVideo") && document.getElementById("camVideo").videoWidth > 0, null, { timeout: 8000 });
+  for (let i = 0; i < 3; i++) await page.click("[data-shutter]");
+  await sleep(500); await page.click("[data-camdone]"); await sleep(1500);
+  await page.click("[data-ptreg]"); await sleep(700);
+  await page.click("[data-ptshare]"); await sleep(2500);
+  check("switching the copies to Cloudflare reaches an open phone without a reload", (db.r2Puts || []).length === 3 && db.uploads.length === 0, { r2: (db.r2Puts || []).length, sb: db.uploads.length });
+});
+// Staff screen: only the buttons the server would allow.
+async function staffScreen(role) {
+  const db = makeDb();
+  db.me.role = role; db.me.id = "s2"; db.me.name = "SUGU";
+  db.staff = [{ id: "s1", name: "RAKESH", role: "owner", active: true }, { id: "s2", name: "SUGU", role, active: true },
+    { id: "s3", name: "MANNY", role: "manager", active: true }, { id: "s4", name: "BONGO BOB", role: "bongo", active: true }];
+  const page = await phone(browser, db);
+  await open(page);
+  await page.click("#menuBtn"); await sleep(300);
+  await page.click('#menuBody [data-view="staff"]'); await sleep(500);
+  const btns = async (id) => page.locator(`[data-reset="${id}"], [data-onoff="${id}"]`).count();
+  return { page, owner: await btns("s1"), manager: await btns("s3"), bongo: await btns("s4"), me: await btns("s2") };
+}
+await scenario(async () => {
+  const o = await staffScreen("office");
+  check("staff (office): can give a bongo a new link or switch them off", o.bongo === 2, o);
+  check("staff (office): no New link / Switch off on the owner or a manager", o.owner === 0 && o.manager === 0, o);
+  check("staff (office): not on their own name either", o.me === 0, o);
+  check("staff screen: no errors, no sideways scrolling", o.page.__errors.length === 0 && await noSideScroll(o.page), o.page.__errors);
+});
+await scenario(async () => {
+  const m = await staffScreen("manager");
+  check("staff (manager): buttons on a bongo, not on the owner", m.bongo === 2 && m.owner === 0, m);
+});
 // Cloudflare's side down: PT itself is untouched, nothing crashes.
 await scenario(async () => {
   const { db, page } = await ptRun("photos", 3, { store: "r2" });
