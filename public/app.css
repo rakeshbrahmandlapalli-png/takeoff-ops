@@ -401,3 +401,6 @@ td input{width:100px;min-height:36px;padding:0 8px;border:1px solid var(--bad);b
 .chgpay input{flex:0 0 92px!important;min-width:0;}
 .chgpay button{flex:1;min-width:0;height:46px;border:1px solid #c4c7cc;border-radius:7px;background:#fff;color:#202124;font-weight:700;font-size:13px;}
 .pst4.owed b,.pst4.owed i{color:#b42318;font-weight:700;}
+/* Big boards: the phone skips drawing rows that are off screen, so a tap on a
+   400-car night redraws in a blink instead of half a second. */
+.row{content-visibility:auto;contain-intrinsic-size:auto 64px;}

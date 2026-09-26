@@ -20,9 +20,13 @@ const check = (name, cond, detail) => {
   if (cond) passed++; else failed++;
   console.log((cond ? "PASS " : "FAIL ") + name + (cond || detail === undefined ? "" : "   -> " + JSON.stringify(detail).slice(0, 300)));
 };
+const cspBlocked = [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// ── the app, served like Vercel does (/p/<token> → pt.html) ──
+// ── the app, served like Vercel does (/p/<token> → pt.html), with the same
+// security headers as vercel.json, so a blocked script or photo shows up here ──
+const SITE_HEADERS = Object.fromEntries(JSON.parse(fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../vercel.json"), "utf8"))
+  .headers.find((h) => h.source === "/(.*)").headers.map((h) => [h.key, h.value]));
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split("?")[0]);
   if (/^\/p\/[A-Za-z0-9_-]+$/.test(p)) p = "/pt.html";
@@ -30,7 +34,7 @@ const server = http.createServer((req, res) => {
   if (p === "/manifest.webmanifest") p = "/manifest-default.webmanifest";
   const f = path.join(ROOT, p);
   if (!f.startsWith(ROOT) || !fs.existsSync(f)) { res.writeHead(404); return res.end("not found"); }
-  res.writeHead(200, { "Content-Type": TYPES[path.extname(f)] || "application/octet-stream" });
+  res.writeHead(200, { "Content-Type": TYPES[path.extname(f)] || "application/octet-stream", ...SITE_HEADERS });
   fs.createReadStream(f).pipe(res);
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
@@ -167,6 +171,7 @@ async function phone(browser, db, { signedIn = true, ua, width = 390 } = {}) {
   page.setDefaultTimeout(6000);
   page.__errors = [];
   page.on("pageerror", (e) => page.__errors.push(e.message));
+  page.on("console", (m) => { if (/Content Security Policy/i.test(m.text())) cspBlocked.push(m.text()); });
   page.on("dialog", (d) => d.accept());
   ctx.on("page", (p) => { if (p !== page) p.close().catch(() => {}); });
   return page;
@@ -436,13 +441,38 @@ await scenario(async () => {
   check("the car panel shows the first booked return", /BACK\n.*was /.test(await page.locator("#panelBody").innerText()));
 });
 
-// 15. small Android phone width
+// 15. a big night: 400 cars on one sheet stays quick
+await scenario(async () => {
+  const db = makeDb();
+  for (let i = 0; i < 400; i++) {
+    const h = 18 + Math.floor(i / 40), m = (i * 7) % 60;
+    db.bookings.push({ id: "big" + i, company_id: "c1", sheet_id: "d0", kind: "drops", ref: "BIG" + i, reg: "BG" + String(i).padStart(2, "0") + "XYZ", num: 10 + i,
+      name: "CUSTOMER " + i, make: "FORD", flight: "U2" + (2000 + i), return_at: iso(h < 24 ? TONIGHT : addDays(TONIGHT, 1), String(h % 24).padStart(2, "0") + ":" + String(m).padStart(2, "0")), note: i % 9 ? "" : "NOTE " + i, yard: ["NB", "S", ""][i % 3] });
+  }
+  const page = await phone(browser, db);
+  let t0 = Date.now(); await open(page); await page.waitForSelector('.row[data-id="big399"]', { state: "attached" }); const tOpen = Date.now() - t0;
+  const ms = await page.evaluate(async () => {
+    const btn = document.querySelector('.row[data-id="big200"] [data-act="sent"]');
+    const t = performance.now(); btn.click();
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return performance.now() - t;
+  });
+  t0 = Date.now(); await page.fill("#q", "BG25"); await page.waitForFunction(() => document.querySelectorAll("#main .row").length < 20); const tSearch = Date.now() - t0;
+  console.log("      400 cars: open " + tOpen + " ms, SENT tap on screen " + Math.round(ms) + " ms, search " + tSearch + " ms");
+  check("400 cars: the board opens in under 3 s", tOpen < 3000, tOpen);
+  check("400 cars: a tap shows in under 250 ms", ms < 250, ms);
+  check("400 cars: search answers in under 1.5 s", tSearch < 1500, tSearch);
+  check("400 cars: no sideways scrolling", await noSideScroll(page));
+});
+
+// 16. small Android phone width
 await scenario(async () => {
   const page = await phone(browser, makeDb(), { width: 360, ua: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36" });
   await open(page);
   check("360 px wide phone: no sideways scrolling on the board", await noSideScroll(page));
 });
 
+check("the security policy blocked nothing the app needs", cspBlocked.length === 0, cspBlocked.slice(0, 3));
 await browser.close(); server.close();
 console.log("\n" + passed + " passed, " + failed + " failed");
 process.exit(failed ? 1 : 0);

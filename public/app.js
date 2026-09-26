@@ -27,10 +27,14 @@
     var t = document.createElement("div"); t.className = "toast" + (bad ? " bad" : ""); t.setAttribute("role", "status"); t.textContent = msg;
     document.body.appendChild(t); setTimeout(function () { t.remove(); }, bad ? 5000 : 3000);
   }
-  function hhmm(ts) { return ts ? new Date(ts).toLocaleTimeString("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit" }) : ""; }
-  function dayShort(ts) { return ts ? new Date(ts).toLocaleDateString("en-GB", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" }) : ""; }
+  // One formatter per format, made once: building one per call made a big
+  // board (hundreds of cars, several times each) slow to redraw after a tap.
+  var FMT = {};
+  function fmt(k, o) { return FMT[k] || (FMT[k] = new Intl.DateTimeFormat("en-GB", o)); }
+  function hhmm(ts) { return ts ? fmt("hm", { timeZone: TZ, hour: "2-digit", minute: "2-digit" }).format(new Date(ts)) : ""; }
+  function dayShort(ts) { return ts ? fmt("day", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" }).format(new Date(ts)) : ""; }
   function londonParts(d) {
-    var p = {}; new Intl.DateTimeFormat("en-GB", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })
+    var p = {}; fmt("parts", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })
       .formatToParts(d).forEach(function (x) { p[x.type] = x.value; });
     return { key: p.year + "-" + p.month + "-" + p.day, time: (p.hour === "24" ? "00" : p.hour) + ":" + p.minute };
   }
@@ -40,7 +44,7 @@
     if (!s.day) return s.kind.toUpperCase();
     var d = new Date(s.day + "T12:00:00Z"), n = d.getUTCDate();
     var th = n >= 11 && n <= 13 ? "TH" : ({ 1: "ST", 2: "ND", 3: "RD" }[n % 10] || "TH");
-    return s.kind.toUpperCase() + " " + n + th + " " + d.toLocaleDateString("en-GB", { month: "short", timeZone: "UTC" }).toUpperCase().replace(/\.$/, "");
+    return s.kind.toUpperCase() + " " + n + th + " " + fmt("mon", { month: "short", timeZone: "UTC" }).format(d).toUpperCase().replace(/\.$/, "");
   }
   function show(id, on) { $(id).classList.toggle("hidden", !on); }
   function only(id) { ["boot", "noLink", "pinGate", "setupGate", "app"].forEach(function (x) { show(x, x === id); }); }
@@ -2982,6 +2986,9 @@
       if (S.queue.length && !confirm(S.queue.length + " change(s) haven't saved yet. Sign out anyway?")) return;
       if (t.dataset.forget !== undefined) { try { localStorage.removeItem(LINK_KEY); localStorage.removeItem(BRAND_KEY); } catch (err) {} }
       await turnOffNotifications(true);
+      // "Sign out anyway" drops the unsaved changes (notes can hold customer details).
+      try { localStorage.removeItem(queueKey()); } catch (err) {}
+      S.queue = [];
       S.me = null; teardown(); await sb.auth.signOut(); showSignIn(); return;
     }
   });

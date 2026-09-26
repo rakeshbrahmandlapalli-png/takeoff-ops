@@ -7,9 +7,9 @@
   "use strict";
   function pad(n) { return String(n).padStart(2, "0"); }
   var LIBS = {
-    xlsx: "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
-    pdf: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js",
-    pdfWorker: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"
+    xlsx: "/vendor/xlsx-0.18.5.full.min.js",
+    pdf: "/vendor/pdf-3.11.174.min.js",
+    pdfWorker: "/vendor/pdf-3.11.174.worker.min.js"
   };
   // One load per library: a second file read while it's still loading waits
   // for the same load, and a failed load is forgotten so "try again" works.
