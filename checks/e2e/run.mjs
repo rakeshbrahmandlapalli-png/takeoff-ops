@@ -420,7 +420,23 @@ await scenario(async () => {
   check("DROPS: met earlier shows no day tag", (await tag("b3")) === "");
 });
 
-// 14. small Android phone width
+// 14. return changed to a later day: WAS tag, charge from the first date; overstay block label
+await scenario(async () => {
+  const db = makeDb(), b = (id) => db.bookings.find((x) => x.id === id);
+  db.company.overstay_rate = 30;
+  b("b1").orig_return_at = iso(addDays(TONIGHT, -3), "23:00");
+  Object.assign(b("b2"), { called_word: "Overstay", called_at: iso(TONIGHT, "18:28"), overstay: true });
+  const page = await phone(browser, db);
+  await open(page);
+  const row1 = await page.locator('.row[data-id="b1"]').innerText();
+  check("changed return shows WAS and the day first booked", new RegExp("WAS " + String(+addDays(TONIGHT, -3).slice(8, 10)).padStart(2, "0")).test(row1));
+  check("changed return is charged from the first date", /£\d+ DUE/.test(row1));
+  check("marked OVERSTAY today: the block says staying longer", /staying longer/i.test(await page.locator("#main").innerText()) && !/earlier days/i.test(await page.locator("#main").innerText()));
+  await page.click('.row[data-id="b1"] .reg'); await sleep(400);
+  check("the car panel shows the first booked return", /BACK\n.*was /.test(await page.locator("#panelBody").innerText()));
+});
+
+// 15. small Android phone width
 await scenario(async () => {
   const page = await phone(browser, makeDb(), { width: 360, ua: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36" });
   await open(page);

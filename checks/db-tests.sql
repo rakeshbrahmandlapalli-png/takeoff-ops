@@ -21,6 +21,7 @@ declare
   car_tmrw uuid; car_tonight uuid; car_yday uuid; car_gone uuid; car_pick uuid; car_b uuid;
   car_over uuid; car_early_home uuid; car_early_far uuid; car_removed uuid;
   res text[] := '{}'; fails int := 0; total int := 0;
+  s_was uuid; s_now uuid; car_px uuid; car_qq uuid; car_ss uuid;
   b bookings; j jsonb; n int; ok boolean; tok text := 'TESTtoken_abcdefghijklmnop';
 begin
   -- ── fixtures ────────────────────────────────────────────────────────────
@@ -171,6 +172,53 @@ begin
   select * into b from bookings where id = car_removed;
   total := total + 1; ok := b.sheet_id = sh_yday;
   res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'carry-over: a removed car is never carried'); if not ok then fails := fails + 1; end if;
+
+  -- ════ return changed in the booking system (part 33) ════
+  -- PX: booked back on the "25th" (shift+10), marked OVERSTAY, changed to the
+  -- "30th" (shift+15). QQ: a new stay for the same reg. SS: already carried
+  -- onto the new day's sheet as an overstay when that day's file comes in.
+  insert into sheets (company_id, kind, day) values (a_co, 'drops', shift + 10) returning id into s_was;
+  insert into sheets (company_id, kind, day) values (a_co, 'drops', shift + 16) returning id into s_now;
+  insert into bookings (company_id, sheet_id, kind, ref, reg, name, num, drop_at, return_at, yard, called_word, called_at, overstay, note)
+  values (a_co, s_was, 'drops', '', 'ZZ64PXJ', 'Staying longer', 1, ((shift + 6) + time '11:00') at time zone 'Europe/London',
+          ((shift + 10) + time '23:00') at time zone 'Europe/London', 'NY', 'Overstay', now(), true, 'RETURNING LATER') returning id into car_px;
+  insert into bookings (company_id, sheet_id, kind, ref, reg, name, num, drop_at, return_at)
+  values (a_co, s_was, 'drops', 'REF-Q1', 'ZZ11QQQ', 'Old stay', 2, ((shift + 7) + time '09:00') at time zone 'Europe/London',
+          ((shift + 10) + time '20:00') at time zone 'Europe/London') returning id into car_qq;
+  insert into bookings (company_id, sheet_id, kind, ref, reg, name, num, return_at, overstay, called_word, called_at, yard)
+  values (a_co, s_now, 'drops', '', 'ZZ11SSS', 'Carried', 1, ((shift + 10) + time '22:00') at time zone 'Europe/London', true, 'Overstay', now(), 'S') returning id into car_ss;
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', a_own, 'role', 'authenticated')::text, true);
+  j := import_sheet('drops', shift + 15, jsonb_build_array(
+    jsonb_build_object('ref', 'REF-PX', 'reg', 'ZZ64 PXJ', 'name', 'Staying longer', 'drop_local', to_char(shift + 6, 'YYYY-MM-DD') || ' 11:00', 'return_local', to_char(shift + 15, 'YYYY-MM-DD') || ' 23:00'),
+    jsonb_build_object('ref', 'REF-Q2', 'reg', 'ZZ11QQQ', 'name', 'New stay', 'drop_local', to_char(shift + 12, 'YYYY-MM-DD') || ' 09:00', 'return_local', to_char(shift + 15, 'YYYY-MM-DD') || ' 21:00')), '{}');
+  select * into b from bookings where id = car_px;
+  select count(*) into n from bookings where company_id = a_co and reg in ('ZZ64PXJ', 'ZZ64 PXJ');
+  total := total + 1; ok := (j->>'moved')::int = 1 and n = 1 and b.sheet_id = (j->>'sheet_id')::uuid
+    and b.orig_return_at = ((shift + 10) + time '23:00') at time zone 'Europe/London' and b.return_at = ((shift + 15) + time '23:00') at time zone 'Europe/London';
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'changed return: the car moves to its new day (no copy), first date kept'); if not ok then fails := fails + 1; end if;
+  total := total + 1; ok := not b.overstay and b.called_word = '' and b.yard = 'NY' and b.note = 'RETURNING LATER' and b.ref = 'REF-PX';
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'changed return: out of the overstay block, yard and note kept'); if not ok then fails := fails + 1; end if;
+  select count(*) into n from bookings where company_id = a_co and reg = 'ZZ11QQQ';
+  total := total + 1; ok := (j->>'added')::int = 1 and n = 2 and (select sheet_id from bookings where id = car_qq) = s_was;
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'changed return: a NEW stay for the same reg is not merged'); if not ok then fails := fails + 1; end if;
+  j := import_sheet('drops', shift + 15, jsonb_build_array(
+    jsonb_build_object('ref', 'REF-PX', 'reg', 'ZZ64PXJ', 'return_local', to_char(shift + 15, 'YYYY-MM-DD') || ' 23:00')), '{}');
+  select count(*) into n from bookings where company_id = a_co and reg like 'ZZ64%';
+  total := total + 1; ok := n = 1 and (j->>'updated')::int = 1 and (select orig_return_at from bookings where id = car_px) is not null;
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'changed return: importing the day again keeps one car and its first date'); if not ok then fails := fails + 1; end if;
+  begin perform delete_sheet((j->>'sheet_id')::uuid); ok := false; exception when others then ok := true; end;
+  total := total + 1; res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'changed return: delete_sheet refuses a sheet holding a moved car'); if not ok then fails := fails + 1; end if;
+  j := import_sheet('drops', shift + 16, jsonb_build_array(jsonb_build_object('ref', '', 'reg', 'ZZ11 SSS', 'return_local', to_char(shift + 16, 'YYYY-MM-DD') || ' 20:00')), '{}');
+  select * into b from bookings where id = car_ss;
+  total := total + 1; ok := (j->>'added')::int = 0 and not b.overstay and b.called_word = '' and b.yard = 'S'
+    and b.orig_return_at = ((shift + 10) + time '22:00') at time zone 'Europe/London';
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'changed return: a carried overstay imported on its new day leaves the overstay block'); if not ok then fails := fails + 1; end if;
+  j := import_sheet('drops', shift + 16, jsonb_build_array(jsonb_build_object('ref', '', 'reg', 'ZZ11SSS', 'return_local', to_char(shift + 10, 'YYYY-MM-DD') || ' 22:30')), '{}');
+  total := total + 1; ok := (select orig_return_at from bookings where id = car_ss) is null;
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'changed return: changed back to the first day forgets the WAS date'); if not ok then fails := fails + 1; end if;
+  perform set_config('role', 'postgres', true);
+  perform set_config('request.jwt.claims', '', true);
 
   -- ════ who can call what, from outside ════
   total := total + 1; ok := not has_function_privilege('anon', 'pt_link_view(text)', 'execute') and not has_function_privilege('authenticated', 'pt_link_view(text)', 'execute')

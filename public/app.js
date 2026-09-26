@@ -660,7 +660,7 @@
         else main.push(r);
       });
       wait.sort(function (a, b) { return a.called_at < b.called_at ? -1 : 1; });   // longest wait first
-      groups = [{ title: "NEXT IN QUEUE", cls: " hot", rows: wait }, { title: "COMING UP", cls: "", rows: main }, { title: "OVERSTAYS", cls: " old", note: "earlier days", rows: over }]
+      groups = [{ title: "NEXT IN QUEUE", cls: " hot", rows: wait }, { title: "COMING UP", cls: "", rows: main }, { title: "OVERSTAYS", cls: " old", note: overNote(over, sh), rows: over }]
         .filter(function (g) { return g.rows.length; });
     }
     if (!S.rows.length) return '<div class="msg">No cars on this sheet.</div>';
@@ -678,6 +678,12 @@
       (S.company.yards || []).map(function (y) { return "<option" + (y === r.yard ? " selected" : "") + ' value="' + esc(y) + '">' + esc(y) + "</option>"; }).join("") + "</select>";
   }
   // An early return gets its own line, like a note, so the flight line stays clear.
+  // Carried from an earlier day, or marked OVERSTAY on the day it was due.
+  function overNote(rows, sh) {
+    var old = 0, today = 0;
+    rows.forEach(function (r) { if (sh && returnDay(r) && returnDay(r) < sh.day) old++; else today++; });
+    return old && today ? "earlier days · staying longer" : old ? "earlier days" : "staying longer";
+  }
   function earlyLine(r) { return r.early ? '<div class="l3 early">EARLY · booked ' + esc(r.return_at ? dayShort(r.return_at) + " " + hhmm(r.return_at) : "later") + "</div>" : ""; }
   function noteLine(r) { return r.note ? '<div class="l3' + (/^!/.test(r.note) ? " bang" : "") + '">' + esc(r.note.replace(/^!\s*/, "")) + "</div>" : ""; }
   // A pressed button shows the time and the first name of whoever pressed it.
@@ -703,7 +709,8 @@
   function overstayDue(r) {
     var rate = +(S.company && S.company.overstay_rate) || 0;
     if (!rate || r.kind !== "drops" || !r.return_at) return null;
-    var ret = londonParts(new Date(r.return_at)), end = londonParts(r.cleared_at ? new Date(r.cleared_at) : new Date());
+    // A stay made longer in the booking system is charged from the first booked return.
+    var ret = londonParts(new Date(r.orig_return_at || r.return_at)), end = londonParts(r.cleared_at ? new Date(r.cleared_at) : new Date());
     var dayEnd = ((S.company.drops_day_end) || "06:00").slice(0, 5);
     var dates = function (a, b) { return Math.round((Date.parse(b) - Date.parse(a)) / 86400000); }, days;
     if (ret.time < dayEnd) {
@@ -764,7 +771,7 @@
     var eta = canc ? "" : r.est_time;
     return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' +
       '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" + yardChip(r) +
-      (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + catTag(r) + '<span class="pin">' + esc(r.name) + "</span></div>" +
+      (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + catTag(r) + wasTag(r) + '<span class="pin">' + esc(r.name) + "</span></div>" +
       '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(makeOnly(r.make)) + "</span> · " : "") +
       (r.flight ? esc(r.flight) : can("flights") ? '<button type="button" class="addflight" data-addflight>+ FLIGHT</button>' : "—") + "</span>" +
       '<span class="l2b">' + (booked ? " · " + esc(booked) : "") +
@@ -790,6 +797,12 @@
     if (!sh || sh.kind !== "drops" || !r.drop_at || r.early) return "";
     var d = londonParts(new Date(r.drop_at)).key;
     return d === sh.day ? "same" : d === addDaysKey(sh.day, -1) ? "next" : "";
+  }
+  // Return moved to a later day in the booking system: the day it was first due back.
+  function wasTag(r) {
+    if (r.kind !== "drops" || !r.orig_return_at) return "";
+    var d = returnDay({ return_at: r.orig_return_at });
+    return d ? '<span class="cat was">WAS ' + dayWord(d) + "</span>" : "";
   }
   function catTag(r) { var c = r.kind === "drops" ? dropCat(r) : catOf(r); return c ? '<span class="cat ' + c + '">' + c.toUpperCase() + "</span>" : ""; }
   function pickRow(r) {
@@ -1511,7 +1524,7 @@
     var det = [["NAME", esc(r.name) || "—"], ["CAR", esc(r.make) || "—"], ["REF", esc(r.ref) || "—"]];
     if (drops) {
       det.push(["MEET", r.drop_at ? esc(dayShort(r.drop_at) + " " + hhmm(r.drop_at)) : "—"]);
-      det.push(["BACK", esc(dayShort(r.return_at) + " " + hhmm(r.return_at))]);
+      det.push(["BACK", esc(dayShort(r.return_at) + " " + hhmm(r.return_at)) + (r.orig_return_at ? ' <span class="hint">· was ' + esc(dayShort(r.orig_return_at) + " " + hhmm(r.orig_return_at)) + "</span>" : "")]);
       det.push(["FLIGHT", esc(r.flight || "—") + (r.sched_time ? " · sched " + esc(r.sched_time) : "")]);
       if (r.est_time || r.flight_note) det.push(["ARRIVAL", (r.est_time ? "<b>" + esc(r.est_time) + "</b> " : "") + '<span class="hint">' + esc(r.flight_note) + "</span>"]);
       det.push(["SENT", by(r.sent_at, r.sent_by)], [r.called_word === "Overstay" ? "OVERSTAY" : "CALLED", by(r.called_at, r.called_by)], [r.clear_word === "COMPLAINT" ? "COMPLAINT" : "CLEAR", by(r.cleared_at, r.cleared_by)]);
@@ -2274,7 +2287,7 @@
     await loadSheets();
     S.sheetId = r.data.sheet_id; S.view = "board"; S.filter = "all"; S.imp = newImport(I.kind);
     await loadRows(); render();
-    toast("✓ " + r.data.added + " added, " + r.data.updated + " updated. On every phone now.");
+    toast("✓ " + r.data.added + " added, " + r.data.updated + " updated" + (r.data.moved ? ", " + r.data.moved + " moved here from an earlier day (return changed)" : "") + ". On every phone now.");
     // A re-import adds and updates but never takes a car away. Cars the booking
     // site no longer lists (usually cancelled) are shown for someone to confirm.
     var inFile = {}; rows.forEach(function (x) { if (x.ref) inFile[x.ref] = 1; });

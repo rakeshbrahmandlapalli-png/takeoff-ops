@@ -310,6 +310,7 @@ dialog.cam{width:100vw!important;max-width:100vw!important;height:100dvh!importa
 .cat.same,.cat.next{color:#1155cc;background:#cfe2f3;}
 .cat.short{color:#137333;background:#d9ead3;}
 .cat.long{color:#7a3e00;background:#f9cb9c;}
+.cat.was{color:#fff;background:#b45309;}
 .sumlist{margin:2px 0 10px;}
 .sumrow{display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px solid #e3e5e8;font-size:13.5px;}
 .sumrow:last-child{border-bottom:0;}
