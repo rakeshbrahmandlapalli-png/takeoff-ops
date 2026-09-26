@@ -1192,9 +1192,21 @@
 
   // ── The copy kept for the app ──
   // In the WhatsApp-chat way a copy of the photos uploads quietly in the
-  // background (same store as the link way, kept 30 days), so the car's panel
+  // background (same store as the link way, kept 3 days), so the car's panel
   // can show them. It never holds up sending; a failed upload tries again.
-  var BK = [], bkActive = 0, BK_TRIES = 4;
+  // The copy is small (about 60 KB, 900 px): ~30 photos a car, 100+ cars a
+  // night, 3 days of them must fit the free plan's 1 GB. PT still gets the
+  // full photos on WhatsApp.
+  var BK = [], bkActive = 0, BK_TRIES = 4, BK_MAX = 900, BK_Q = 0.55;
+  async function bkSmall(f) {
+    try {
+      var im = await createImageBitmap(f), k = Math.min(1, BK_MAX / Math.max(im.width, im.height));
+      var c = document.createElement("canvas"); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+      c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); if (im.close) im.close();
+      var b = await new Promise(function (ok) { c.toBlob(ok, "image/jpeg", BK_Q); });
+      return b && b.size < f.size ? b : f;
+    } catch (e) { return f; }
+  }
   // Photos already up (before a reload) join the set too, so it's saved whole.
   function bkQueue(rowId, token, x) {
     if (x.queued) return;
@@ -1212,7 +1224,8 @@
   async function bkUpload(j) {
     var x = j.x;
     try {
-      var up = await sb.storage.from("pt-photos").upload(x.path, x.file, { contentType: x.file.type || "image/jpeg" });
+      var small = await bkSmall(x.file);
+      var up = await sb.storage.from("pt-photos").upload(x.path, small, { contentType: "image/jpeg" });
       x.bk = !up.error || /exist|duplicate/i.test(up.error.message || "") ? "done" : "fail";
     } catch (e) { x.bk = "fail"; }
     bkActive--;
@@ -1570,7 +1583,7 @@
     if (!$("panel").open) $("panel").showModal();
     ptPhotosList(r);
   }
-  // The car's PT photos (kept 30 days). View opens the same page PT gets.
+  // The car's PT photos (kept 3 days). View opens the same page PT gets.
   async function ptPhotosList(r) {
     var res = await sb.rpc("pt_photos_for", { p_booking: r.id });
     var el = $("ptPhotos"); if (!el || panelRow !== r || res.error) return;
