@@ -99,6 +99,7 @@ function rpc(db, fn, a) {
     case "download_my_company": return { format: "takeoff-ops-company-export", bookings: db.bookings };
     case "import_sheet": { const sh = db.sheets.find((x) => x.kind === a.p_kind && x.day === a.p_day); (db.imports = db.imports || []).push({ id: 70 + db.imports.length, kind: a.p_kind, day: a.p_day, at: now(), by: "RAKESH", added: a.p_rows.length, changed: 0, undone: false, latest: true }); return { sheet_id: sh ? sh.id : "p0", added: a.p_rows.length, updated: 0, early: 0, moved: 0, new_marked: 0, undo_id: 70 + db.imports.length - 1 }; }
     case "recent_imports": return db.imports || [];
+    case "pt_copy_report": (db.reports = db.reports || []).push(a); return null;
     case "undo_import": { const i = (db.imports || []).find((x) => x.id === a.p_id); if (i) i.undone = true; return { removed: 2, kept: 0, restored: 0, sheet_id: "p0", sheet_gone: false }; }
     case "add_booking": { const n = { id: "new" + db.bookings.length, company_id: "c1", sheet_id: a.p_sheet, kind: db.sheets.find((x) => x.id === a.p_sheet).kind, ref: a.p.ref || "", reg: String(a.p.reg).toUpperCase(), name: a.p.name || "", num: 99, return_at: a.p.return_local ? new Date(a.p.return_local.replace(" ", "T") + ":00+01:00").toISOString() : null, note: a.p.note || "" }; db.bookings.push(n); return n; }
     case "set_overstay_paid": { const b = row(a.p_booking); Object.assign(b, { charge_amount: a.p_amount, charge_method: a.p_method, charge_at: a.p_method ? new Date().toISOString() : null, charge_by: a.p_method ? "s1" : null }); return b; }
@@ -419,6 +420,21 @@ await scenario(async () => {
   const m = await staffScreen("manager");
   check("staff (manager): buttons on a bongo, not on the owner", m.bongo === 2 && m.owner === 0, m);
 });
+// "Tick PT without sending photos" is reported, so a car with no copy has a reason.
+await scenario(async () => {
+  const db = makeDb();
+  const page = await phone(browser, db);
+  await open(page);
+  await page.selectOption("#sheetPick", "p0"); await sleep(700);
+  await page.click('.row[data-id="p2"] [data-pt]');
+  await page.waitForSelector("[data-camdone]", { timeout: 8000 }); await sleep(400);
+  await page.click("[data-camdone]"); await page.waitForSelector("[data-ptmark]", { timeout: 5000 });
+  await page.click("[data-ptmark]");
+  await sleep(800);
+  const hasBtn = await page.locator("[data-ptmark]").count();
+  check("PT ticked without photos: ticked, and reported as such", db.calls.some((c) => c.fn === "tap_pick" && c.args.p_booking === "p2" && c.args.p_key === "pt") &&
+    (db.reports || []).some((x) => x.p_booking === "p2" && /ticked without photos/.test(x.p_detail)), { hasBtn, reports: db.reports, taps: db.calls.filter((c) => c.fn === "tap_pick").map((c) => c.args) });
+});
 // Cloudflare's side down: PT itself is untouched, nothing crashes.
 await scenario(async () => {
   const { db, page } = await ptRun("photos", 3, { store: "r2" });
@@ -427,6 +443,9 @@ await scenario(async () => {
   await page.click("[data-ptshare]"); await sleep(2500);
   check("PT (R2 down): sharing and the PT tick still work", (await page.evaluate(() => window.__shares.length)) >= 1 && db.calls.some((c) => c.fn === "tap_pick" && c.args.p_key === "pt"));
   check("PT (R2 down): no copies saved, no errors", db.ptLinks.length === 0 && !(db.r2Puts || []).length && page.__errors.length === 0, page.__errors);
+  await sleep(35000);   // four tries, further apart each time
+  const rep = (db.reports || []).find((x) => x.p_booking === "p1");
+  check("PT (R2 down): the phone reports why the copy failed", !!rep && /copy failed: 0 of 3 photos saved; Photo store not set up yet/.test(rep.p_detail) && /Android|computer|iPhone/.test(rep.p_detail), db.reports);
 });
 await scenario(async () => {
   const { db, page } = await ptRun("pdf", 8);

@@ -1312,6 +1312,24 @@
       bkSave(rowId, token, mine.map(function (x) { return x.path || bkPath(rowId, token, x.n); }), true, 0);
     }
   }
+  // Tells the office why a car's copy didn't make it (database part 45): a
+  // PT COPY line in the activity log. Never gets in the way if it fails.
+  function bkReport(rowId, detail) {
+    var dev = IS_IOS ? "iPhone" : /Android/.test(navigator.userAgent) ? "Android" : "computer";
+    try { sb.rpc("pt_copy_report", { p_booking: rowId, p_detail: detail + " · " + dev + " · app " + (appTag || "?").replace(/\W/g, "").slice(0, 8) }).then(function () {}, function () {}); } catch (e) {}
+  }
+  // Every photo sent to PT: in 3 minutes the car's copy must be saved or on its way.
+  function bkWatch(rowId, token, cur) {
+    setTimeout(function () {
+      if (BK_SAVED[token] || BK.some(function (y) { return y.token === token && y.x.bk !== "fail"; })) return;
+      var items = (cur && cur.items) || [];
+      bkReport(rowId, "copy never started: " + items.length + " photos, " +
+        items.filter(function (x) { return x.state === "local"; }).length + " ready, " +
+        items.filter(function (x) { return x.queued; }).length + " queued" +
+        (camStream ? ", camera still open" : "") + (bkHold() ? ", waiting (PT screen open)" : "") + (cur && cur.prepping ? ", still preparing" : "") +
+        ", store " + (bkR2() ? "Cloudflare" : "Supabase"));
+    }, 180000);
+  }
   function bkHold() { return !!camStream || !!(pt && pt.mode === "photos" && $("panel").open && (pt.sent || 0) < pt.items.length); }
   // Photos already up (before a reload) join the set too, so it's saved whole.
   function bkQueue(rowId, token, x) {
@@ -1335,18 +1353,24 @@
       if (/^r2:/.test(x.path)) {
         var put = await timedFetch(await bkR2Url(j), { method: "PUT", body: small.blob, headers: { "Content-Type": "image/jpeg" } });
         x.bk = put.ok ? "done" : "fail";
+        if (!put.ok) x.err = "Cloudflare refused (" + put.status + ")";
         if (put.status === 403) delete R2URLS[j.token];   // address too old: ask again
       } else {
         var up = await sb.storage.from("pt-photos").upload(x.path, small.blob, { contentType: "image/jpeg", cacheControl: BK_MARK[small.how] });
         x.bk = !up.error || /exist|duplicate/i.test(up.error.message || "") ? "done" : "fail";
+        if (x.bk === "fail") x.err = "Supabase refused: " + (up.error.message || "");
       }
-    } catch (e) { x.bk = "fail"; }
+    } catch (e) { x.bk = "fail"; x.err = (e && e.message) || String(e); }
     bkActive--;
     if (x.bk === "fail") { x.tries = (x.tries || 0) + 1; if (x.tries < BK_TRIES) setTimeout(function () { if (x.bk === "fail") { x.bk = "wait"; bkPump(); } }, 5000 * x.tries); }
     var mine = BK.filter(function (y) { return y.token === j.token; });
     if (mine.length && mine.every(function (y) { return y.x.bk === "done" || (y.x.bk === "fail" && y.x.tries >= BK_TRIES); })) {
       BK = BK.filter(function (y) { return y.token !== j.token; });
       var paths = mine.filter(function (y) { return y.x.bk === "done"; }).map(function (y) { return y.x.path; });
+      if (paths.length < mine.length) {
+        var bad = mine.filter(function (y) { return y.x.bk !== "done"; })[0];
+        bkReport(j.row, "copy failed: " + paths.length + " of " + mine.length + " photos saved; " + ((bad && bad.x.err) || "no reason given"));
+      }
       bkSave(j.row, j.token, paths, paths.length === mine.length, 0);
     }
     bkPump();
@@ -1371,7 +1395,11 @@
   async function bkSave(rowId, token, paths, allUp, tries) {
     if (paths.length) {
       var res; try { res = await sb.rpc("pt_link_save", { p_token: token, p_booking: rowId, p_paths: paths }); } catch (e) { res = { error: e }; }
-      if (res.error) { if (tries < 5) setTimeout(function () { bkSave(rowId, token, paths, allUp, tries + 1); }, 5000 * Math.pow(2, tries)); return; }
+      if (res.error) {
+        if (tries < 5) setTimeout(function () { bkSave(rowId, token, paths, allUp, tries + 1); }, 5000 * Math.pow(2, tries));
+        else bkReport(rowId, "copy uploaded but not saved: " + (res.error.message || res.error));
+        return;
+      }
     }
     if (allUp) BK_SAVED[token] = true;
     bkFinished(rowId, allUp);
@@ -1421,7 +1449,7 @@
     }
     pt.sent = (pt.sent || 0) + batch.length;
     if (pt.sent < pt.items.length) { ptStore(); toast(pt.sent + " of " + pt.items.length + " sent. Now the next ones."); return openPt(r); }
-    if (bkPending(pt)) ptStore(); else ptForget(pt.id);
+    if (bkPending(pt)) { ptStore(); bkWatch(pt.id, pt.token, pt); } else ptForget(pt.id);
     ptClear();
     toast(ptCaption(r) + ": all photos sent, PT done");
     $("panel").close();
@@ -1528,7 +1556,7 @@
     P.sent = (P.sent || 0) + 1; pt.pdfSent = P.sent;
     if (P.sent < P.parts.length) { ptStore(); toast("Part " + P.sent + " of " + P.parts.length + " sent. Now the next part."); return openPt(r); }
     pt.sent = pt.items.length; pt.regSent = true;
-    if (bkPending(pt)) ptStore(); else ptForget(pt.id);
+    if (bkPending(pt)) { ptStore(); bkWatch(pt.id, pt.token, pt); } else ptForget(pt.id);
     ptClear();
     toast(ptCaption(r) + ": PDF sent, PT done");
     $("panel").close();
@@ -1803,7 +1831,7 @@
       navigator.share({ text: ptCaption(r) }).then(function () { if (pt) { pt.regSent = true; ptStore(); } openPt(r); }).catch(function () {});
       return;
     }
-    if (t.dataset.ptmark !== undefined) { if (!r.pt_at) tapPick(r, "pt"); if (pt) ptForget(pt.id); ptClear(); return $("panel").close(); }
+    if (t.dataset.ptmark !== undefined) { if (!r.pt_at) { tapPick(r, "pt"); if (!(pt && pt.id === r.id && pt.items.length)) bkReport(r.id, "PT ticked without photos in the app"); } if (pt) ptForget(pt.id); ptClear(); return $("panel").close(); }
     if (t.dataset.charge) { recordCharge(r, t.dataset.charge); return openPanel(r); }
     if (t.dataset.chargeundo !== undefined) { recordCharge(r, ""); return openPanel(r); }
     if (t.dataset.removecar !== undefined) return askRemove(r);
