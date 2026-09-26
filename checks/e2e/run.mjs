@@ -631,6 +631,21 @@ await scenario(async () => {
   check("import: cars missing from the file are listed, with the moved-day warning", /no longer lists them/.test(gone) && /Only remove cars you know are cancelled/.test(gone));
 });
 
+// 18b. import on a phone: the file picker sends the app to the background; the
+// file must still be taken when it comes back (it was lost to a redraw).
+await scenario(async () => {
+  const db = makeDb();
+  const page = await phone(browser, db);
+  await open(page);
+  await page.click("#menuBtn"); await sleep(300); await page.click('#menu [data-view="import"]'); await sleep(300);
+  const input = await page.$('input[data-file="excel"]');
+  const vis = (state) => page.evaluate((st) => { Object.defineProperty(document, "visibilityState", { value: st, configurable: true }); document.dispatchEvent(new Event("visibilitychange")); }, state);
+  await vis("hidden"); await sleep(1500); await vis("visible");
+  await input.setInputFiles({ name: "drops.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: Buffer.from("x") });
+  await sleep(400);
+  check("import on a phone: the chosen file is taken after the file picker (app back from the background)", /drops\.xlsx/.test(await page.locator(".steps").innerText()) && await page.locator("[data-read]:not([disabled])").count() === 1);
+});
+
 // 19. the office adds a car by hand; takes an overstay payment; removes a car and puts it back
 await scenario(async () => {
   const db = makeDb(); db.company.overstay_rate = 30;

@@ -438,11 +438,16 @@
       // Belt and braces: just the cars changed while away (usually none), in
       // case a live update went astray while the phone was asleep.
       if (Date.now() - hiddenAt > 15000) catchUp(hiddenAt - 10000);
-      else if (!$("panel").open) render();
+      else redrawOnReturn();
       return;
     }
-    loadSheets().then(loadRows).then(function () { if (!$("panel").open) render(); });
+    loadSheets().then(loadRows).then(redrawOnReturn);
   });
+  // Only the board and Flights are redrawn on coming back. Choosing a file
+  // (import, settings) sends a phone's app to the background; redrawing that
+  // screen on return replaced the file button before the chosen file reached
+  // it, so the import never got the file.
+  function redrawOnReturn() { if ((S.view === "board" || S.view === "flights") && !$("panel").open) render(); }
 
   // Settings that can change mid-shift (where PT copies go, the PT way) are
   // read again when the app comes back and when PT starts: at most once a
@@ -460,7 +465,7 @@
     var r = await sb.from("bookings").select("*").eq("sheet_id", want).gte("updated_at", new Date(sinceMs).toISOString());
     if (r.error || want !== S.sheetId) return;
     (r.data || []).forEach(function (n) { onChange({ eventType: "UPDATE", new: n, old: {} }); });
-    if (!(r.data || []).length && !$("panel").open) render();
+    if (!(r.data || []).length) redrawOnReturn();
   }
   function renderSync() {
     var el = $("sync"); if (!el) return;
