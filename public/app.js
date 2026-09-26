@@ -542,7 +542,7 @@
     snapSave();
     if (flashId) { var el = document.querySelector('[data-id="' + flashId + '"]'); if (el) { el.classList.add("flash"); setTimeout(function () { el.classList.remove("flash"); }, 1500); } flashId = null; }
   }
-  function go(view) { if (S.platform && view !== "me") view = "clients"; if (view === "import" && S.updateReady && !S.queue.length) { location.reload(); return; } if (view === "import") S.recentImports = null; S.view = view; S.settingsDraft = null; if (view === "summary") S.activity = null; if ($("menu").open) $("menu").close(); render(); window.scrollTo(0, 0); }
+  function go(view) { if (S.platform && view !== "me") view = "clients"; if (view === "import" && S.updateReady && !S.queue.length && !pt && !camStream && !BK.length) { location.reload(); return; } if (view === "import") S.recentImports = null; S.view = view; S.settingsDraft = null; if (view === "summary") S.activity = null; if ($("menu").open) $("menu").close(); render(); window.scrollTo(0, 0); }
 
   // ── board ─────────────────────────────────
   // Same rules as the Sheet app, so nobody has to relearn what a count means.
@@ -3307,7 +3307,7 @@
   }
   function updateSafeNow() {
     return !$("panel").open && !$("menu").open && !pt && !camStream && !S.queue.length && !BK.length &&
-      !(S.imp && (S.imp.excelFile || S.imp.stage === "preview" || S.imp.saving)) &&
+      !(S.view === "import" && S.imp && (S.imp.excelFile || S.imp.stage === "preview" || S.imp.saving)) && !(S.imp && S.imp.saving) &&
       !(document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName));
   }
   function updateIfSafe() { if (S.updateReady && updateSafeNow()) location.reload(); }
