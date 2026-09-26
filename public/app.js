@@ -434,10 +434,23 @@
     if (document.visibilityState === "hidden") { hiddenAt = Date.now(); return; }
     if (!S.me) return;
     flush();
-    if (S.live && hiddenAt && Date.now() - hiddenAt < QUICK_BACK) { if (!$("panel").open) render(); return; }
+    if (S.live && hiddenAt && Date.now() - hiddenAt < QUICK_BACK) {
+      // Belt and braces: just the cars changed while away (usually none), in
+      // case a live update went astray while the phone was asleep.
+      if (Date.now() - hiddenAt > 15000) catchUp(hiddenAt - 10000);
+      else if (!$("panel").open) render();
+      return;
+    }
     loadSheets().then(loadRows).then(function () { if (!$("panel").open) render(); });
   });
 
+  async function catchUp(sinceMs) {
+    var want = S.sheetId; if (!want) return;
+    var r = await sb.from("bookings").select("*").eq("sheet_id", want).gte("updated_at", new Date(sinceMs).toISOString());
+    if (r.error || want !== S.sheetId) return;
+    (r.data || []).forEach(function (n) { onChange({ eventType: "UPDATE", new: n, old: {} }); });
+    if (!(r.data || []).length && !$("panel").open) render();
+  }
   function renderSync() {
     var el = $("sync"); if (!el) return;
     var waiting = S.queue.length;
