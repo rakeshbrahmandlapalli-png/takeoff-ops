@@ -2108,7 +2108,9 @@
   }
   function readTime(id) { var el = $(id); return el ? cleanTime(el.value) : undefined; }
   // "no flight", "no flight no.", "NOFLIGHT" all mean NO FLIGHT.
-  function normFlight(v) { var f = String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); return /^NOFLIGHT/.test(f) ? "NO FLIGHT" : f; }
+  // "No flight" however it's typed: NO FLIGHT, NO FLT, NO FLYT NO, NONE, N/A... (never
+  // a real flight: those end in digits, and Neos flights are NO + digits).
+  function normFlight(v) { var f = String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); return /^NOF[A-Z]*$|^NOFLIGHT/.test(f) || /^(NONE|NA|NIL)$/.test(f) ? "NO FLIGHT" : f; }
   // A time on the day nearest the booked return (00:30 on a 23:30 booking is
   // the next morning); for an early return, nearest when it was brought forward.
   // Same rule as set_collect_time / set_sched_time in the database (part 31).
