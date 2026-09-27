@@ -381,6 +381,16 @@ await scenario(async () => {
   check("PT on Android: all 12 photos go as one PDF in one tap", sh.length === 1 && sh[0].types[0] === "application/pdf" && /12-photos\.pdf$/.test(sh[0].names[0]), sh);
   check("PT on Android: PT ticked, and all 12 copies still saved to Cloudflare", db.calls.some((c) => c.fn === "tap_pick" && c.args.p_key === "pt") && (db.r2Puts || []).length === 12 && db.ptLinks.length === 1, { puts: (db.r2Puts || []).length, links: db.ptLinks.length });
 });
+// Settings "photos on every phone": Android goes back to photos, 10 at a time.
+await scenario(async () => {
+  const { db, page } = await ptRun("photos_all", 12, { ua: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36" });
+  check("PT photos on every phone: Android offers no PDF", await page.locator("[data-ptpdf]").count() === 0);
+  await page.click("[data-ptreg]"); await sleep(700);
+  await page.click("[data-ptshare]"); await sleep(500);
+  await page.click("[data-ptshare]"); await sleep(800);
+  const sh = await page.evaluate(() => window.__shares);
+  check("PT photos on every phone: Android sends 10 then 2 photos", sh.length === 2 && sh[0].n === 10 && sh[1].n === 2 && sh[0].types[0] !== "application/pdf", sh);
+});
 // The iPhone way (no createImageBitmap) with R2: sharing still works, copies still small.
 await scenario(async () => {
   const { db, page } = await ptRun("photos", 3, { store: "r2", noBitmap: true });
@@ -491,7 +501,7 @@ await scenario(async () => {
   await page.click("#menuBtn"); await sleep(300);
   await page.click('#menuBody [data-view="settings"]'); await sleep(500);
   const opts = await page.locator("[data-ptmethod] option").allInnerTexts();
-  check("Settings offers the three PT ways", opts.length === 3 && /PDF/.test(opts.join()) && /link/.test(opts.join()), opts);
+  check("Settings offers the four PT ways (incl. photos on every phone)", opts.length === 4 && /PDF/.test(opts.join()) && /link/.test(opts.join()) && /every phone/.test(opts.join()), opts);
   await page.selectOption("[data-ptmethod]", "pdf"); await sleep(500);
   check("choosing PDF saves it", db.company.pt_method === "pdf" && db.calls.some((c) => c.fn === "set_pt_method"));
   check("no sideways scrolling in Settings", await noSideScroll(page));
