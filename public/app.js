@@ -1462,7 +1462,12 @@
   // page share within a few seconds of the tap. Android takes 50 MB in one
   // share, so a very big set becomes parts (each one tap).
   var PDF_PART_MAX = 45 * 1048576;
-  function ptWantsPdf() { return !!(S.company && S.company.pt_method === "pdf"); }
+  // Chrome on Android hands at most 10 photos to WhatsApp per tap, so a 35-photo
+  // car took four shares. There the photos go as one PDF instead (one tap);
+  // iPhones send every photo at once and keep the photos way. If the PDF can't
+  // be made or shared, the phone falls back to photos 10 at a time.
+  var ANDROID = /Android/i.test(navigator.userAgent);
+  function ptWantsPdf() { return !!(S.company && (S.company.pt_method === "pdf" || (S.company.pt_method !== "link" && ANDROID))); }
   function ptPdfState() {
     var n = pt.items.filter(function (x) { return x.state === "local"; }).length, P = pt.pdf;
     if (!P || P.count !== n) { ptPdfMake(pt); return { ready: false, label: "Making the PDF…" }; }
@@ -2936,7 +2941,7 @@
       '<label class="field">Number<input id="ptNumber" type="tel" autocomplete="off" placeholder="07932 029349 or +44 7932 029349" value="' + esc(n ? "+" + n : "") + '"></label>' +
       '<div class="row-actions"><button type="button" class="btn brand" data-savept>Save number</button></div>' +
       '<label class="field" style="margin-top:14px">How PT gets the photos<select data-ptmethod>' +
-      '<option value="photos"' + (S.company.pt_method !== "link" && S.company.pt_method !== "pdf" ? " selected" : "") + ">In the WhatsApp chat: reg, then the photos (10 at a time on Android)</option>" +
+      '<option value="photos"' + (S.company.pt_method !== "link" && S.company.pt_method !== "pdf" ? " selected" : "") + ">In the WhatsApp chat: reg, then the photos (Android phones send one PDF: one tap)</option>" +
       '<option value="pdf"' + (S.company.pt_method === "pdf" ? " selected" : "") + ">As one PDF with all the photos (one tap)</option>" +
       '<option value="link"' + (S.company.pt_method === "link" ? " selected" : "") + ">As one link to all the photos (only once PT has agreed)</option></select></label></div>";
   }

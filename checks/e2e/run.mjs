@@ -372,6 +372,15 @@ await scenario(async () => {
   await page.click('.row[data-id="p1"] .reg'); await sleep(800);
   check("PT (R2): the car's panel shows the 12 photos", /12 photos/.test(await text(page, "#ptPhotos")), await text(page, "#ptPhotos"));
 });
+// Android: Chrome hands only 10 photos per share, so the photos go as one PDF (one tap).
+await scenario(async () => {
+  const { db, page } = await ptRun("photos", 12, { store: "r2", ua: "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36" });
+  await page.waitForSelector("[data-ptpdf]:not([disabled])", { timeout: 8000 });
+  await page.click("[data-ptpdf]"); await sleep(3000);
+  const sh = await page.evaluate(() => window.__shares);
+  check("PT on Android: all 12 photos go as one PDF in one tap", sh.length === 1 && sh[0].types[0] === "application/pdf" && /12-photos\.pdf$/.test(sh[0].names[0]), sh);
+  check("PT on Android: PT ticked, and all 12 copies still saved to Cloudflare", db.calls.some((c) => c.fn === "tap_pick" && c.args.p_key === "pt") && (db.r2Puts || []).length === 12 && db.ptLinks.length === 1, { puts: (db.r2Puts || []).length, links: db.ptLinks.length });
+});
 // The iPhone way (no createImageBitmap) with R2: sharing still works, copies still small.
 await scenario(async () => {
   const { db, page } = await ptRun("photos", 3, { store: "r2", noBitmap: true });
