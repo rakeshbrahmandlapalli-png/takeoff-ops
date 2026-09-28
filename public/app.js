@@ -789,14 +789,21 @@
     }
     return days > 0 ? { days: days, amount: days * rate } : null;
   }
+  // What's owed now: the office's agreed amount (a discount) when one is set,
+  // else the daily-rate sum. An agreed amount stays put; it doesn't go up.
+  function chargeDue(r) {
+    var d = overstayDue(r);
+    if (r.charge_agreed == null || r.charge_agreed === "") return d;
+    return { days: d ? d.days : 0, amount: +r.charge_agreed, agreed: true, calc: d ? d.amount : 0 };
+  }
   function money(n) { n = +n || 0; return "£" + (n % 1 ? n.toFixed(2) : n); }
   function chargeTag(r) {
     if (r.charge_method) return ' · <span class="tag pd">' + (r.charge_method === "waived" ? "WAIVED" : money(r.charge_amount) + " " + r.charge_method.toUpperCase()) + "</span>";
-    var d = overstayDue(r);
-    return d ? ' · <span class="tag due">' + money(d.amount) + " DUE</span>" : "";
+    var d = chargeDue(r);
+    return d && d.amount > 0 ? ' · <span class="tag due">' + money(d.amount) + " DUE</span>" : "";
   }
   function chargePanelHtml(r) {
-    var d = overstayDue(r);
+    var d = chargeDue(r);
     if (!d && !r.charge_method) return "";
     var h = "<label>OVERSTAY CHARGE</label>";
     if (r.charge_method) {
@@ -805,19 +812,30 @@
         (can("clear") ? '<button type="button" class="link" data-chargeundo>Undo</button>' : "") + "</div>";
       return h;
     }
-    h += '<div class="chgbox"><b>' + money(d.amount) + " due</b><span>" + d.days + (d.days === 1 ? " day" : " days") + " × " + money(S.company.overstay_rate) + (r.cleared_at ? "" : " · so far, still going up") + "</span></div>";
+    if (d.agreed) h += '<div class="chgbox"><b>' + money(d.amount) + " due</b><span>agreed" + (d.calc ? " · was " + money(d.calc) + " (" + d.days + (d.days === 1 ? " day" : " days") + ")" : "") + "</span>" +
+      (can("clear") ? '<button type="button" class="link" data-chargeagreed="">Undo</button>' : "") + "</div>";
+    else h += '<div class="chgbox"><b>' + money(d.amount) + " due</b><span>" + d.days + (d.days === 1 ? " day" : " days") + " × " + money(S.company.overstay_rate) + (r.cleared_at ? "" : " · so far, still going up") + "</span></div>";
     if (can("clear")) h += '<div class="when2 chgpay"><input id="chgAmount" type="number" inputmode="decimal" min="0" step="0.01" value="' + d.amount + '" aria-label="Amount">' +
-      '<button type="button" data-charge="cash">CASH</button><button type="button" data-charge="card">CARD</button><button type="button" data-charge="waived">WAIVE</button></div>';
+      '<button type="button" data-chargeagreed="set">SET AS DUE</button></div>' +
+      '<div class="when2 chgpay"><button type="button" data-charge="cash">CASH</button><button type="button" data-charge="card">CARD</button><button type="button" data-charge="waived">WAIVE</button></div>' +
+      '<div class="hint">Change the amount for a discount: SET AS DUE saves it for everyone, or CASH / CARD takes it now.</div>';
     return h;
   }
   function recordCharge(r, method) {
     var amt = method === "" ? null : parseFloat(($("chgAmount") || {}).value);
     if (method && (isNaN(amt) || amt < 0)) return toast("Check the amount.", true);
-    if (method === "waived") { var d = overstayDue(r); amt = d ? d.amount : amt; }
+    if (method === "waived") { var d = chargeDue(r); amt = d ? d.amount : amt; }
     run("set_overstay_paid", { p_booking: r.id, p_amount: amt, p_method: method }, r, function (x) {
       x.charge_amount = method ? amt : null; x.charge_method = method; x.charge_at = method ? nowIso() : null; x.charge_by = method ? S.me.id : null;
     });
     toast(method === "" ? "Charge cleared" : method === "waived" ? "Waived" : money(amt) + " " + method + " recorded");
+  }
+  // An agreed amount (a discount) before it's paid; "" puts back the daily-rate sum.
+  function setAgreed(r, how) {
+    var amt = how ? parseFloat(($("chgAmount") || {}).value) : null;
+    if (how && (isNaN(amt) || amt < 0)) return toast("Check the amount.", true);
+    run("set_overstay_agreed", { p_booking: r.id, p_amount: amt }, r, function (x) { x.charge_agreed = amt; });
+    toast(how ? money(amt) + " due, saved" : "Back to the daily rate");
   }
   // The flights check couldn't find this number among the day's arrivals, or
   // it isn't a flight number at all (TBC, …): the office needs to look.
@@ -1834,6 +1852,7 @@
     if (t.dataset.ptmark !== undefined) { if (!r.pt_at) { tapPick(r, "pt"); if (!(pt && pt.id === r.id && pt.items.length)) bkReport(r.id, "PT ticked without photos in the app"); } if (pt) ptForget(pt.id); ptClear(); return $("panel").close(); }
     if (t.dataset.charge) { recordCharge(r, t.dataset.charge); return openPanel(r); }
     if (t.dataset.chargeundo !== undefined) { recordCharge(r, ""); return openPanel(r); }
+    if (t.dataset.chargeagreed !== undefined) { setAgreed(r, t.dataset.chargeagreed); return openPanel(r); }
     if (t.dataset.removecar !== undefined) return askRemove(r);
     if (t.dataset.early !== undefined) return earlyMove(r, t, false);
     if (t.dataset.undoearly !== undefined) return earlyMove(r, t, true);
@@ -1998,7 +2017,7 @@
     var t = { due: 0, dueCars: 0, cash: 0, card: 0, waived: 0 };
     S.rows.forEach(function (r) {
       if (r.charge_method) { t[r.charge_method] = (t[r.charge_method] || 0) + (+r.charge_amount || 0); return; }
-      var d = overstayDue(r); if (d) { t.due += d.amount; t.dueCars++; }
+      var d = chargeDue(r); if (d && d.amount > 0) { t.due += d.amount; t.dueCars++; }
     });
     return t;
   }

@@ -103,6 +103,7 @@ function rpc(db, fn, a) {
     case "undo_import": { const i = (db.imports || []).find((x) => x.id === a.p_id); if (i) i.undone = true; return { removed: 2, kept: 0, restored: 0, sheet_id: "p0", sheet_gone: false }; }
     case "add_booking": { const n = { id: "new" + db.bookings.length, company_id: "c1", sheet_id: a.p_sheet, kind: db.sheets.find((x) => x.id === a.p_sheet).kind, ref: a.p.ref || "", reg: String(a.p.reg).toUpperCase(), name: a.p.name || "", num: 99, return_at: a.p.return_local ? new Date(a.p.return_local.replace(" ", "T") + ":00+01:00").toISOString() : null, note: a.p.note || "" }; db.bookings.push(n); return n; }
     case "set_overstay_paid": { const b = row(a.p_booking); Object.assign(b, { charge_amount: a.p_amount, charge_method: a.p_method, charge_at: a.p_method ? new Date().toISOString() : null, charge_by: a.p_method ? "s1" : null }); return b; }
+    case "set_overstay_agreed": { const b = row(a.p_booking); b.charge_agreed = a.p_amount; return b; }
     case "remove_booking": { const b = row(a.p_booking); Object.assign(b, { removed_at: new Date().toISOString(), removed_reason: a.p_reason, removed_by: "s1" }); return b; }
     case "restore_booking": { const b = db.bookings.find((x) => x.id === a.p_booking); Object.assign(b, { removed_at: null, removed_reason: "" }); return b; }
     case "set_reg": { const b = row(a.p_booking); b.reg = a.p_reg; return b; }
@@ -810,6 +811,14 @@ await scenario(async () => {
   await page.click('.row[data-id="b3"] .reg'); await sleep(400);
   const due = await page.locator(".chgbox").innerText().catch(() => "");
   check("overstay: the panel shows what's due", /£\d+ due/.test(due), due);
+  await page.fill("#chgAmount", "40"); await page.click('[data-chargeagreed="set"]'); await sleep(500);
+  const agr = db.calls.find((c) => c.fn === "set_overstay_agreed");
+  check("overstay: SET AS DUE saves the amount typed", !!agr && agr.args.p_amount === 40, agr && agr.args);
+  const agreedBox = await page.locator(".chgbox").innerText().catch(() => "");
+  check("overstay: the panel shows the agreed amount and what it was", /£40 due/.test(agreedBox) && /agreed · was £\d+/.test(agreedBox), agreedBox);
+  check("overstay: the row shows the agreed amount due", /£40 DUE/.test(await text(page, '.row[data-id="b3"]')));
+  await page.click('.chgbox [data-chargeagreed=""]'); await sleep(500);
+  check("overstay: Undo puts back the daily-rate sum", db.calls.some((c) => c.fn === "set_overstay_agreed" && c.args.p_amount === null) && !/agreed/.test(await page.locator(".chgbox").innerText().catch(() => "")));
   await page.fill("#chgAmount", "85"); await page.click('[data-charge="cash"]'); await sleep(500);
   const pay = db.calls.find((c) => c.fn === "set_overstay_paid");
   check("overstay: CASH records the amount typed", !!pay && pay.args.p_amount === 85 && pay.args.p_method === "cash", pay && pay.args);
