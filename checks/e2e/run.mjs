@@ -400,6 +400,29 @@ await scenario(async () => {
   await page.click('.row[data-id="p1"] .reg'); await sleep(800);
   check("PT (R2): the car's panel shows the 12 photos", /12 photos/.test(await text(page, "#ptPhotos")), await text(page, "#ptPhotos"));
 });
+// The PT checklist on the camera screen: shown, folds away, remembered.
+await scenario(async () => {
+  const db = makeDb({ ptMethod: "pdf" }), page = await phone(browser, db);
+  await open(page);
+  await page.selectOption("#sheetPick", "p0"); await sleep(700);
+  await page.click('.row[data-id="p1"] [data-pt]');
+  await page.waitForFunction(() => document.getElementById("camVideo") && document.getElementById("camVideo").videoWidth > 0, null, { timeout: 8000 });
+  const tips = await text(page, "#camTips");
+  check("camera: the PT checklist is shown", /PT checklist/.test(tips) && /Crouch to door height/.test(tips) && /Close-up of every mark/.test(tips), tips);
+  await page.screenshot({ path: process.env.SHOT_DIR ? process.env.SHOT_DIR + "/cam-tips.png" : "/dev/null" }).catch(() => {});
+  await page.click('[data-camtips="off"]'); await sleep(300);
+  check("camera: ✕ folds the checklist to a small button", await page.locator("#camTips").count() === 0 && await page.locator('[data-camtips="on"]').count() === 1);
+  await page.click("[data-shutter]"); await sleep(600);
+  await page.click("[data-camdone]"); await sleep(1500);
+  await page.click("[data-close]").catch(() => {}); await sleep(300);
+  await page.click('.row[data-id="p1"] [data-pt]').catch(() => {}); await sleep(300);
+  await page.click("[data-ptcam]").catch(() => {});
+  await page.waitForFunction(() => document.getElementById("camVideo") && document.getElementById("camVideo").videoWidth > 0, null, { timeout: 8000 }).catch(() => {});
+  check("camera: stays folded next time (remembered)", await page.locator("#camTips").count() === 0 && await page.locator('[data-camtips="on"]').count() === 1);
+  await page.click('[data-camtips="on"]'); await sleep(300);
+  check("camera: the button opens it again", await page.locator("#camTips").count() === 1);
+  check("camera: no errors", page.__errors.length === 0, page.__errors);
+});
 // Android: real photos from the camera, with the sharpest-frame way to fall back on.
 const ANDROID = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36";
 await scenario(async () => {
