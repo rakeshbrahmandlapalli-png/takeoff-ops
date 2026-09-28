@@ -182,10 +182,26 @@ async function backend(ctx, db) {
 }
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 const JWT = b64({ alg: "HS256" }) + "." + b64({ sub: "u1", role: "authenticated", exp: 4102444800 }) + ".sig";
-async function phone(browser, db, { signedIn = true, ua, width = 390, noBitmap = false } = {}) {
+async function phone(browser, db, { signedIn = true, ua, width = 390, noBitmap = false, still = "" } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, userAgent: ua, permissions: ["camera"] });
   await backend(ctx, db);
-  await ctx.addInitScript(([jwt, signedIn, noBitmap]) => {
+  await ctx.addInitScript(([jwt, signedIn, noBitmap, still]) => {
+    // A pretend Android camera for real photos: "ok" (landscape, like the
+    // video), "side" (handed back on its side) or "fail".
+    if (still) {
+      window.__stills = 0;
+      window.ImageCapture = class {
+        constructor(track) { this.track = track; }
+        async getPhotoCapabilities() { return { fillLightMode: ["auto", "off", "flash"] }; }
+        async takePhoto() {
+          window.__stills++;
+          if (still === "fail") throw new Error("camera busy");
+          const side = still === "side", c = document.createElement("canvas"); c.width = side ? 600 : 800; c.height = side ? 800 : 600;
+          const g = c.getContext("2d"); g.fillStyle = "#3a6"; g.fillRect(0, 0, c.width, c.height);
+          return await new Promise((ok) => c.toBlob(ok, "image/jpeg", 0.9));
+        }
+      };
+    }
     if (signedIn && !sessionStorage.getItem("seeded")) {
       sessionStorage.setItem("seeded", "1");
       localStorage.setItem("takeoff_link", "x".repeat(40));
@@ -197,7 +213,7 @@ async function phone(browser, db, { signedIn = true, ua, width = 390, noBitmap =
     try { navigator.clipboard.writeText = async () => {}; } catch (e) {}
     // Like an iPhone that won't decode a photo this way.
     if (noBitmap) window.createImageBitmap = () => Promise.reject(new Error("not supported"));
-  }, [JWT, signedIn, noBitmap]);
+  }, [JWT, signedIn, noBitmap, still]);
   const page = await ctx.newPage();
   page.setDefaultTimeout(6000);
   page.__errors = [];
@@ -377,6 +393,23 @@ await scenario(async () => {
   // The car's panel lists the set.
   await page.click('.row[data-id="p1"] .reg'); await sleep(800);
   check("PT (R2): the car's panel shows the 12 photos", /12 photos/.test(await text(page, "#ptPhotos")), await text(page, "#ptPhotos"));
+});
+// Android: real photos from the camera, with the sharpest-frame way to fall back on.
+const ANDROID = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36";
+await scenario(async () => {
+  const { page } = await ptRun("photos", 3, { ua: ANDROID, still: "ok" });
+  check("PT (Android): each tap takes a real photo", await page.evaluate(() => window.__stills) === 3 && await page.locator(".ptthumbs img").count() === 3);
+  check("PT (Android): no errors", page.__errors.length === 0, page.__errors);
+});
+await scenario(async () => {
+  const { page } = await ptRun("photos", 2, { ua: ANDROID, still: "side" });
+  const dims = await page.evaluate(() => [...document.querySelectorAll(".ptthumbs img")].map((i) => [i.naturalWidth, i.naturalHeight]));
+  check("PT (Android): a photo handed back on its side is turned to match the screen", dims.length === 2 && dims.every(([w, h]) => w > h), dims);
+});
+await scenario(async () => {
+  const { db, page } = await ptRun("photos", 4, { ua: ANDROID, still: "fail" });
+  check("PT (Android): a camera that won't take photos falls back, every tap still kept", await page.locator(".ptthumbs img").count() === 4);
+  check("PT (Android): gives up on real photos after two tries", await page.evaluate(() => window.__stills) === 2, await page.evaluate(() => window.__stills));
 });
 // Separate ways: photos on Android, PDF on iPhones.
 await scenario(async () => {
