@@ -333,7 +333,10 @@ async function ptRun(method, shots, opts = {}) {
   await page.click('.row[data-id="p1"] [data-pt]');
   await page.waitForFunction(() => document.getElementById("camVideo") && document.getElementById("camVideo").videoWidth > 0, null, { timeout: 8000 });
   for (let i = 0; i < shots; i++) await page.click("[data-shutter]");
-  await sleep(500); await page.click("[data-camdone]"); await sleep(1500);
+  await sleep(500); await page.click("[data-camdone]");
+  // Each tap keeps the sharpest of a few frames, so Done waits for the last ones.
+  await page.waitForFunction(() => !document.getElementById("camVideo"), null, { timeout: 15000 }).catch(() => {});
+  await sleep(1500);
   return { db, page };
 }
 await scenario(async () => {

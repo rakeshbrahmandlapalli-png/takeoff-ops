@@ -1242,18 +1242,57 @@
     camStream = null; camTorch = false; $("panel").classList.remove("cam");
   }
   // The picture on screen, saved at upload size in one go (no second squeeze).
+  // Tapping the button shakes the phone, and a single frame of video caught
+  // mid-shake is blurred. So each tap takes a few frames over about a quarter
+  // of a second and keeps the sharpest. Taps queue up, one photo each, and
+  // Done waits for the last one.
+  var camShots = Promise.resolve(), CAM_BURST = 4, CAM_GAP = 50;
   function ptShoot(r) {
     var v = $("camVideo"); if (!v || !v.videoWidth || !pt) return;
     var f = $("camFlash"); if (f) { f.classList.remove("go"); void f.offsetWidth; f.classList.add("go"); }
-    var k = Math.min(1, PT_MAX / Math.max(v.videoWidth, v.videoHeight));
-    var c = ptCanvas(v, Math.round(v.videoWidth * k), Math.round(v.videoHeight * k), Date.now(), pt.reg);
-    var cur = pt, thumb = ptThumb(c, c.width, c.height);
-    c.toBlob(function (b) {
-      if (!b || pt !== cur) return;
-      cur.items.push({ file: b, url: thumb, state: cur.mode === "photos" ? "local" : "wait", n: cur.items.length + 1, ready: true });
-      var el = $("camCount"); if (el) el.textContent = camCountText();
-      ptPump(r);
-    }, "image/jpeg", PT_Q);
+    var cur = pt, when = Date.now();
+    camShots = camShots.then(function () { return ptGrab(r, cur, when); }).catch(function (e) { oopsLog(e); });
+  }
+  async function ptGrab(r, cur, when) {
+    var v = $("camVideo"); if (!v || !v.videoWidth || pt !== cur) return;
+    var best = null, bestScore = -1;
+    for (var i = 0; i < CAM_BURST; i++) {
+      if (i) await new Promise(function (ok) { setTimeout(ok, CAM_GAP); });
+      if (!v.videoWidth) break;
+      var fr = null;
+      try { fr = await createImageBitmap(v); } catch (e) { fr = null; }
+      if (!fr) { if (!best) best = v; break; }   // can't copy frames: the picture as it is now
+      var sc = camSharpness(fr);
+      if (sc > bestScore) { if (best && best.close) best.close(); best = fr; bestScore = sc; } else if (fr.close) fr.close();
+    }
+    if (!best || pt !== cur) { if (best && best.close) best.close(); return; }
+    var w = best.videoWidth || best.width, h = best.videoHeight || best.height, k = Math.min(1, PT_MAX / Math.max(w, h));
+    var c = ptCanvas(best, Math.round(w * k), Math.round(h * k), when, cur.reg);
+    if (best.close) best.close();
+    var thumb = ptThumb(c, c.width, c.height);
+    var b = await new Promise(function (ok) { c.toBlob(ok, "image/jpeg", PT_Q); });
+    c.width = c.height = 0;
+    if (!b || pt !== cur) return;
+    cur.items.push({ file: b, url: thumb, state: cur.mode === "photos" ? "local" : "wait", n: cur.items.length + 1, ready: true });
+    var el = $("camCount"); if (el) el.textContent = camCountText();
+    ptPump(r);
+  }
+  // How sharp a frame is: the middle of the picture made small and grey, then
+  // how much each pixel differs from its neighbours (a blurred frame is smooth).
+  var camSharpCv = null;
+  function camSharpness(fr) {
+    try {
+      var W = 160, H = 120, c = camSharpCv || (camSharpCv = document.createElement("canvas")); c.width = W; c.height = H;
+      var g = c.getContext("2d", { willReadFrequently: true });
+      g.drawImage(fr, fr.width * 0.2, fr.height * 0.2, fr.width * 0.6, fr.height * 0.6, 0, 0, W, H);
+      var d = g.getImageData(0, 0, W, H).data, y = new Float32Array(W * H), sum = 0;
+      for (var p = 0; p < W * H; p++) y[p] = d[p * 4] * 0.3 + d[p * 4 + 1] * 0.59 + d[p * 4 + 2] * 0.11;
+      for (var row = 1; row < H - 1; row++) for (var col = 1; col < W - 1; col++) {
+        var q = row * W + col, l = 4 * y[q] - y[q - 1] - y[q + 1] - y[q - W] - y[q + W];
+        sum += l * l;
+      }
+      return sum;
+    } catch (e) { return 0; }
   }
   function ptRetry(r) { pt.saveFail = false; pt.items.forEach(function (x) { if (x.state === "fail") x.state = "wait"; }); openPt(r); ptPump(r); }
   // WhatsApp is open with the message: PT is done.
@@ -1920,7 +1959,7 @@
     if (t.dataset.shutter !== undefined) return ptShoot(r);
     if (t.dataset.camtorch !== undefined) return camToggleTorch();
     if (t.dataset.camlens !== undefined) return camLensNext();
-    if (t.dataset.camdone !== undefined) { camStop(); openPt(r); ptStore(); return ptPump(r); }
+    if (t.dataset.camdone !== undefined) { t.disabled = true; t.textContent = "Saving…"; return camShots.then(function () { camStop(); openPt(r); ptStore(); ptPump(r); }); }
     if (t.dataset.ptretry !== undefined) return ptRetry(r);
     if (t.dataset.ptlinkshare !== undefined) {
       // No PT number in Settings: share the message and pick the chat.
