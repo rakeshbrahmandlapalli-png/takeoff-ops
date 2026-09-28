@@ -9,7 +9,8 @@
 --     kind the import touched: the cars it added, and each changed car's
 --     values before and after.
 --   • undo_import(id) takes off the cars it added (unless someone has already
---     worked on one: sent, called, cleared, yard, PT, intake, paid, early),
+--     worked on one: sent, called, cleared, yard, PT, intake, paid, early,
+--     an agreed overstay amount (part 47)),
 --     and puts back what it changed, field by field, only where the value is
 --     still what the import left (a tap made since is never undone).
 --     A sheet the import created and that ends up empty is deleted.
@@ -17,6 +18,7 @@
 --   • recent_imports() lists the last 24 hours for the Import screen.
 -- Notes are kept 2 days. If part 40 is ever run again it replaces the new
 -- import_sheet: run this part again after it.
+-- Needs part 47 (charge_agreed) before an undo is run.
 -- Safe to run twice.
 
 create table if not exists private.imports (
@@ -122,7 +124,8 @@ begin
   with gone as (
     select b.id from bookings b where b.id = any(i.added) and b.company_id = i.company_id
       and b.sent_at is null and b.called_at is null and b.cleared_at is null and coalesce(b.yard, '') = ''
-      and b.pt_at is null and b.intake_at is null and b.charge_at is null and not coalesce(b.early, false)
+      and b.pt_at is null and b.intake_at is null and b.charge_at is null and b.charge_agreed is null
+      and not coalesce(b.early, false)
       and not exists (select 1 from pt_links l where l.booking_id = b.id)
   ), del_act as (delete from activity a using gone where a.booking_id = gone.id)
   delete from bookings b using gone where b.id = gone.id;
