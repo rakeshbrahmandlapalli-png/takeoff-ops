@@ -1003,9 +1003,7 @@
     try {
       var when = await ptTakenAt(b);
       var im = await createImageBitmap(b), k = Math.min(1, PT_MAX / Math.max(im.width, im.height));
-      var c = document.createElement("canvas"); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
-      var g = c.getContext("2d"); g.drawImage(im, 0, 0, c.width, c.height); if (im.close) im.close();
-      ptStamp(g, c.width, c.height, when, reg);
+      var c = ptCanvas(im, Math.round(im.width * k), Math.round(im.height * k), when, reg); if (im.close) im.close();
       return await new Promise(function (ok) { c.toBlob(function (x) { ok(x || b); }, "image/jpeg", PT_Q); });
     } catch (e) { return b; }
   }
@@ -1015,14 +1013,19 @@
     var t = new Date(when).toLocaleString("en-GB", { timeZone: TZ, day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).replace(",", "");
     return t + (reg ? " · " + reg : "");
   }
-  function ptStamp(g, w, h, when, reg) {
+  // The photo on a canvas with a black bar UNDER it holding the date, time
+  // and reg, so the stamp never covers any of the car.
+  function ptBar(w) { return Math.max(28, Math.round(w * 0.032)); }
+  function ptCanvas(src, w, h, when, reg) {
+    var bar = ptBar(w), c = document.createElement("canvas"); c.width = w; c.height = h + bar;
+    var g = c.getContext("2d"); g.drawImage(src, 0, 0, w, h);
     try {
-      var text = ptStampText(when, reg), size = Math.max(14, Math.round(Math.min(w, h) * 0.045)), pad = Math.round(size * 0.45);
+      g.fillStyle = "#000"; g.fillRect(0, h, w, bar);
+      var size = Math.round(bar * 0.6);
       g.font = "700 " + size + "px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
-      var tw = g.measureText(text).width, bw = tw + pad * 2, bh = size + pad * 2;
-      g.fillStyle = "rgba(0,0,0,.55)"; g.fillRect(w - bw - pad, h - bh - pad, bw, bh);
-      g.fillStyle = "#fff"; g.textBaseline = "middle"; g.fillText(text, w - bw, h - pad - bh / 2);
+      g.fillStyle = "#fff"; g.textBaseline = "middle"; g.fillText(ptStampText(when, reg), Math.round(bar * 0.4), h + bar / 2);
     } catch (e) {}
+    return c;
   }
   // When a gallery photo was taken: the camera's own date in the photo (EXIF
   // DateTimeOriginal, UK local time); failing that, the file's date.
@@ -1129,7 +1132,7 @@
       if (camLive(camParked)) { clearTimeout(camParkTimer); camStream = camParked; camParked = null; }
       else {
         camUnpark();
-        camStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 30 } } });
+        camStream = await camOpen(camLensPick());
       }
     } catch (e) {
       toast(e && e.name === "NotAllowedError"
@@ -1138,15 +1141,71 @@
       return;
     }
     $("panel").classList.add("cam");
-    $("panelBody").innerHTML = '<div class="camview"><video id="camVideo" autoplay playsinline muted></video><div class="camflash" id="camFlash"></div><div class="camring" id="camRing"></div><button type="button" class="camtorch hidden" id="camTorch" data-camtorch aria-pressed="false">⚡ FLASH OFF</button></div>' +
+    $("panelBody").innerHTML = '<div class="camview"><video id="camVideo" autoplay playsinline muted></video><div class="camflash" id="camFlash"></div><div class="camring" id="camRing"></div><button type="button" class="camtorch hidden" id="camTorch" data-camtorch aria-pressed="false">⚡ FLASH OFF</button><button type="button" class="camtorch camlens hidden" id="camLens" data-camlens>LENS</button></div>' +
       '<div class="cambar"><span class="camcount" id="camCount">' + camCountText() + '</span><button type="button" class="shutter" data-shutter aria-label="Take photo"></button><button type="button" class="camdone" data-camdone>Done</button></div>';
     $("camVideo").srcObject = camStream;
     // Keep the picture sharp as the phone moves round the car.
     var track = camStream.getVideoTracks()[0], caps = track && track.getCapabilities ? track.getCapabilities() : {};
     if (caps.focusMode && caps.focusMode.indexOf("continuous") !== -1) track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(function () {});
+    // Some phones open the back camera zoomed out (0.5x, the ultra-wide):
+    // start at 1x, like the phone's own camera.
+    if (caps.zoom && caps.zoom.min < 1 && caps.zoom.max >= 1) track.applyConstraints({ advanced: [{ zoom: 1 }] }).catch(function () {});
     // The phone's light, for dark corners of the terminal. Stays on while shooting.
     camTorch = false;
     if (caps.torch) show("camTorch", true);
+    camLensButton(track);
+  }
+  // ── Which back lens ──
+  // A browser asking for "the back camera" can be given any of a phone's back
+  // lenses, often the ultra-wide (a wide, bent picture). The main lens is
+  // picked by name where the phone gives one, and LENS switches between the
+  // back lenses; the choice is remembered on the phone.
+  var CAM_LENS_KEY = "takeoff-cam-lens", camLenses = [];
+  function camOpen(deviceId) {
+    var v = { width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 30 } };
+    if (deviceId) v.deviceId = { exact: deviceId }; else v.facingMode = { ideal: "environment" };
+    return navigator.mediaDevices.getUserMedia({ audio: false, video: v }).catch(function (e) {
+      if (!deviceId || e.name === "NotAllowedError") throw e;
+      try { localStorage.removeItem(CAM_LENS_KEY); } catch (x) {}
+      return camOpen("");
+    });
+  }
+  function camLensPick() { try { return localStorage.getItem(CAM_LENS_KEY) || ""; } catch (e) { return ""; } }
+  // Main lens first: not ultra-wide / tele / macro / depth; then the lowest
+  // Android number ("camera2 0, facing back" is the main one on most phones).
+  function camLensRank(d) {
+    var l = d.label || "", n = +((l.match(/camera2?\s*(\d+)/i) || [])[1] || 50);
+    return (/ultra|tele|macro|depth|dual|triple/i.test(l) ? 100 : 0) + n;
+  }
+  async function camLensButton(track) {
+    try {
+      var all = await navigator.mediaDevices.enumerateDevices();
+      camLenses = all.filter(function (d) { return d.kind === "videoinput" && /back|rear|environment/i.test(d.label || ""); })
+        .sort(function (a, b) { return camLensRank(a) - camLensRank(b); });
+      if (camLenses.length < 2 || !camStream) return;
+      var now = (track.getSettings ? track.getSettings().deviceId : "") || "";
+      // First time on this phone: if the browser gave a lens other than the
+      // main one, switch to the main one.
+      if (!camLensPick() && now && camLenses[0].deviceId && now !== camLenses[0].deviceId) return camLensSet(camLenses[0].deviceId);
+      var b = $("camLens"); if (!b) return;
+      var i = camLenses.findIndex(function (d) { return d.deviceId === now; });
+      b.textContent = "LENS " + (i + 1 > 0 ? i + 1 : 1) + "/" + camLenses.length;
+      b.classList.remove("hidden");
+    } catch (e) {}
+  }
+  async function camLensNext() {
+    if (camLenses.length < 2 || !camStream) return;
+    var track = camStream.getVideoTracks()[0], now = track && track.getSettings ? track.getSettings().deviceId : "";
+    var i = camLenses.findIndex(function (d) { return d.deviceId === now; });
+    camLensSet(camLenses[(i + 1) % camLenses.length].deviceId);
+  }
+  async function camLensSet(id) {
+    try { localStorage.setItem(CAM_LENS_KEY, id); } catch (e) {}
+    var r = panelRow; if (!r || !camStream) return;
+    if (camTorch) await camLight(false).catch(function () {});
+    camStream.getTracks().forEach(function (t) { t.stop(); });
+    camStream = null;
+    ptCamera(r);
   }
   // Tap the picture to focus on that spot (where the phone allows it).
   function camFocus(e) {
@@ -1185,9 +1244,7 @@
     var v = $("camVideo"); if (!v || !v.videoWidth || !pt) return;
     var f = $("camFlash"); if (f) { f.classList.remove("go"); void f.offsetWidth; f.classList.add("go"); }
     var k = Math.min(1, PT_MAX / Math.max(v.videoWidth, v.videoHeight));
-    var c = document.createElement("canvas"); c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
-    var g = c.getContext("2d"); g.drawImage(v, 0, 0, c.width, c.height);
-    ptStamp(g, c.width, c.height, Date.now(), pt.reg);
+    var c = ptCanvas(v, Math.round(v.videoWidth * k), Math.round(v.videoHeight * k), Date.now(), pt.reg);
     var cur = pt, thumb = ptThumb(c, c.width, c.height);
     c.toBlob(function (b) {
       if (!b || pt !== cur) return;
@@ -1474,12 +1531,13 @@
   }
 
   // ── PT as one PDF ──
-  // Every photo on its own page, full quality: the JPEGs go into the PDF as
-  // they are (no re-compressing), so it's quick and sharp. Made in the
+  // Every photo on its own page at 2000 px and 82%: sharp enough to zoom into
+  // a scratch, about half the size of the photos as taken, so the PDF opens
+  // quicker on WhatsApp. Made in the
   // background as soon as the photos are ready, because Chrome only lets a
   // page share within a few seconds of the tap. Android takes 50 MB in one
   // share, so a very big set becomes parts (each one tap).
-  var PDF_PART_MAX = 45 * 1048576;
+  var PDF_PART_MAX = 45 * 1048576, PDF_MAX = 2000, PDF_Q = 0.82;
   function ptWantsPdf() { return !!(S.company && S.company.pt_method === "pdf"); }
   function ptPdfState() {
     var n = pt.items.filter(function (x) { return x.state === "local"; }).length, P = pt.pdf;
@@ -1494,7 +1552,7 @@
     var P = { count: items.length, parts: [], sent: cur.pdfSent || 0 };
     try {
       var jpgs = [];
-      for (var i = 0; i < items.length; i++) jpgs.push(await ptJpegBytes(items[i].file));
+      for (var i = 0; i < items.length; i++) jpgs.push(await ptPdfJpeg(items[i].file));
       var group = [], size = 0;
       jpgs.forEach(function (j) { if (group.length && size + j.bytes.length > PDF_PART_MAX) { P.parts.push(group); group = []; size = 0; } group.push(j); size += j.bytes.length; });
       if (group.length) P.parts.push(group);
@@ -1509,6 +1567,20 @@
     if (pt !== cur || cur.pdfMaking !== items.length) return;
     cur.pdfMaking = 0; cur.pdf = P;
     if ($("panel").open && panelRow && panelRow.id === cur.id && !$("camVideo")) openPt(panelRow);
+  }
+  // The photo made PDF size; kept as it is when it's already small.
+  async function ptPdfJpeg(b) {
+    try {
+      var im = await createImageBitmap(b), k = Math.min(1, PDF_MAX / Math.max(im.width, im.height));
+      if (k === 1 && b.size < 700000) { if (im.close) im.close(); return await ptJpegBytes(b); }
+      var c = document.createElement("canvas"); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+      c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); if (im.close) im.close();
+      var j = await new Promise(function (ok) { c.toBlob(ok, "image/jpeg", PDF_Q); });
+      c.width = c.height = 0;
+      var bytes = new Uint8Array(await j.arrayBuffer()), d = jpegSize(bytes);
+      if (d) return { bytes: bytes, w: d.w, h: d.h, c: d.c };
+    } catch (e) {}
+    return await ptJpegBytes(b);
   }
   // The photo as JPEG bytes with its size (anything else is turned into a JPEG).
   async function ptJpegBytes(b) {
@@ -1708,6 +1780,7 @@
     await loadSheets(); await loadRows(); flashId = x.data.id; render();
     toast((r.reg || "Car") + (undo ? " is back on its booked day." : " moved to tonight's sheet as an early return."));
   }
+  function canReturn(r) { return can("import") && r.kind === "drops" && !r.early && !r.cleared_at; }
   function openPanel(r) {
     panelRow = r;
     var drops = r.kind === "drops";
@@ -1731,6 +1804,13 @@
     // driver can fill in a missing one when the car comes in.
     var canReg = can("import") || (can("intake") && !r.reg);
     if (canReg) h += '<label for="regText">REG</label><input id="regText" value="' + esc(r.reg) + '" autocomplete="off" autocapitalize="characters" maxlength="12" placeholder="Type the reg">';
+    // A customer rang to come back another day: the office changes it here too.
+    // The first booked return is kept (WAS tag, charge), and the new day's file
+    // finds this car rather than adding it again (database part 48).
+    if (drops && canReturn(r)) {
+      var rp = r.return_at ? londonParts(new Date(r.return_at)) : { key: "", time: "" };
+      h += '<label for="retD">BACK DATE AND TIME</label><div class="when2"><input id="retD" type="date" value="' + esc(rp.key) + '">' + timeBox("retT", rp.time) + "</div>";
+    }
     if (drops && can("yard")) {
       h += '<label>YARD</label><div class="pseg yard">' + (S.company.yards || []).map(function (y) {
         return '<button type="button" data-setyard="' + esc(y) + '" class="' + (r.yard === y ? "on y-" + esc(y) : "") + '">' + esc(YARD_LABEL[y] || y) + "</button>";
@@ -1756,7 +1836,7 @@
     // PT photos from when the car came in (PICKS), also on its DROPS row: same booking ref.
     h += '<div id="ptPhotos"></div>';
     if (can("import")) h += '<button type="button" class="link rmcar" data-removecar>Remove this car (no show, cancelled)</button>';
-    h += '<div class="pbtns"><button type="button" data-close>Close</button>' + (can("note") || can("flights") || canReg ? '<button type="button" class="save" data-savepanel>Save</button>' : "") + "</div>";
+    h += '<div class="pbtns"><button type="button" data-close>Close</button>' + (can("note") || can("flights") || canReg || (drops && canReturn(r)) ? '<button type="button" class="save" data-savepanel>Save</button>' : "") + "</div>";
     $("panelBody").innerHTML = h;
     if (!$("panel").open) $("panel").showModal();
     ptPhotosList(r);
@@ -1802,6 +1882,14 @@
           run("set_reg", { p_booking: r.id, p_reg: g }, r, function (x) { x.reg = g; }); saved = true;
         }
       }
+      if ($("retD")) {
+        var rt = readTime("retT"), old = r.return_at ? londonParts(new Date(r.return_at)) : { key: "", time: "" };
+        if (rt === null) return toast("Type the time like 13:20 (or 1320).", true);
+        if ($("retD").value !== old.key || (rt || "") !== old.time) {
+          if (!$("retD").value || !rt) return toast("Enter when the car is back: the date and the time.", true);
+          run("set_return", { p_booking: r.id, p_return_local: $("retD").value + " " + rt }, r); saved = true;
+        }
+      }
       // The note first: turning a car into NO FLIGHT moves on to the
       // collection-time screen, and a note typed alongside must not be lost.
       if ($("noteText")) {
@@ -1829,6 +1917,7 @@
     if (t.dataset.ptcam !== undefined) return ptCamera(r);
     if (t.dataset.shutter !== undefined) return ptShoot(r);
     if (t.dataset.camtorch !== undefined) return camToggleTorch();
+    if (t.dataset.camlens !== undefined) return camLensNext();
     if (t.dataset.camdone !== undefined) { camStop(); openPt(r); ptStore(); return ptPump(r); }
     if (t.dataset.ptretry !== undefined) return ptRetry(r);
     if (t.dataset.ptlinkshare !== undefined) {
