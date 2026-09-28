@@ -457,7 +457,7 @@
   function companyFresh() {
     if (!S.company || Date.now() - companyAt < 60000) return;
     companyAt = Date.now();
-    sb.from("companies").select("pt_copy_store, pt_method").eq("id", S.company.id).single()
+    sb.from("companies").select("pt_copy_store, pt_method, pt_method_ios").eq("id", S.company.id).single()
       .then(function (r) { if (r.data && S.company) Object.assign(S.company, r.data); }, function () {});
   }
   async function catchUp(sinceMs) {
@@ -932,7 +932,8 @@
     }
   }
   // PT: photos taken in the app's camera (quickest) or picked from the gallery.
-  // Two ways to get them to PT, chosen in Settings (companies.pt_method):
+  // Ways to get them to PT, chosen in Settings: companies.pt_method on Android
+  // phones and computers, pt_method_ios on iPhones (part 49); ptMethod():
   //   photos  the reg goes to the PT WhatsApp chat, then the photos in albums
   //           (10 at a time on Android). Kept on the phone until all are sent,
   //           so a reload while WhatsApp is open carries on where it left off.
@@ -941,6 +942,7 @@
   // 2400 px at 85% is about a third of a full camera photo to upload, and
   // still sharper than WhatsApp's own HD.
   var pt = null, PT_MAX = 2400, PT_Q = 0.85, PT_AT_ONCE = 4;
+  function ptMethod() { var c = S.company || {}; return (IS_IOS && c.pt_method_ios) || c.pt_method || "photos"; }
   function ptCaption(r) { return r.reg || "NO REG"; }
   function ptToken() {
     var b = new Uint8Array(18); crypto.getRandomValues(b);
@@ -950,7 +952,7 @@
   function ptMessage(r) { var n = ptCount("done"); return ptCaption(r) + " – " + n + " PT photo" + (n === 1 ? "" : "s") + ": " + ptLink(); }
   function ptCount(state) { return pt ? pt.items.filter(function (x) { return !state || x.state === state; }).length : 0; }
   function openPt(r) {
-    if (!pt || pt.id !== r.id) { ptClear(); pt = { id: r.id, reg: ptCaption(r), mode: S.company && S.company.pt_method === "link" ? "link" : "photos", token: ptToken(), items: [], saved: 0, sent: 0 }; }
+    if (!pt || pt.id !== r.id) { ptClear(); pt = { id: r.id, reg: ptCaption(r), mode: ptMethod() === "link" ? "link" : "photos", token: ptToken(), items: [], saved: 0, sent: 0 }; }
     panelRow = r;
     if (pt.mode === "photos") return openPtPhotos(r);
     var num = (S.company && S.company.pt_whatsapp) || "", n = pt.items.length, ready = ptReady();
@@ -1538,7 +1540,7 @@
   // page share within a few seconds of the tap. Android takes 50 MB in one
   // share, so a very big set becomes parts (each one tap).
   var PDF_PART_MAX = 45 * 1048576, PDF_MAX = 2000, PDF_Q = 0.82;
-  function ptWantsPdf() { return !!(S.company && S.company.pt_method === "pdf"); }
+  function ptWantsPdf() { return ptMethod() === "pdf"; }
   function ptPdfState() {
     var n = pt.items.filter(function (x) { return x.state === "local"; }).length, P = pt.pdf;
     if (!P || P.count !== n) { ptPdfMake(pt); return { ready: false, label: "Making the PDF…" }; }
@@ -1700,7 +1702,7 @@
     companyFresh();
     if (!pt || pt.id !== r.id) {
       var rec = (await ptSaved()).filter(function (x) { return x.id === r.id && Date.now() - x.at < PT_KEEP_MS; })[0];
-      if (rec && S.company && S.company.pt_method !== "link") ptRestore(rec);
+      if (rec && ptMethod() !== "link") ptRestore(rec);
     }
     openPt(r);
     if (!pt.items.length && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ptCamera(r);
@@ -3041,16 +3043,23 @@
       '<p class="note">PT opens this chat with the reg typed, before the photos are sent.' + (n ? " Now: <b>+" + esc(n) + "</b>" : " Not set.") + "</p>" +
       '<label class="field">Number<input id="ptNumber" type="tel" autocomplete="off" placeholder="07932 029349 or +44 7932 029349" value="' + esc(n ? "+" + n : "") + '"></label>' +
       '<div class="row-actions"><button type="button" class="btn brand" data-savept>Save number</button></div>' +
-      '<label class="field" style="margin-top:14px">How PT gets the photos<select data-ptmethod>' +
-      '<option value="photos"' + (S.company.pt_method !== "link" && S.company.pt_method !== "pdf" ? " selected" : "") + ">In the WhatsApp chat: reg, then the photos (10 at a time on Android)</option>" +
-      '<option value="pdf"' + (S.company.pt_method === "pdf" ? " selected" : "") + ">As one PDF with all the photos (one tap)</option>" +
-      '<option value="link"' + (S.company.pt_method === "link" ? " selected" : "") + ">As one link to all the photos (only once PT has agreed)</option></select></label></div>";
+      ptMethodSelect("android", "How PT gets the photos: Android phones (and computers)", S.company.pt_method) +
+      ptMethodSelect("ios", "How PT gets the photos: iPhones", S.company.pt_method_ios || S.company.pt_method) +
+      '<p class="note">This phone is ' + (IS_IOS ? "an iPhone" : "not an iPhone") + ", so it uses the " + (IS_IOS ? "iPhone" : "Android") + " choice.</p></div>";
+  }
+  function ptMethodSelect(dev, label, now) {
+    function o(v, t) { return '<option value="' + v + '"' + (now === v || (v === "photos" && now !== "pdf" && now !== "link") ? " selected" : "") + ">" + t + "</option>"; }
+    return '<label class="field" style="margin-top:14px">' + label + '<select data-ptmethod="' + dev + '">' +
+      o("photos", "In the WhatsApp chat: reg, then the photos" + (dev === "android" ? " (10 at a time)" : "")) +
+      o("pdf", "As one PDF with all the photos (one tap)") +
+      o("link", "As one link to all the photos (only once PT has agreed)") + "</select></label>";
   }
   async function savePtMethod(sel) {
-    var r = await sb.rpc("set_pt_method", { p_method: sel.value });
+    var ios = sel.dataset.ptmethod === "ios";
+    var r = await sb.rpc(ios ? "set_pt_method_ios" : "set_pt_method", { p_method: sel.value });
     if (r.error) { toast(r.error.message, true); return render(); }
-    S.company.pt_method = r.data;
-    toast(r.data === "link" ? "PT photos now go as a link" : r.data === "pdf" ? "PT photos now go as one PDF" : "PT photos now go in the WhatsApp chat");
+    S.company[ios ? "pt_method_ios" : "pt_method"] = r.data;
+    toast((ios ? "iPhones: " : "Android: ") + (r.data === "link" ? "PT photos now go as a link" : r.data === "pdf" ? "PT photos now go as one PDF" : "PT photos now go in the WhatsApp chat"));
   }
   async function savePtNumber(btn) {
     btn.disabled = true;

@@ -52,7 +52,7 @@ const iso = (key, hhmm) => new Date(key + "T" + hhmm + ":00Z").toISOString();
 function makeDb(opts = {}) {
   const db = {
     me: { id: "s1", name: "RAKESH", role: "owner", company_id: "c1" },
-    company: { id: "c1", name: "TAKEOFF", slug: "takeoff", yards: ["NB", "S"], drops_day_end: "06:00:00", brand: {}, time_zone: "Europe/London", pt_whatsapp: "447900000000", pt_method: opts.ptMethod || "photos", pt_copy_store: opts.ptStore || "supabase", overstay_rate: 0 },
+    company: { id: "c1", name: "TAKEOFF", slug: "takeoff", yards: ["NB", "S"], drops_day_end: "06:00:00", brand: {}, time_zone: "Europe/London", pt_whatsapp: "447900000000", pt_method: opts.ptMethod || "photos", pt_method_ios: opts.ptMethodIos || opts.ptMethod || "photos", pt_copy_store: opts.ptStore || "supabase", overstay_rate: 0 },
     staff: [{ id: "s1", name: "RAKESH", role: "owner", active: true }, { id: "s2", name: "SUGU", role: "office", active: true }],
     sheets: [
       { id: "d0", company_id: "c1", kind: "drops", day: TONIGHT },
@@ -124,6 +124,7 @@ function rpc(db, fn, a) {
       return db.ptLinks.filter((l) => { const b = row(l.booking_id); return b && (b.id === me.id || b.ref === me.ref); }).map((l) => ({ token: l.token, n: l.paths.length, at: l.at, by: "RAKESH" }));
     }
     case "set_pt_method": db.company.pt_method = a.p_method; return a.p_method;
+    case "set_pt_method_ios": db.company.pt_method_ios = a.p_method; return a.p_method;
     default: return null;
   }
 }
@@ -326,7 +327,7 @@ async function ptNoBitmap() {
   check("PT on a phone that refuses createImageBitmap: sharing works, copies made small (marked 3601)", (await page.evaluate(() => window.__shares.length)) >= 1 && (db.uploadMarks || []).length === 3 && db.uploadMarks.every((m) => m === "3601"), db.uploadMarks);
 }
 async function ptRun(method, shots, opts = {}) {
-  const db = makeDb({ ptMethod: method, ptStore: opts.store }), page = await phone(browser, db, opts);
+  const db = makeDb({ ptMethod: method, ptMethodIos: opts.ios, ptStore: opts.store }), page = await phone(browser, db, opts);
   await open(page);
   await page.selectOption("#sheetPick", "p0"); await sleep(700);
   await page.click('.row[data-id="p1"] [data-pt]');
@@ -373,6 +374,18 @@ await scenario(async () => {
   // The car's panel lists the set.
   await page.click('.row[data-id="p1"] .reg'); await sleep(800);
   check("PT (R2): the car's panel shows the 12 photos", /12 photos/.test(await text(page, "#ptPhotos")), await text(page, "#ptPhotos"));
+});
+// Separate ways: photos on Android, PDF on iPhones.
+await scenario(async () => {
+  const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+  const { page } = await ptRun("photos", 2, { ios: "pdf", ua: IPHONE });
+  await page.waitForSelector("[data-ptpdf]", { timeout: 8000 });
+  check("PT (iPhone): uses the iPhone choice (PDF), not Android's (photos)", await page.locator("[data-ptpdf]").count() === 1 && await page.locator("[data-ptreg]").count() === 0);
+});
+await scenario(async () => {
+  const { page } = await ptRun("photos", 2, { ios: "pdf" });
+  await sleep(1500);
+  check("PT (Android): uses the Android choice (photos)", await page.locator("[data-ptreg]").count() === 1 && await page.locator("[data-ptpdf]").count() === 0);
 });
 // The iPhone way (no createImageBitmap) with R2: sharing still works, copies still small.
 await scenario(async () => {
@@ -483,10 +496,13 @@ await scenario(async () => {
   await open(page);
   await page.click("#menuBtn"); await sleep(300);
   await page.click('#menuBody [data-view="settings"]'); await sleep(500);
-  const opts = await page.locator("[data-ptmethod] option").allInnerTexts();
+  const opts = await page.locator('[data-ptmethod="android"] option').allInnerTexts();
   check("Settings offers the three PT ways", opts.length === 3 && /PDF/.test(opts.join()) && /link/.test(opts.join()), opts);
-  await page.selectOption("[data-ptmethod]", "pdf"); await sleep(500);
+  check("Settings has a separate PT choice for iPhones", await page.locator('[data-ptmethod="ios"] option').count() === 3);
+  await page.selectOption('[data-ptmethod="android"]', "pdf"); await sleep(500);
   check("choosing PDF saves it", db.company.pt_method === "pdf" && db.calls.some((c) => c.fn === "set_pt_method"));
+  await page.selectOption('[data-ptmethod="ios"]', "link"); await sleep(500);
+  check("the iPhone choice saves on its own", db.company.pt_method_ios === "link" && db.company.pt_method === "pdf" && db.calls.some((c) => c.fn === "set_pt_method_ios"));
   check("no sideways scrolling in Settings", await noSideScroll(page));
 });
 
