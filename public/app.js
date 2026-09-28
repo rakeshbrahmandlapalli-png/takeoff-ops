@@ -432,7 +432,13 @@
       if (op.rowId) await refreshRow(op.rowId);     // put back what the database really holds
     } else if (r.data && r.data.id && !S.pending[r.data.id]) {
       var idx = S.rows.findIndex(function (x) { return x.id === r.data.id; });
-      if (idx >= 0) S.rows[idx] = r.data;
+      // Moved to another day's sheet (return date changed): it leaves this board.
+      if (idx >= 0 && r.data.sheet_id && r.data.sheet_id !== S.sheetId) {
+        S.rows.splice(idx, 1);
+        var to = (S.sheets || []).filter(function (x) { return x.id === r.data.sheet_id; })[0];
+        toast((r.data.reg || "Car") + " moved to " + (to ? sheetLabel(to) : "another day") + ".");
+        if ($("panel").open && panelRow && panelRow.id === r.data.id) $("panel").close();
+      } else if (idx >= 0) S.rows[idx] = r.data;
     }
     if (!$("panel").open && !yardOpen()) render();
     flush();

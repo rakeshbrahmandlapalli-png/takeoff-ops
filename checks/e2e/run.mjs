@@ -112,7 +112,8 @@ function rpc(db, fn, a) {
     case "set_overstay_agreed": { const b = row(a.p_booking); b.charge_agreed = a.p_amount; b.charge_reason = a.p_amount == null ? "" : (a.p_reason || ""); return b; }
     case "remove_booking": { const b = row(a.p_booking); Object.assign(b, { removed_at: new Date().toISOString(), removed_reason: a.p_reason, removed_by: "s1" }); return b; }
     case "restore_booking": { const b = db.bookings.find((x) => x.id === a.p_booking); Object.assign(b, { removed_at: null, removed_reason: "" }); return b; }
-    case "set_return": { const b = row(a.p_booking); if (!b.orig_return_at) b.orig_return_at = b.return_at; b.return_at = new Date(a.p_return_local.replace(" ", "T") + ":00+01:00").toISOString(); return b; }
+    case "set_return": { const b = row(a.p_booking); if (!b.orig_return_at) b.orig_return_at = b.return_at; b.return_at = new Date(a.p_return_local.replace(" ", "T") + ":00+01:00").toISOString();
+      const to = db.sheets.find((x) => x.kind === "drops" && x.day === a.p_return_local.slice(0, 10) && x.day > (db.sheets.find((y) => y.id === b.sheet_id) || {}).day); if (to) b.sheet_id = to.id; return b; }
     case "set_reg": { const b = row(a.p_booking); b.reg = a.p_reg; return b; }
     case "set_yard": { const b = row(a.p_booking); b.yard = a.p_yard; return b; }
     case "set_flight": { const b = row(a.p_booking); b.flight = a.p_flight; return b; }
@@ -1039,6 +1040,10 @@ await scenario(async () => {
   const sr = db.calls.find((c) => c.fn === "set_return");
   check("return by hand: Save sends the new date and time", !!sr && sr.args.p_return_local === addDays(TONIGHT, 2) + " 23:30", sr && sr.args);
   check("return by hand: the row shows WAS and the first day", /WAS/.test(await text(page, '.row[data-id="b1"]')), await text(page, '.row[data-id="b1"]'));
+  // Changed to tomorrow, whose sheet is already in: the car goes there and leaves tonight's board.
+  await page.click('.row[data-id="b2"] .reg'); await sleep(400);
+  await page.fill("#retD", TOMORROW); await page.fill("#retT", "1800"); await page.click("[data-savepanel]"); await sleep(800);
+  check("return by hand to a day whose sheet is in: the car leaves tonight's board", await page.locator('.row[data-id="b2"]').count() === 0 && db.bookings.find((x) => x.id === "b2").sheet_id === "d1");
 });
 
 // 20. a big night: 400 cars on one sheet stays quick
