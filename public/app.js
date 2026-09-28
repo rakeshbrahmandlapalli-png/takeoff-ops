@@ -1143,7 +1143,7 @@
       return;
     }
     $("panel").classList.add("cam");
-    $("panelBody").innerHTML = '<div class="camview"><video id="camVideo" autoplay playsinline muted></video><div class="camflash" id="camFlash"></div><div class="camring" id="camRing"></div><button type="button" class="camtorch hidden" id="camTorch" data-camtorch aria-pressed="false">⚡ FLASH OFF</button><button type="button" class="camtorch camlens hidden" id="camLens" data-camlens>LENS</button></div>' +
+    $("panelBody").innerHTML = '<div class="camview"><video id="camVideo" autoplay playsinline muted></video><div class="camflash" id="camFlash"></div><div class="camring" id="camRing"></div><button type="button" class="camtorch hidden" id="camTorch" data-camtorch aria-pressed="false">⚡ FLASH OFF</button><button type="button" class="camtorch camlens hidden" id="camLens" data-camlens>LENS</button>' + camTipsHtml() + "</div>" +
       '<div class="cambar"><span class="camcount" id="camCount">' + camCountText() + '</span><button type="button" class="shutter" data-shutter aria-label="Take photo"></button><button type="button" class="camdone" data-camdone>Done</button></div>';
     $("camVideo").srcObject = camStream;
     // Keep the picture sharp as the phone moves round the car.
@@ -1156,6 +1156,29 @@
     camTorch = false;
     if (caps.torch) show("camTorch", true);
     camLensButton(track);
+  }
+  // ── PT checklist on the camera screen ──
+  // A reminder of how to photograph so small marks show (a chip low on a
+  // door was lost in reflections, 28 Sept). ✕ folds it to a small button;
+  // the phone remembers.
+  var CAM_TIPS_KEY = "takeoff-cam-tips";
+  var CAM_TIPS = [
+    "Every side, front and back, and all 4 corners",
+    "Crouch to door height for each side",
+    "Step to one side so lights don't shine off the paint",
+    "Close-up of every mark, however small",
+    "Wheels, bumpers and mirrors",
+  ];
+  function camTipsOpen() { try { return localStorage.getItem(CAM_TIPS_KEY) !== "off"; } catch (e) { return true; } }
+  function camTipsHtml() {
+    if (!camTipsOpen()) return '<button type="button" class="camtipsbtn" data-camtips="on">✓ CHECKLIST</button>';
+    return '<div class="camtips" id="camTips"><button type="button" class="camtipsx" data-camtips="off" aria-label="Hide the checklist">✕</button>' +
+      "<b>PT checklist</b><ol>" + CAM_TIPS.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ol></div>";
+  }
+  function camTipsSet(on) {
+    try { localStorage.setItem(CAM_TIPS_KEY, on ? "on" : "off"); } catch (e) {}
+    var old = document.querySelector(".camtips, .camtipsbtn"); if (!old) return;
+    var d = document.createElement("div"); d.innerHTML = camTipsHtml(); old.replaceWith(d.firstChild);
   }
   // ── Which back lens ──
   // A browser asking for "the back camera" can be given any of a phone's back
@@ -2013,6 +2036,7 @@
     if (t.dataset.shutter !== undefined) return ptShoot(r);
     if (t.dataset.camtorch !== undefined) return camToggleTorch();
     if (t.dataset.camlens !== undefined) return camLensNext();
+    if (t.dataset.camtips) return camTipsSet(t.dataset.camtips === "on");
     if (t.dataset.camdone !== undefined) { t.disabled = true; t.textContent = "Saving…"; return camShots.then(function () { camStop(); openPt(r); ptStore(); ptPump(r); }); }
     if (t.dataset.ptretry !== undefined) return ptRetry(r);
     if (t.dataset.ptlinkshare !== undefined) {
@@ -2130,6 +2154,26 @@
     await loadRows();
     toast(x.data.reg + " added");
     $("panel").close();
+    if (sh.kind === "picks") await askDrops([x.data.id]);
+  }
+  // A new PICKS car (added by hand, or new in a re-imported file) booked back
+  // on a day whose DROPS sheet is already in isn't on that DROPS sheet: ask,
+  // and put it there (database part 50).
+  async function askDrops(ids) {
+    if (!ids || !ids.length || !can("import")) return;
+    var m = await sb.rpc("drops_missing", { p_ids: ids });
+    var list = (m && m.data) || []; if (!list.length) return;
+    function line(x) { return (x.reg || "NO REG") + (x.name ? " (" + x.name + ")" : "") + ", back " + dayShort(x.return_at) + " " + hhmm(x.return_at); }
+    var q = list.length === 1
+      ? line(list[0]) + ".\n\nThe DROPS sheet for " + sheetLabel({ day: list[0].day, kind: "drops" }).replace(/^DROPS /, "") + " is already in. Add this car to it too?"
+      : list.length + " new cars are booked back on a day whose DROPS sheet is already in:\n\n" + list.map(line).join("\n") + "\n\nAdd them to DROPS too?";
+    if (!confirm(q)) return;
+    var done = [];
+    for (var i = 0; i < list.length; i++) {
+      var a = await sb.rpc("add_pick_to_drops", { p_booking: list[i].id });
+      if (a.error) toast(a.error.message, true); else done.push(list[i].reg);
+    }
+    if (done.length) toast("Added to DROPS: " + done.join(", ") + ". Add the flight there.");
   }
 
   // ── PICKS: returns by day, stats by hour (as on the Sheet app) ──
@@ -2703,6 +2747,8 @@
     // Overstays were carried in from older days and early returns from later
     // ones, so they're never in today's file.
     var gone = S.rows.filter(function (x) { return x.ref && !inFile[x.ref] && !x.overstay && !x.early; });
+    // New cars in a re-imported PICKS file: any back on a day whose DROPS is already in?
+    if (I.kind === "picks" && r.data.new_marked) await askDrops(r.data.added_ids);
     if (gone.length) openGone(gone, r.data.undo_id);
     S.recentImports = null;
   }
