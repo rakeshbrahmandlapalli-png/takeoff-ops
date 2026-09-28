@@ -477,12 +477,12 @@
   function redrawOnReturn() { if ((S.view === "board" || S.view === "flights") && !$("panel").open) render(); }
 
   // Settings that can change mid-shift (where PT copies go, the PT way) are
-  // read again when the app comes back and when PT starts: at most once every
-  // 5 minutes, a few bytes. Switching the copies back to Supabase then reaches
+  // read again when the app comes back (at most every 5 minutes) and when PT
+  // starts (at most every minute, since the PT way matters then): a few bytes. Switching the copies back to Supabase then reaches
   // phones that are already open, not only ones that reload.
   var companyAt = Date.now();
-  function companyFresh() {
-    if (!S.company || Date.now() - companyAt < 5 * 60000) return;
+  function companyFresh(soon) {
+    if (!S.company || Date.now() - companyAt < (soon ? 60000 : 5 * 60000)) return;
     companyAt = Date.now();
     sb.from("companies").select("pt_copy_store, pt_method, pt_method_ios").eq("id", S.company.id).single()
       .then(function (r) { if (r.data && S.company) Object.assign(S.company, r.data); }, function () {});
@@ -1918,7 +1918,7 @@
   }
   // Tapping PT on a car: carry on where it left off, or straight into the camera.
   async function ptStart(r) {
-    companyFresh();
+    companyFresh(true);
     if (!pt || pt.id !== r.id) {
       var rec = (await ptSaved()).filter(function (x) { return x.id === r.id && Date.now() - x.at < PT_KEEP_MS; })[0];
       if (rec && ptMethod() !== "link") ptRestore(rec);

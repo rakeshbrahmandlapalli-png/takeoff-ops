@@ -881,6 +881,23 @@ await scenario(async () => {
   check("after the update the board is back", await page.locator("#main .row").count() > 0);
 });
 
+// A car with several tags (CHECK FLIGHT NO., OVERSTAY, £ DUE) on a phone: every tag stays
+// clear of the buttons (on 28 Sept they ran under SENT and hid the money due).
+await scenario(async () => {
+  const db = makeDb(), b3 = db.bookings.find((x) => x.id === "b3");
+  db.company.overstay_rate = 30;
+  Object.assign(b3, { flight: "TBC", overstay: true, called_word: "Called", called_at: iso(TONIGHT, "22:51"), sent_at: iso(TONIGHT, "22:58"), sent_by: "s2", return_at: iso(addDays(TONIGHT, -1), "23:00") });
+  const page = await phone(browser, db, { width: 390 });
+  await open(page); await page.waitForSelector('.row[data-id="b3"] .reg');
+  const r = await page.evaluate(() => {
+    const row = document.querySelector('.row[data-id="b3"]'), acts = row.querySelector(".acts").getBoundingClientRect();
+    return [...row.querySelectorAll(".l2 .tag")].map((t) => { const b = t.getBoundingClientRect(); return { t: t.textContent, right: Math.round(b.right), acts: Math.round(acts.left) }; });
+  });
+  check("row tags: CHECK FLIGHT NO., OVERSTAY and £ DUE all shown", /CHECK FLIGHT/.test(JSON.stringify(r)) && /OVERSTAY/.test(JSON.stringify(r)) && /DUE/.test(JSON.stringify(r)), r);
+  check("row tags: none runs under the buttons", r.length > 0 && r.every((x) => x.right <= x.acts), r);
+  await page.screenshot({ path: process.env.SHOT_DIR ? process.env.SHOT_DIR + "/row-tags.png" : "/dev/null", clip: { x: 0, y: 0, width: 390, height: 700 } }).catch(() => {});
+});
+
 // 18a. back in the app after a while (WhatsApp, a call): only what changed is
 // fetched, not the whole sheet (the free plan's download allowance).
 await scenario(async () => {
