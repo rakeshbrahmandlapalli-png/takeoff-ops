@@ -2025,9 +2025,32 @@
     h += '<div id="ptPhotos"></div>';
     if (can("import")) h += '<button type="button" class="link rmcar" data-removecar>Remove this car (no show, cancelled)</button>';
     h += '<div class="pbtns"><button type="button" data-close>Close</button>' + (can("note") || can("flights") || canReg || (drops && canReturn(r)) ? '<button type="button" class="save" data-savepanel>Save</button>' : "") + "</div>";
+    if (can("log")) h += '<div id="carHist"></div>';
     $("panelBody").innerHTML = h;
     if (!$("panel").open) $("panel").showModal();
     ptPhotosList(r);
+    carHistory(r);
+  }
+  // Everything done to this car, who and when: this row and its other half
+  // (the PICKS and DROPS rows of one booking share the ref). Office only,
+  // like the activity log. "OFFICE" is the shared office login.
+  async function carHistory(r) {
+    var el = $("carHist"); if (!el) return;
+    var ids = [r.id], kinds = {}; kinds[r.id] = r.kind;
+    if (r.ref) {
+      var tw = await sb.from("bookings").select("id, kind").eq("ref", r.ref).neq("id", r.id);
+      (tw.data || []).forEach(function (x) { ids.push(x.id); kinds[x.id] = x.kind; });
+    }
+    var q = await sb.from("activity").select("at, action, value, staff_name, booking_id").in("booking_id", ids).order("at", { ascending: false }).limit(100);
+    el = $("carHist"); if (!el || panelRow !== r) return;
+    if (q.error) { el.innerHTML = '<label>HISTORY</label><p class="hint">Couldn\'t load the history.</p>'; return; }
+    var list = q.data || [], both = ids.length > 1;
+    el.innerHTML = '<label>HISTORY</label>' + (!list.length ? '<p class="hint">Nothing done to this car in the app yet.</p>' :
+      '<div class="hist">' + list.map(function (a) {
+        return '<div><span class="hw num">' + esc(dayShort(a.at) + " " + hhmm(a.at)) + '</span><span class="hb"><b>' + esc(a.staff_name || "System") + "</b> · " +
+          esc(a.action) + (both ? ' <small class="hk">' + esc(String(kinds[a.booking_id] || "").toUpperCase()) + "</small>" : "") +
+          (a.value ? '<span class="hv">' + esc(a.value) + "</span>" : "") + "</span></div>";
+      }).join("") + "</div>");
   }
   // The car's PT photos (kept 3 days in Supabase, 30 in Cloudflare). View opens the same page PT gets.
   async function ptPhotosList(r) {
