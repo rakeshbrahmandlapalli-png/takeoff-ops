@@ -818,15 +818,23 @@
   }
   function chargePanelHtml(r) {
     var d = chargeDue(r);
-    if (!d && !r.charge_method) return "";
-    var h = "<label>OVERSTAY CHARGE</label>";
+    // No charge yet: the office can add one for any reason (database part 52).
+    if (!d && !r.charge_method) {
+      if (!can("clear") || r.cleared_at) return "";
+      if (S.chargeAdd !== r.id) return '<button type="button" class="link" data-chargeadd>+ ADD CHARGE</button>';
+      return "<label>ADD A CHARGE</label>" +
+        '<div class="when2 chgpay"><input id="chgAmount" type="number" inputmode="decimal" min="0" step="0.01" placeholder="£" aria-label="Amount">' +
+        '<input id="chgReason" maxlength="80" placeholder="Reason, e.g. return date changed" aria-label="Reason" style="flex:3!important"></div>' +
+        '<div class="when2 chgpay"><button type="button" data-chargeagreed="set">SET AS DUE</button></div>';
+    }
+    var h = "<label>" + (d && d.calc ? "OVERSTAY CHARGE" : "CHARGE") + "</label>";
     if (r.charge_method) {
       h += '<div class="chgbox pd"><b>' + (r.charge_method === "waived" ? "Waived " + money(r.charge_amount) : money(r.charge_amount) + " paid by " + r.charge_method) + "</b><span>" +
         esc(staffName(r.charge_by)) + (r.charge_at ? " · " + esc(dayShort(r.charge_at) + " " + hhmm(r.charge_at)) : "") + "</span>" +
         (can("clear") ? '<button type="button" class="link" data-chargeundo>Undo</button>' : "") + "</div>";
       return h;
     }
-    if (d.agreed) h += '<div class="chgbox"><b>' + money(d.amount) + " due</b><span>agreed" + (d.calc ? " · was " + money(d.calc) + " (" + d.days + (d.days === 1 ? " day" : " days") + ")" : "") + "</span>" +
+    if (d.agreed) h += '<div class="chgbox"><b>' + money(d.amount) + " due</b><span>" + esc(r.charge_reason || "agreed") + (d.calc ? " · was " + money(d.calc) + " (" + d.days + (d.days === 1 ? " day" : " days") + ")" : "") + "</span>" +
       (can("clear") ? '<button type="button" class="link" data-chargeagreed="">Undo</button>' : "") + "</div>";
     else h += '<div class="chgbox"><b>' + money(d.amount) + " due</b><span>" + d.days + (d.days === 1 ? " day" : " days") + " × " + money(S.company.overstay_rate) + (r.cleared_at ? "" : " · so far, still going up") + "</span></div>";
     if (can("clear")) h += '<div class="when2 chgpay"><input id="chgAmount" type="number" inputmode="decimal" min="0" step="0.01" value="' + d.amount + '" aria-label="Amount">' +
@@ -847,9 +855,12 @@
   // An agreed amount (a discount) before it's paid; "" puts back the daily-rate sum.
   function setAgreed(r, how) {
     var amt = how ? parseFloat(($("chgAmount") || {}).value) : null;
-    if (how && (isNaN(amt) || amt < 0)) return toast("Check the amount.", true);
-    run("set_overstay_agreed", { p_booking: r.id, p_amount: amt }, r, function (x) { x.charge_agreed = amt; });
-    toast(how ? money(amt) + " due, saved" : "Back to the daily rate");
+    if (how && (isNaN(amt) || amt < 0 || (amt === 0 && !overstayDue(r)))) return toast("Check the amount.", true);
+    // A new charge keeps its reason; changing an existing one keeps the reason it had.
+    var why = how ? ($("chgReason") ? $("chgReason").value.trim() : (r.charge_reason || "")) : "";
+    run("set_overstay_agreed", { p_booking: r.id, p_amount: amt, p_reason: why }, r, function (x) { x.charge_agreed = amt; x.charge_reason = amt == null ? "" : why; });
+    S.chargeAdd = null;
+    toast(how ? money(amt) + " due, saved" : overstayDue(r) ? "Back to the daily rate" : "Charge removed");
   }
   // The flights check couldn't find this number among the day's arrivals, or
   // it isn't a flight number at all (TBC, …): the office needs to look.
@@ -2160,6 +2171,7 @@
     if (t.dataset.ptwhy) return ptTickWhy(r, t.dataset.ptwhy);
     if (t.dataset.charge) { recordCharge(r, t.dataset.charge); return openPanel(r); }
     if (t.dataset.chargeundo !== undefined) { recordCharge(r, ""); return openPanel(r); }
+    if (t.dataset.chargeadd !== undefined) { S.chargeAdd = r.id; openPanel(r); var a = $("chgAmount"); if (a) a.focus(); return; }
     if (t.dataset.chargeagreed !== undefined) { setAgreed(r, t.dataset.chargeagreed); return openPanel(r); }
     if (t.dataset.removecar !== undefined) return askRemove(r);
     if (t.dataset.early !== undefined) return earlyMove(r, t, false);
