@@ -101,6 +101,7 @@ function rpc(db, fn, a) {
     case "recent_imports": return db.imports || [];
     case "pt_copy_report": (db.reports = db.reports || []).push(a); return null;
     case "undo_import": { const i = (db.imports || []).find((x) => x.id === a.p_id); if (i) i.undone = true; return { removed: 2, kept: 0, restored: 0, sheet_id: "p0", sheet_gone: false }; }
+    case "pt_unsaved": return db.ptUnsaved || [];
     case "drops_missing": return (a.p_ids || []).map((id) => db.bookings.find((x) => x.id === id)).filter((b) => b && b.kind === "picks" && b.return_at)
       .map((b) => ({ b, d: db.sheets.find((s) => s.kind === "drops" && s.day === b.return_at.slice(0, 10)) }))
       .filter(({ b, d }) => d && !db.bookings.some((x) => x.sheet_id === d.id && x.reg === b.reg))
@@ -510,10 +511,29 @@ await scenario(async () => {
   await page.waitForSelector("[data-camdone]", { timeout: 8000 }); await sleep(400);
   await page.click("[data-camdone]"); await page.waitForSelector("[data-ptmark]", { timeout: 5000 });
   await page.click("[data-ptmark]");
-  await sleep(800);
+  await sleep(500);
+  const ask = await text(page, "#panelBody");
+  check("PT without photos: asks first (open camera, or a reason), not ticked yet", /No photos in the app/.test(ask) && await page.locator("[data-ptcamgo]").count() === 1 &&
+    await page.locator("[data-ptwhy]").count() === 4 && !db.calls.some((c) => c.fn === "tap_pick" && c.args.p_booking === "p2" && c.args.p_key === "pt"), ask);
+  await page.click('[data-ptwhy="Camera not working"]'); await sleep(800);
   const hasBtn = await page.locator("[data-ptmark]").count();
-  check("PT ticked without photos: ticked, and reported as such", db.calls.some((c) => c.fn === "tap_pick" && c.args.p_booking === "p2" && c.args.p_key === "pt") &&
-    (db.reports || []).some((x) => x.p_booking === "p2" && /ticked without photos/.test(x.p_detail)), { hasBtn, reports: db.reports, taps: db.calls.filter((c) => c.fn === "tap_pick").map((c) => c.args) });
+  check("PT ticked without photos: ticked, and the reason reported", db.calls.some((c) => c.fn === "tap_pick" && c.args.p_booking === "p2" && c.args.p_key === "pt") &&
+    (db.reports || []).some((x) => x.p_booking === "p2" && /ticked without photos in the app: Camera not working/.test(x.p_detail)), { hasBtn, reports: db.reports, taps: db.calls.filter((c) => c.fn === "tap_pick").map((c) => c.args) });
+});
+// Photos taken in the app, then "Tick PT without sending": no question, the copy is still saved.
+await scenario(async () => {
+  const { db, page } = await ptRun("photos", 2);
+  await page.click("[data-ptmark]"); await sleep(3000);
+  check("PT tick without sending, photos taken: ticked, no reason asked", db.calls.some((c) => c.fn === "tap_pick" && c.args.p_booking === "p1" && c.args.p_key === "pt") && await page.locator("[data-ptwhy]").count() === 0);
+  check("PT tick without sending, photos taken: the app still saves its copy", db.ptLinks.length === 1 && db.ptLinks[0].paths.length === 2, db.ptLinks.map((l) => l.paths.length));
+});
+// The office sees PT NOT SAVED on a car whose PT photos aren't in the app.
+await scenario(async () => {
+  const db = makeDb(); db.bookings.find((x) => x.id === "p1").pt_at = new Date(Date.now() - 3 * 3600000).toISOString(); db.ptUnsaved = ["p1"];
+  const page = await phone(browser, db);
+  await open(page);
+  await page.selectOption("#sheetPick", "p0"); await sleep(1000);
+  check("office: PT NOT SAVED shows on the car's row", /PT NOT SAVED/.test(await text(page, '.row[data-id="p1"]')) && !/PT NOT SAVED/.test(await text(page, '.row[data-id="p2"]')));
 });
 // Cloudflare's side down: PT itself is untouched, nothing crashes.
 await scenario(async () => {
@@ -523,9 +543,14 @@ await scenario(async () => {
   await page.click("[data-ptshare]"); await sleep(2500);
   check("PT (R2 down): sharing and the PT tick still work", (await page.evaluate(() => window.__shares.length)) >= 1 && db.calls.some((c) => c.fn === "tap_pick" && c.args.p_key === "pt"));
   check("PT (R2 down): no copies saved, no errors", db.ptLinks.length === 0 && !(db.r2Puts || []).length && page.__errors.length === 0, page.__errors);
-  await sleep(35000);   // four tries, further apart each time
+  await sleep(30000);   // three tries (5 s, then 15 s): the office is told it's late
   const rep = (db.reports || []).find((x) => x.p_booking === "p1");
-  check("PT (R2 down): the phone reports why the copy failed", !!rep && /copy failed: 0 of 3 photos saved; Photo store not set up yet/.test(rep.p_detail) && /Android|computer|iPhone/.test(rep.p_detail), db.reports);
+  check("PT (R2 down): the phone reports it's still trying, and why", !!rep && /copy delayed, still trying: Photo store not set up yet/.test(rep.p_detail) && /Android|computer|iPhone/.test(rep.p_detail), db.reports);
+  check("PT (R2 down): no 'copy failed' yet, it hasn't given up", !(db.reports || []).some((x) => /copy failed/.test(x.p_detail)), db.reports);
+  // The connection comes back: it tries again at once and the set is saved.
+  db.r2Down = false;
+  await page.evaluate(() => window.dispatchEvent(new Event("online"))); await sleep(6000);
+  check("PT (R2 down): connection back, photos saved without reopening the app", db.ptLinks.length === 1 && db.ptLinks[0].paths.length === 3, db.ptLinks.map((l) => l.paths.length));
 });
 await scenario(async () => {
   const { db, page } = await ptRun("pdf", 8);

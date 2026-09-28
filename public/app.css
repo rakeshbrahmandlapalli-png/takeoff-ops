@@ -422,3 +422,5 @@ td input{width:100px;min-height:36px;padding:0 8px;border:1px solid var(--bad);b
 /* Weekly reminder to the owner to keep their own copy of the data. */
 .nudge{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between;padding:8px 12px;margin:8px 10px;border-left:4px solid #b45309;background:#fef3c7;color:#78350f;font-size:14px;}
 .nudge .btn{padding:6px 12px;}
+.ptwhy{display:flex;flex-direction:column;gap:8px;margin-top:6px;}
+.ptwhy button{min-height:46px;border:1px solid #c4c7cc;border-radius:7px;background:#fff;color:#202124;font-weight:600;font-size:14px;text-align:left;padding:0 14px;}
