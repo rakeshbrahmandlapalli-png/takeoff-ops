@@ -1255,8 +1255,8 @@
   }
   async function ptGrab(r, cur, when) {
     var v = $("camVideo"); if (!v || !v.videoWidth || pt !== cur) return;
-    var best = null, bestScore = -1;
-    for (var i = 0; i < CAM_BURST; i++) {
+    var best = await camStill(v), bestScore = best ? Infinity : -1;
+    for (var i = 0; i < CAM_BURST && bestScore !== Infinity; i++) {
       if (i) await new Promise(function (ok) { setTimeout(ok, CAM_GAP); });
       if (!v.videoWidth) break;
       var fr = null;
@@ -1276,6 +1276,55 @@
     cur.items.push({ file: b, url: thumb, state: cur.mode === "photos" ? "local" : "wait", n: cur.items.length + 1, ready: true });
     var el = $("camCount"); if (el) el.textContent = camCountText();
     ptPump(r);
+  }
+  // ── Android: a real photo ──
+  // Chrome on Android can ask the camera for a proper still photo (full size,
+  // the phone's own sharpening and noise clean-up) instead of a frame of
+  // video. It takes about half a second. If it fails or hangs twice, this
+  // phone goes back to the sharpest-frame way for the rest of the session.
+  var IS_ANDROID = /Android/i.test(navigator.userAgent), camIC = null, camStillFails = 0, CAM_STILL_WAIT = 5000;
+  async function camStill(v) {
+    if (!IS_ANDROID || camStillFails >= 2 || typeof ImageCapture === "undefined" || !camStream) return null;
+    var track = camStream.getVideoTracks()[0]; if (!track || track.readyState !== "live") return null;
+    try {
+      if (!camIC || camIC.track !== track) {
+        camIC = new ImageCapture(track); camIC.opts = {};
+        // No flash going off for each photo (the FLASH button is the torch).
+        var pc = await camIC.getPhotoCapabilities().catch(function () { return null; });
+        if (pc && (pc.fillLightMode || []).indexOf("off") !== -1) camIC.opts.fillLightMode = "off";
+      }
+      var blob = await Promise.race([camIC.takePhoto(camTorch ? {} : camIC.opts),
+        new Promise(function (ok, no) { setTimeout(function () { no(new Error("photo took too long")); }, CAM_STILL_WAIT); })]);
+      var im = await createImageBitmap(blob, { resizeWidth: PT_MAX, resizeQuality: "high" });
+      camStillFails = 0;
+      return camUpright(im, v);
+    } catch (e) {
+      camStillFails++; camIC = null;
+      // Logged (PT COPY line) so the office can see which phones can't.
+      if (camStillFails === 2 && pt) bkReport(pt.id, "real photos off on this phone, using video frames: " + String(e && e.message || e).slice(0, 80));
+      return null;
+    }
+  }
+  // Some phones hand the photo back on its side. It's turned to match the
+  // picture on screen: whichever quarter turn looks most like the video.
+  function camUpright(im, v) {
+    var vPortrait = v.videoHeight > v.videoWidth, pPortrait = im.height > im.width;
+    if (vPortrait === pPortrait) return im;
+    function grey(src, turn) {
+      var N = 48, c = document.createElement("canvas"); c.width = c.height = N;
+      var g = c.getContext("2d", { willReadFrequently: true });
+      if (turn) { g.translate(N / 2, N / 2); g.rotate(turn * Math.PI / 2); g.translate(-N / 2, -N / 2); }
+      g.drawImage(src, 0, 0, N, N);
+      var d = g.getImageData(0, 0, N, N).data, out = new Float32Array(N * N);
+      for (var i = 0; i < N * N; i++) out[i] = d[i * 4] + d[i * 4 + 1] + d[i * 4 + 2];
+      return out;
+    }
+    function diff(a, b) { var t = 0; for (var i = 0; i < a.length; i++) t += Math.abs(a[i] - b[i]); return t; }
+    var ref = grey(v, 0), turn = diff(grey(im, 1), ref) <= diff(grey(im, 3), ref) ? 1 : 3;
+    var c = document.createElement("canvas"); c.width = im.height; c.height = im.width;
+    var g = c.getContext("2d"); g.translate(c.width / 2, c.height / 2); g.rotate(turn * Math.PI / 2); g.drawImage(im, -im.width / 2, -im.height / 2);
+    if (im.close) im.close();
+    return c;
   }
   // How sharp a frame is: the middle of the picture made small and grey, then
   // how much each pixel differs from its neighbours (a blurred frame is smooth).
