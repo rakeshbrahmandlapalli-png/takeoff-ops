@@ -163,6 +163,10 @@ async function backend(ctx, db) {
     if (p === "/rest/v1/companies") return reply(200, db.company);
     // The owner's last "download company data" (backup reminder): today, unless a test says otherwise.
     if (p === "/rest/v1/activity" && q.action === "eq.SETTINGS") return reply(200, db.lastDownload === null ? [] : [{ at: db.lastDownload || new Date().toISOString() }]);
+    if (p === "/rest/v1/activity" && (q.booking_id || "").startsWith("in.(")) {
+      const ids = q.booking_id.slice(4, -1).split(",").map((x) => x.replace(/"/g, ""));
+      return reply(200, (db.activity || []).filter((a) => ids.includes(a.booking_id)).sort((x, y) => (x.at < y.at ? 1 : -1)));
+    }
     if (p === "/rest/v1/staff") return reply(200, db.staff);
     if (p === "/rest/v1/sheets") return reply(200, db.sheets);
     if (p === "/rest/v1/bookings") {
@@ -170,6 +174,8 @@ async function backend(ctx, db) {
       if (q.sheet_id && q.sheet_id.startsWith("eq.")) rows = rows.filter((b) => b.sheet_id === q.sheet_id.slice(3));
       if (q.sheet_id && q.sheet_id.startsWith("neq.")) rows = rows.filter((b) => b.sheet_id !== q.sheet_id.slice(4));
       if (q.id && q.id.startsWith("eq.")) rows = rows.filter((b) => b.id === q.id.slice(3));
+      if (q.id && q.id.startsWith("neq.")) rows = rows.filter((b) => b.id !== q.id.slice(4));
+      if (q.ref && q.ref.startsWith("eq.")) rows = rows.filter((b) => b.ref === q.ref.slice(3));
       if (q.or) { const m = q.or.match(/%([^%]+)%/); const t = m ? m[1].toUpperCase() : ""; rows = rows.filter((b) => [b.reg, b.ref, b.phone, b.name].join(" ").toUpperCase().replace(/\s+/g, "").includes(t)); }
       if ((q.select || "").includes("sheets")) rows = rows.map((b) => ({ ...b, sheets: (({ day, kind }) => ({ day, kind }))(db.sheets.find((s) => s.id === b.sheet_id)) }));
       if (req.headers()["accept"] === "application/vnd.pgrst.object+json") return reply(200, rows[0] || null);
@@ -400,6 +406,22 @@ await scenario(async () => {
   // The car's panel lists the set.
   await page.click('.row[data-id="p1"] .reg'); await sleep(800);
   check("PT (R2): the car's panel shows the 12 photos", /12 photos/.test(await text(page, "#ptPhotos")), await text(page, "#ptPhotos"));
+});
+// The car's panel shows its history: who did what, and when.
+await scenario(async () => {
+  const db = makeDb();
+  db.activity = [
+    { at: iso(TONIGHT, "07:57"), action: "RETURN CHANGED", value: "was 28 Sep 17:00, now 02 Oct 17:00 (changed by hand)", staff_name: "OFFICE", booking_id: "b1" },
+    { at: iso(TONIGHT, "07:58"), action: "NOTE", value: "<img src=x onerror=alert(1)>RTN DATE", staff_name: "SAM", booking_id: "b1" },
+    { at: iso(TONIGHT, "06:00"), action: "YARD", value: "NB", staff_name: "WASIM", booking_id: "b2" },
+  ];
+  const page = await phone(browser, db);
+  await open(page);
+  await page.click('.row[data-id="b1"] .reg'); await sleep(800);
+  const h = await text(page, "#carHist");
+  check("car history: shows who did what, newest first", /HISTORY/.test(h) && /SAM · NOTE/.test(h) && /OFFICE · RETURN CHANGED/.test(h) && h.indexOf("SAM") < h.indexOf("OFFICE") && /changed by hand/.test(h), h);
+  check("car history: only this car's entries", !/WASIM/.test(h));
+  check("car history: notes are shown as text, never run", /<img src=x/.test(h) && page.__errors.length === 0, page.__errors);
 });
 // The PT checklist on the camera screen: shown, folds away, remembered.
 await scenario(async () => {
