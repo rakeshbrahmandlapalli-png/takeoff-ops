@@ -1260,7 +1260,9 @@
       if (i) await new Promise(function (ok) { setTimeout(ok, CAM_GAP); });
       if (!v.videoWidth) break;
       var fr = null;
-      try { fr = await createImageBitmap(v); } catch (e) { fr = null; }
+      // Copied at upload size: a full 4K frame is 33 MB of memory, a 2400 px one 13 MB.
+      try { fr = await createImageBitmap(v, v.videoWidth >= v.videoHeight ? { resizeWidth: Math.min(PT_MAX, v.videoWidth), resizeQuality: "high" } : { resizeHeight: Math.min(PT_MAX, v.videoHeight), resizeQuality: "high" }); }
+      catch (e) { try { fr = await createImageBitmap(v); } catch (e2) { fr = null; } }
       if (!fr) { if (!best) best = v; break; }   // can't copy frames: the picture as it is now
       var sc = camSharpness(fr);
       if (sc > bestScore) { if (best && best.close) best.close(); best = fr; bestScore = sc; } else if (fr.close) fr.close();
@@ -1282,9 +1284,12 @@
   // the phone's own sharpening and noise clean-up) instead of a frame of
   // video. It takes about half a second. If it fails or hangs twice, this
   // phone goes back to the sharpest-frame way for the rest of the session.
+  // OFF (28 Sept): on some phones the camera hands back a 50+ MP photo and
+  // opening it ran the phone out of memory, crashing the app during PT.
+  var CAM_STILL_ON = false;
   var IS_ANDROID = /Android/i.test(navigator.userAgent), camIC = null, camStillFails = 0, CAM_STILL_WAIT = 5000;
   async function camStill(v) {
-    if (!IS_ANDROID || camStillFails >= 2 || typeof ImageCapture === "undefined" || !camStream) return null;
+    if (!CAM_STILL_ON || !IS_ANDROID || camStillFails >= 2 || typeof ImageCapture === "undefined" || !camStream) return null;
     var track = camStream.getVideoTracks()[0]; if (!track || track.readyState !== "live") return null;
     try {
       if (!camIC || camIC.track !== track) {

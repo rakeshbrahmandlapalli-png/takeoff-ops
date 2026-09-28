@@ -398,18 +398,18 @@ await scenario(async () => {
 const ANDROID = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36";
 await scenario(async () => {
   const { page } = await ptRun("photos", 3, { ua: ANDROID, still: "ok" });
-  check("PT (Android): each tap takes a real photo", await page.evaluate(() => window.__stills) === 3 && await page.locator(".ptthumbs img").count() === 3);
+  check("PT (Android): real photos are off (they crashed phones), each tap still kept", await page.evaluate(() => window.__stills) === 0 && await page.locator(".ptthumbs img").count() === 3);
   check("PT (Android): no errors", page.__errors.length === 0, page.__errors);
 });
 await scenario(async () => {
   const { page } = await ptRun("photos", 2, { ua: ANDROID, still: "side" });
   const dims = await page.evaluate(() => [...document.querySelectorAll(".ptthumbs img")].map((i) => [i.naturalWidth, i.naturalHeight]));
-  check("PT (Android): a photo handed back on its side is turned to match the screen", dims.length === 2 && dims.every(([w, h]) => w > h), dims);
+  check("PT (Android): photos come out the right way round", dims.length === 2 && dims.every(([w, h]) => w > h), dims);
 });
 await scenario(async () => {
   const { db, page } = await ptRun("photos", 4, { ua: ANDROID, still: "fail" });
   check("PT (Android): a camera that won't take photos falls back, every tap still kept", await page.locator(".ptthumbs img").count() === 4);
-  check("PT (Android): gives up on real photos after two tries", await page.evaluate(() => window.__stills) === 2, await page.evaluate(() => window.__stills));
+  check("PT (Android): the camera is never asked for a real photo", await page.evaluate(() => window.__stills) === 0, await page.evaluate(() => window.__stills));
 });
 // Separate ways: photos on Android, PDF on iPhones.
 await scenario(async () => {
