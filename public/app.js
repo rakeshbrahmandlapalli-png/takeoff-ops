@@ -319,12 +319,16 @@
       .subscribe(function (status) {
         if (ch !== channel) return;   // an old link closing late (after sign-out and back in)
         var was = S.live; S.live = status === "SUBSCRIBED"; renderSync();
-        // Back after the live link dropped: changes made meanwhile were missed, so fetch once.
-        if (S.live && liveLost) { liveLost = false; loadRows().then(function () { if (!$("panel").open && !yardOpen()) render(); }); }
-        if (was && !S.live) liveLost = true;
+        // Back after the live link dropped: changes made meanwhile were missed.
+        // A short drop (weak signal) fetches just those; a long one, the sheet.
+        if (S.live && liveLost) {
+          var gone = liveLostAt; liveLost = false;
+          (Date.now() - gone < QUICK_BACK ? catchUp(gone - 10000) : loadRows()).then(function () { if (!$("panel").open && !yardOpen()) render(); });
+        }
+        if (was && !S.live) { liveLost = true; liveLostAt = Date.now(); }
       });
   }
-  var liveLost = false;
+  var liveLost = false, liveLostAt = 0;
   function teardown() { if (channel) sb.removeChannel(channel); channel = null; liveLost = false; S.rows = []; snapForget(); }
 
   // ── the last board, kept on the phone ──
@@ -438,12 +442,21 @@
     var idx = S.rows.findIndex(function (x) { return x.id === id; });
     if (r.data && idx >= 0) S.rows[idx] = r.data;
   }
-  window.addEventListener("online", function () { flush(); if (S.me) loadRows().then(render); });
-  // Coming back to the app: a quick trip away (WhatsApp for PT, a call) with
-  // the live link still up needs no fetch, the board is already current. A
-  // longer one, or a dropped link, reloads. (Reloading on every return was
-  // ~3,000 full-sheet downloads a night: most of the free plan's traffic.)
-  var hiddenAt = 0, QUICK_BACK = 90000;
+  // Signal back: the cars changed meanwhile (a short gap), or the sheet (a long one).
+  var offlineAt = 0;
+  window.addEventListener("offline", function () { offlineAt = Date.now(); });
+  window.addEventListener("online", function () {
+    flush(); if (!S.me) return;
+    // A board from the phone's saved copy (S.offline) is reloaded whole.
+    (offlineAt && !S.offline && Date.now() - offlineAt < QUICK_BACK ? catchUp(offlineAt - 10000) : loadRows()).then(render);
+    offlineAt = 0;
+  });
+  // Coming back to the app: up to 30 minutes away (WhatsApp for PT, a call)
+  // with the live link still up fetches only the cars changed meanwhile. A
+  // longer time away, or a dropped link, reloads the sheet. (Reloading after
+  // 90 s was ~60 full-sheet downloads an hour: most of the free plan's
+  // download allowance.)
+  var hiddenAt = 0, QUICK_BACK = 30 * 60000;
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "hidden") { hiddenAt = Date.now(); return; }
     if (!S.me) return;
@@ -464,22 +477,31 @@
   function redrawOnReturn() { if ((S.view === "board" || S.view === "flights") && !$("panel").open) render(); }
 
   // Settings that can change mid-shift (where PT copies go, the PT way) are
-  // read again when the app comes back and when PT starts: at most once a
-  // minute, a few bytes. Switching the copies back to Supabase then reaches
+  // read again when the app comes back (at most every 5 minutes) and when PT
+  // starts (at most every minute, since the PT way matters then): a few bytes. Switching the copies back to Supabase then reaches
   // phones that are already open, not only ones that reload.
   var companyAt = Date.now();
-  function companyFresh() {
-    if (!S.company || Date.now() - companyAt < 60000) return;
+  function companyFresh(soon) {
+    if (!S.company || Date.now() - companyAt < (soon ? 60000 : 5 * 60000)) return;
     companyAt = Date.now();
     sb.from("companies").select("pt_copy_store, pt_method, pt_method_ios").eq("id", S.company.id).single()
       .then(function (r) { if (r.data && S.company) Object.assign(S.company, r.data); }, function () {});
   }
+  // The cars changed since a time: this sheet's in full, and just the ids of
+  // cars that moved to another sheet meanwhile (carried over, early return),
+  // so they leave this one. A few rows instead of the whole sheet.
   async function catchUp(sinceMs) {
     var want = S.sheetId; if (!want) return;
-    var r = await sb.from("bookings").select("*").eq("sheet_id", want).gte("updated_at", new Date(sinceMs).toISOString());
-    if (r.error || want !== S.sheetId) return;
+    var since = new Date(sinceMs).toISOString();
+    var both = await Promise.all([
+      sb.from("bookings").select("*").eq("sheet_id", want).gte("updated_at", since),
+      sb.from("bookings").select("id, sheet_id").neq("sheet_id", want).gte("updated_at", since).limit(1000)]);
+    var r = both[0], away = both[1];
+    if (r.error || want !== S.sheetId) { if (r.error && isDown(r)) return; return loadRows(); }
+    var gone = {}; (away.data || []).forEach(function (x) { gone[x.id] = 1; });
+    var n0 = S.rows.length; S.rows = S.rows.filter(function (x) { return !gone[x.id]; });
     (r.data || []).forEach(function (n) { onChange({ eventType: "UPDATE", new: n, old: {} }); });
-    if (!(r.data || []).length) redrawOnReturn();
+    if (!(r.data || []).length && S.rows.length === n0) redrawOnReturn(); else if (!$("panel").open && !yardOpen()) render();
   }
   function renderSync() {
     var el = $("sync"); if (!el) return;
@@ -1896,7 +1918,7 @@
   }
   // Tapping PT on a car: carry on where it left off, or straight into the camera.
   async function ptStart(r) {
-    companyFresh();
+    companyFresh(true);
     if (!pt || pt.id !== r.id) {
       var rec = (await ptSaved()).filter(function (x) { return x.id === r.id && Date.now() - x.at < PT_KEEP_MS; })[0];
       if (rec && ptMethod() !== "link") ptRestore(rec);
