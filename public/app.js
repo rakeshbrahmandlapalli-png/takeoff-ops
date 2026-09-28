@@ -457,7 +457,7 @@
   function companyFresh() {
     if (!S.company || Date.now() - companyAt < 60000) return;
     companyAt = Date.now();
-    sb.from("companies").select("pt_copy_store, pt_method").eq("id", S.company.id).single()
+    sb.from("companies").select("pt_copy_store, pt_method, pt_method_ios").eq("id", S.company.id).single()
       .then(function (r) { if (r.data && S.company) Object.assign(S.company, r.data); }, function () {});
   }
   async function catchUp(sinceMs) {
@@ -932,7 +932,8 @@
     }
   }
   // PT: photos taken in the app's camera (quickest) or picked from the gallery.
-  // Two ways to get them to PT, chosen in Settings (companies.pt_method):
+  // Ways to get them to PT, chosen in Settings: companies.pt_method on Android
+  // phones and computers, pt_method_ios on iPhones (part 49); ptMethod():
   //   photos  the reg goes to the PT WhatsApp chat, then the photos in albums
   //           (10 at a time on Android). Kept on the phone until all are sent,
   //           so a reload while WhatsApp is open carries on where it left off.
@@ -941,6 +942,7 @@
   // 2400 px at 85% is about a third of a full camera photo to upload, and
   // still sharper than WhatsApp's own HD.
   var pt = null, PT_MAX = 2400, PT_Q = 0.85, PT_AT_ONCE = 4;
+  function ptMethod() { var c = S.company || {}; return (IS_IOS && c.pt_method_ios) || c.pt_method || "photos"; }
   function ptCaption(r) { return r.reg || "NO REG"; }
   function ptToken() {
     var b = new Uint8Array(18); crypto.getRandomValues(b);
@@ -950,7 +952,7 @@
   function ptMessage(r) { var n = ptCount("done"); return ptCaption(r) + " – " + n + " PT photo" + (n === 1 ? "" : "s") + ": " + ptLink(); }
   function ptCount(state) { return pt ? pt.items.filter(function (x) { return !state || x.state === state; }).length : 0; }
   function openPt(r) {
-    if (!pt || pt.id !== r.id) { ptClear(); pt = { id: r.id, reg: ptCaption(r), mode: S.company && S.company.pt_method === "link" ? "link" : "photos", token: ptToken(), items: [], saved: 0, sent: 0 }; }
+    if (!pt || pt.id !== r.id) { ptClear(); pt = { id: r.id, reg: ptCaption(r), mode: ptMethod() === "link" ? "link" : "photos", token: ptToken(), items: [], saved: 0, sent: 0 }; }
     panelRow = r;
     if (pt.mode === "photos") return openPtPhotos(r);
     var num = (S.company && S.company.pt_whatsapp) || "", n = pt.items.length, ready = ptReady();
@@ -1240,18 +1242,57 @@
     camStream = null; camTorch = false; $("panel").classList.remove("cam");
   }
   // The picture on screen, saved at upload size in one go (no second squeeze).
+  // Tapping the button shakes the phone, and a single frame of video caught
+  // mid-shake is blurred. So each tap takes a few frames over about a quarter
+  // of a second and keeps the sharpest. Taps queue up, one photo each, and
+  // Done waits for the last one.
+  var camShots = Promise.resolve(), CAM_BURST = 4, CAM_GAP = 50;
   function ptShoot(r) {
     var v = $("camVideo"); if (!v || !v.videoWidth || !pt) return;
     var f = $("camFlash"); if (f) { f.classList.remove("go"); void f.offsetWidth; f.classList.add("go"); }
-    var k = Math.min(1, PT_MAX / Math.max(v.videoWidth, v.videoHeight));
-    var c = ptCanvas(v, Math.round(v.videoWidth * k), Math.round(v.videoHeight * k), Date.now(), pt.reg);
-    var cur = pt, thumb = ptThumb(c, c.width, c.height);
-    c.toBlob(function (b) {
-      if (!b || pt !== cur) return;
-      cur.items.push({ file: b, url: thumb, state: cur.mode === "photos" ? "local" : "wait", n: cur.items.length + 1, ready: true });
-      var el = $("camCount"); if (el) el.textContent = camCountText();
-      ptPump(r);
-    }, "image/jpeg", PT_Q);
+    var cur = pt, when = Date.now();
+    camShots = camShots.then(function () { return ptGrab(r, cur, when); }).catch(function (e) { oopsLog(e); });
+  }
+  async function ptGrab(r, cur, when) {
+    var v = $("camVideo"); if (!v || !v.videoWidth || pt !== cur) return;
+    var best = null, bestScore = -1;
+    for (var i = 0; i < CAM_BURST; i++) {
+      if (i) await new Promise(function (ok) { setTimeout(ok, CAM_GAP); });
+      if (!v.videoWidth) break;
+      var fr = null;
+      try { fr = await createImageBitmap(v); } catch (e) { fr = null; }
+      if (!fr) { if (!best) best = v; break; }   // can't copy frames: the picture as it is now
+      var sc = camSharpness(fr);
+      if (sc > bestScore) { if (best && best.close) best.close(); best = fr; bestScore = sc; } else if (fr.close) fr.close();
+    }
+    if (!best || pt !== cur) { if (best && best.close) best.close(); return; }
+    var w = best.videoWidth || best.width, h = best.videoHeight || best.height, k = Math.min(1, PT_MAX / Math.max(w, h));
+    var c = ptCanvas(best, Math.round(w * k), Math.round(h * k), when, cur.reg);
+    if (best.close) best.close();
+    var thumb = ptThumb(c, c.width, c.height);
+    var b = await new Promise(function (ok) { c.toBlob(ok, "image/jpeg", PT_Q); });
+    c.width = c.height = 0;
+    if (!b || pt !== cur) return;
+    cur.items.push({ file: b, url: thumb, state: cur.mode === "photos" ? "local" : "wait", n: cur.items.length + 1, ready: true });
+    var el = $("camCount"); if (el) el.textContent = camCountText();
+    ptPump(r);
+  }
+  // How sharp a frame is: the middle of the picture made small and grey, then
+  // how much each pixel differs from its neighbours (a blurred frame is smooth).
+  var camSharpCv = null;
+  function camSharpness(fr) {
+    try {
+      var W = 160, H = 120, c = camSharpCv || (camSharpCv = document.createElement("canvas")); c.width = W; c.height = H;
+      var g = c.getContext("2d", { willReadFrequently: true });
+      g.drawImage(fr, fr.width * 0.2, fr.height * 0.2, fr.width * 0.6, fr.height * 0.6, 0, 0, W, H);
+      var d = g.getImageData(0, 0, W, H).data, y = new Float32Array(W * H), sum = 0;
+      for (var p = 0; p < W * H; p++) y[p] = d[p * 4] * 0.3 + d[p * 4 + 1] * 0.59 + d[p * 4 + 2] * 0.11;
+      for (var row = 1; row < H - 1; row++) for (var col = 1; col < W - 1; col++) {
+        var q = row * W + col, l = 4 * y[q] - y[q - 1] - y[q + 1] - y[q - W] - y[q + W];
+        sum += l * l;
+      }
+      return sum;
+    } catch (e) { return 0; }
   }
   function ptRetry(r) { pt.saveFail = false; pt.items.forEach(function (x) { if (x.state === "fail") x.state = "wait"; }); openPt(r); ptPump(r); }
   // WhatsApp is open with the message: PT is done.
@@ -1538,7 +1579,7 @@
   // page share within a few seconds of the tap. Android takes 50 MB in one
   // share, so a very big set becomes parts (each one tap).
   var PDF_PART_MAX = 45 * 1048576, PDF_MAX = 2000, PDF_Q = 0.82;
-  function ptWantsPdf() { return !!(S.company && S.company.pt_method === "pdf"); }
+  function ptWantsPdf() { return ptMethod() === "pdf"; }
   function ptPdfState() {
     var n = pt.items.filter(function (x) { return x.state === "local"; }).length, P = pt.pdf;
     if (!P || P.count !== n) { ptPdfMake(pt); return { ready: false, label: "Making the PDF…" }; }
@@ -1700,7 +1741,7 @@
     companyFresh();
     if (!pt || pt.id !== r.id) {
       var rec = (await ptSaved()).filter(function (x) { return x.id === r.id && Date.now() - x.at < PT_KEEP_MS; })[0];
-      if (rec && S.company && S.company.pt_method !== "link") ptRestore(rec);
+      if (rec && ptMethod() !== "link") ptRestore(rec);
     }
     openPt(r);
     if (!pt.items.length && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ptCamera(r);
@@ -1918,7 +1959,7 @@
     if (t.dataset.shutter !== undefined) return ptShoot(r);
     if (t.dataset.camtorch !== undefined) return camToggleTorch();
     if (t.dataset.camlens !== undefined) return camLensNext();
-    if (t.dataset.camdone !== undefined) { camStop(); openPt(r); ptStore(); return ptPump(r); }
+    if (t.dataset.camdone !== undefined) { t.disabled = true; t.textContent = "Saving…"; return camShots.then(function () { camStop(); openPt(r); ptStore(); ptPump(r); }); }
     if (t.dataset.ptretry !== undefined) return ptRetry(r);
     if (t.dataset.ptlinkshare !== undefined) {
       // No PT number in Settings: share the message and pick the chat.
@@ -3044,13 +3085,22 @@
       '<label class="field" style="margin-top:14px">How PT gets the photos<select data-ptmethod>' +
       '<option value="photos"' + (S.company.pt_method !== "link" && S.company.pt_method !== "pdf" ? " selected" : "") + ">In the WhatsApp chat: reg, then the photos (10 at a time on Android)</option>" +
       '<option value="pdf"' + (S.company.pt_method === "pdf" ? " selected" : "") + ">As one PDF with all the photos (one tap)</option>" +
-      '<option value="link"' + (S.company.pt_method === "link" ? " selected" : "") + ">As one link to all the photos (only once PT has agreed)</option></select></label></div>";
+      '<option value="link"' + (S.company.pt_method === "link" ? " selected" : "") + ">As one link to all the photos (only once PT has agreed)</option></select></label>" +
+      ptIosSelect(S.company.pt_method_ios || S.company.pt_method) + "</div>";
+  }
+  // iPhones have their own choice (part 49); the one above is for every other phone.
+  function ptIosSelect(now) {
+    function o(v, t) { return '<option value="' + v + '"' + (now === v || (v === "photos" && now !== "pdf" && now !== "link") ? " selected" : "") + ">" + t + "</option>"; }
+    return '<label class="field" style="margin-top:14px">How PT gets the photos on iPhones<select data-ptmethod="ios">' +
+      o("photos", "In the WhatsApp chat: reg, then the photos") + o("pdf", "As one PDF with all the photos (one tap)") +
+      o("link", "As one link to all the photos (only once PT has agreed)") + "</select></label>";
   }
   async function savePtMethod(sel) {
-    var r = await sb.rpc("set_pt_method", { p_method: sel.value });
+    var ios = sel.dataset.ptmethod === "ios";
+    var r = await sb.rpc(ios ? "set_pt_method_ios" : "set_pt_method", { p_method: sel.value });
     if (r.error) { toast(r.error.message, true); return render(); }
-    S.company.pt_method = r.data;
-    toast(r.data === "link" ? "PT photos now go as a link" : r.data === "pdf" ? "PT photos now go as one PDF" : "PT photos now go in the WhatsApp chat");
+    S.company[ios ? "pt_method_ios" : "pt_method"] = r.data;
+    toast((ios ? "iPhones: " : "") + (r.data === "link" ? "PT photos now go as a link" : r.data === "pdf" ? "PT photos now go as one PDF" : "PT photos now go in the WhatsApp chat"));
   }
   async function savePtNumber(btn) {
     btn.disabled = true;
