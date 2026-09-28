@@ -1003,9 +1003,7 @@
     try {
       var when = await ptTakenAt(b);
       var im = await createImageBitmap(b), k = Math.min(1, PT_MAX / Math.max(im.width, im.height));
-      var c = document.createElement("canvas"); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
-      var g = c.getContext("2d"); g.drawImage(im, 0, 0, c.width, c.height); if (im.close) im.close();
-      ptStamp(g, c.width, c.height, when, reg);
+      var c = ptCanvas(im, Math.round(im.width * k), Math.round(im.height * k), when, reg); if (im.close) im.close();
       return await new Promise(function (ok) { c.toBlob(function (x) { ok(x || b); }, "image/jpeg", PT_Q); });
     } catch (e) { return b; }
   }
@@ -1015,14 +1013,19 @@
     var t = new Date(when).toLocaleString("en-GB", { timeZone: TZ, day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).replace(",", "");
     return t + (reg ? " · " + reg : "");
   }
-  function ptStamp(g, w, h, when, reg) {
+  // The photo on a canvas with a black bar UNDER it holding the date, time
+  // and reg, so the stamp never covers any of the car.
+  function ptBar(w) { return Math.max(28, Math.round(w * 0.032)); }
+  function ptCanvas(src, w, h, when, reg) {
+    var bar = ptBar(w), c = document.createElement("canvas"); c.width = w; c.height = h + bar;
+    var g = c.getContext("2d"); g.drawImage(src, 0, 0, w, h);
     try {
-      var text = ptStampText(when, reg), size = Math.max(14, Math.round(Math.min(w, h) * 0.045)), pad = Math.round(size * 0.45);
+      g.fillStyle = "#000"; g.fillRect(0, h, w, bar);
+      var size = Math.round(bar * 0.6);
       g.font = "700 " + size + "px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
-      var tw = g.measureText(text).width, bw = tw + pad * 2, bh = size + pad * 2;
-      g.fillStyle = "rgba(0,0,0,.55)"; g.fillRect(w - bw - pad, h - bh - pad, bw, bh);
-      g.fillStyle = "#fff"; g.textBaseline = "middle"; g.fillText(text, w - bw, h - pad - bh / 2);
+      g.fillStyle = "#fff"; g.textBaseline = "middle"; g.fillText(ptStampText(when, reg), Math.round(bar * 0.4), h + bar / 2);
     } catch (e) {}
+    return c;
   }
   // When a gallery photo was taken: the camera's own date in the photo (EXIF
   // DateTimeOriginal, UK local time); failing that, the file's date.
@@ -1129,7 +1132,7 @@
       if (camLive(camParked)) { clearTimeout(camParkTimer); camStream = camParked; camParked = null; }
       else {
         camUnpark();
-        camStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 30 } } });
+        camStream = await camOpen(camLensPick());
       }
     } catch (e) {
       toast(e && e.name === "NotAllowedError"
@@ -1138,15 +1141,71 @@
       return;
     }
     $("panel").classList.add("cam");
-    $("panelBody").innerHTML = '<div class="camview"><video id="camVideo" autoplay playsinline muted></video><div class="camflash" id="camFlash"></div><div class="camring" id="camRing"></div><button type="button" class="camtorch hidden" id="camTorch" data-camtorch aria-pressed="false">⚡ FLASH OFF</button></div>' +
+    $("panelBody").innerHTML = '<div class="camview"><video id="camVideo" autoplay playsinline muted></video><div class="camflash" id="camFlash"></div><div class="camring" id="camRing"></div><button type="button" class="camtorch hidden" id="camTorch" data-camtorch aria-pressed="false">⚡ FLASH OFF</button><button type="button" class="camtorch camlens hidden" id="camLens" data-camlens>LENS</button></div>' +
       '<div class="cambar"><span class="camcount" id="camCount">' + camCountText() + '</span><button type="button" class="shutter" data-shutter aria-label="Take photo"></button><button type="button" class="camdone" data-camdone>Done</button></div>';
     $("camVideo").srcObject = camStream;
     // Keep the picture sharp as the phone moves round the car.
     var track = camStream.getVideoTracks()[0], caps = track && track.getCapabilities ? track.getCapabilities() : {};
     if (caps.focusMode && caps.focusMode.indexOf("continuous") !== -1) track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(function () {});
+    // Some phones open the back camera zoomed out (0.5x, the ultra-wide):
+    // start at 1x, like the phone's own camera.
+    if (caps.zoom && caps.zoom.min < 1 && caps.zoom.max >= 1) track.applyConstraints({ advanced: [{ zoom: 1 }] }).catch(function () {});
     // The phone's light, for dark corners of the terminal. Stays on while shooting.
     camTorch = false;
     if (caps.torch) show("camTorch", true);
+    camLensButton(track);
+  }
+  // ── Which back lens ──
+  // A browser asking for "the back camera" can be given any of a phone's back
+  // lenses, often the ultra-wide (a wide, bent picture). The main lens is
+  // picked by name where the phone gives one, and LENS switches between the
+  // back lenses; the choice is remembered on the phone.
+  var CAM_LENS_KEY = "takeoff-cam-lens", camLenses = [];
+  function camOpen(deviceId) {
+    var v = { width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 30 } };
+    if (deviceId) v.deviceId = { exact: deviceId }; else v.facingMode = { ideal: "environment" };
+    return navigator.mediaDevices.getUserMedia({ audio: false, video: v }).catch(function (e) {
+      if (!deviceId || e.name === "NotAllowedError") throw e;
+      try { localStorage.removeItem(CAM_LENS_KEY); } catch (x) {}
+      return camOpen("");
+    });
+  }
+  function camLensPick() { try { return localStorage.getItem(CAM_LENS_KEY) || ""; } catch (e) { return ""; } }
+  // Main lens first: not ultra-wide / tele / macro / depth; then the lowest
+  // Android number ("camera2 0, facing back" is the main one on most phones).
+  function camLensRank(d) {
+    var l = d.label || "", n = +((l.match(/camera2?\s*(\d+)/i) || [])[1] || 50);
+    return (/ultra|tele|macro|depth|dual|triple/i.test(l) ? 100 : 0) + n;
+  }
+  async function camLensButton(track) {
+    try {
+      var all = await navigator.mediaDevices.enumerateDevices();
+      camLenses = all.filter(function (d) { return d.kind === "videoinput" && /back|rear|environment/i.test(d.label || ""); })
+        .sort(function (a, b) { return camLensRank(a) - camLensRank(b); });
+      if (camLenses.length < 2 || !camStream) return;
+      var now = (track.getSettings ? track.getSettings().deviceId : "") || "";
+      // First time on this phone: if the browser gave a lens other than the
+      // main one, switch to the main one.
+      if (!camLensPick() && now && camLenses[0].deviceId && now !== camLenses[0].deviceId) return camLensSet(camLenses[0].deviceId);
+      var b = $("camLens"); if (!b) return;
+      var i = camLenses.findIndex(function (d) { return d.deviceId === now; });
+      b.textContent = "LENS " + (i + 1 > 0 ? i + 1 : 1) + "/" + camLenses.length;
+      b.classList.remove("hidden");
+    } catch (e) {}
+  }
+  async function camLensNext() {
+    if (camLenses.length < 2 || !camStream) return;
+    var track = camStream.getVideoTracks()[0], now = track && track.getSettings ? track.getSettings().deviceId : "";
+    var i = camLenses.findIndex(function (d) { return d.deviceId === now; });
+    camLensSet(camLenses[(i + 1) % camLenses.length].deviceId);
+  }
+  async function camLensSet(id) {
+    try { localStorage.setItem(CAM_LENS_KEY, id); } catch (e) {}
+    var r = panelRow; if (!r || !camStream) return;
+    if (camTorch) await camLight(false).catch(function () {});
+    camStream.getTracks().forEach(function (t) { t.stop(); });
+    camStream = null;
+    ptCamera(r);
   }
   // Tap the picture to focus on that spot (where the phone allows it).
   function camFocus(e) {
@@ -1185,9 +1244,7 @@
     var v = $("camVideo"); if (!v || !v.videoWidth || !pt) return;
     var f = $("camFlash"); if (f) { f.classList.remove("go"); void f.offsetWidth; f.classList.add("go"); }
     var k = Math.min(1, PT_MAX / Math.max(v.videoWidth, v.videoHeight));
-    var c = document.createElement("canvas"); c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
-    var g = c.getContext("2d"); g.drawImage(v, 0, 0, c.width, c.height);
-    ptStamp(g, c.width, c.height, Date.now(), pt.reg);
+    var c = ptCanvas(v, Math.round(v.videoWidth * k), Math.round(v.videoHeight * k), Date.now(), pt.reg);
     var cur = pt, thumb = ptThumb(c, c.width, c.height);
     c.toBlob(function (b) {
       if (!b || pt !== cur) return;
@@ -1474,14 +1531,13 @@
   }
 
   // ── PT as one PDF ──
-  // Every photo on its own page, made smaller for WhatsApp: 1600 px at 75%
-  // is about 300 KB a photo instead of 1-2 MB, so a 20-photo PDF is ~6 MB and
-  // opens quickly on the other phone, still sharp enough to see marks. (The
-  // app's own copies keep the full-size photos.) Made in the
+  // Every photo on its own page at 2000 px and 82%: sharp enough to zoom into
+  // a scratch, about half the size of the photos as taken, so the PDF opens
+  // quicker on WhatsApp. Made in the
   // background as soon as the photos are ready, because Chrome only lets a
   // page share within a few seconds of the tap. Android takes 50 MB in one
   // share, so a very big set becomes parts (each one tap).
-  var PDF_PART_MAX = 45 * 1048576, PDF_MAX = 1600, PDF_Q = 0.75;
+  var PDF_PART_MAX = 45 * 1048576, PDF_MAX = 2000, PDF_Q = 0.82;
   function ptWantsPdf() { return !!(S.company && S.company.pt_method === "pdf"); }
   function ptPdfState() {
     var n = pt.items.filter(function (x) { return x.state === "local"; }).length, P = pt.pdf;
@@ -1516,7 +1572,7 @@
   async function ptPdfJpeg(b) {
     try {
       var im = await createImageBitmap(b), k = Math.min(1, PDF_MAX / Math.max(im.width, im.height));
-      if (k === 1 && b.size < 450000) { if (im.close) im.close(); return await ptJpegBytes(b); }
+      if (k === 1 && b.size < 700000) { if (im.close) im.close(); return await ptJpegBytes(b); }
       var c = document.createElement("canvas"); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
       c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); if (im.close) im.close();
       var j = await new Promise(function (ok) { c.toBlob(ok, "image/jpeg", PDF_Q); });
@@ -1861,6 +1917,7 @@
     if (t.dataset.ptcam !== undefined) return ptCamera(r);
     if (t.dataset.shutter !== undefined) return ptShoot(r);
     if (t.dataset.camtorch !== undefined) return camToggleTorch();
+    if (t.dataset.camlens !== undefined) return camLensNext();
     if (t.dataset.camdone !== undefined) { camStop(); openPt(r); ptStore(); return ptPump(r); }
     if (t.dataset.ptretry !== undefined) return ptRetry(r);
     if (t.dataset.ptlinkshare !== undefined) {
