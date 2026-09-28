@@ -326,7 +326,8 @@ begin
                           and not has_function_privilege('anon', 'early_return(uuid)', 'execute') and not has_function_privilege('authenticated', 'carry_overstays(uuid)', 'execute')
                           and not has_function_privilege('anon', 'set_reg(uuid,text)', 'execute')
                           and not has_function_privilege('anon', 'set_return(uuid,text)', 'execute')
-                          and not has_function_privilege('anon', 'set_pt_method_ios(text)', 'execute');
+                          and not has_function_privilege('anon', 'set_pt_method_ios(text)', 'execute')
+                          and not has_function_privilege('anon', 'pt_unsaved(uuid)', 'execute');
   res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'server-only functions can''t be called from a phone'); if not ok then fails := fails + 1; end if;
 
   -- always roll back: the results travel in the error message

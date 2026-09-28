@@ -289,7 +289,21 @@
     S.rowsSheet = want;
     S.rows = (r.data || []).filter(function (x) { return !x.removed_at; });
     S.removed = (r.data || []).filter(function (x) { return x.removed_at; });
+    if (sh && sh.kind === "picks") loadPtUnsaved(want);
   }
+  // PICKS cars whose PT was ticked over 2 hours ago but whose photos aren't
+  // saved in the app (database part 51): shown to the office on the row.
+  S.ptUnsaved = {};
+  async function loadPtUnsaved(sheetId) {
+    if (!can("import")) return;
+    var u = await sb.rpc("pt_unsaved", { p_sheet: sheetId });
+    if (u.error || sheetId !== S.sheetId) return;
+    var m = {}; (u.data || []).forEach(function (id) { m[id] = 1; });
+    var changed = Object.keys(m).join() !== Object.keys(S.ptUnsaved).join();
+    S.ptUnsaved = m;
+    if (changed && !$("panel").open) render();
+  }
+  setInterval(function () { var sh = sheet(); if (S.me && sh && sh.kind === "picks" && document.visibilityState === "visible") loadPtUnsaved(sh.id); }, 10 * 60000);
   function dropRemoved(id) { S.removed = (S.removed || []).filter(function (x) { return x.id !== id; }); }
   // A yard picker open on a row must not be redrawn out from under the finger.
   function yardOpen() { var a = document.activeElement; return !!(a && a.dataset && a.dataset.yard !== undefined); }
@@ -898,7 +912,7 @@
       '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" +
       (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + catTag(r) + '<span class="pin">' + esc(r.name) + "</span></div>" +
       // Just the make on the row; the full car and booking ref are in the car's panel.
-      '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(makeOnly(r.make)) + "</span> · " : "") + "drop " + esc(hhmm(r.drop_at) || "—") + (r.pick_called ? ' · <span class="tag' + (r.pick_called === "New Booking" ? ' nb">NEW BOOKING' : '">' + esc(r.pick_called)) + "</span> " + esc(hhmm(r.pick_called_at)) : "") + "</span></div>" +
+      '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(makeOnly(r.make)) + "</span> · " : "") + "drop " + esc(hhmm(r.drop_at) || "—") + (S.ptUnsaved[r.id] && r.pt_at ? ' · <span class="tag due">PT NOT SAVED</span>' : "") + (r.pick_called ? ' · <span class="tag' + (r.pick_called === "New Booking" ? ' nb">NEW BOOKING' : '">' + esc(r.pick_called)) + "</span> " + esc(hhmm(r.pick_called_at)) : "") + "</span></div>" +
       noteLine(r) + "</div>" +
       '<div class="acts">' + b("Collected", "k", "COLL") + b("No Show", "n", "NO SHOW") + b("RTC", "r", "RTC", "rtc") +
       actBtn(r, "data-pt", "p", "PT", !!r.pt_at, r.pt_at, can("intake"), r.pt_by) + "</div></div>";
@@ -1380,6 +1394,42 @@
     setTimeout(function () { ptClear(); if ($("panel").open) $("panel").close(); }, 300);
   }
   function ptClear() { pt = null; }
+  // PT ticked without sending: photos taken in the app are still saved as the
+  // car's copy (kept on the phone until they are).
+  function ptTickKeep(r) {
+    tapPick(r, "pt");
+    var cur = pt;
+    cur.sent = cur.items.length; cur.regSent = true;
+    if (cur.mode === "photos") {
+      bkQueueSet(cur.id, cur.token, cur.items.filter(function (x) { return x.state === "local"; }));
+      if (bkPending(cur)) { ptStore(); bkWatch(cur.id, cur.token, cur); } else ptForget(cur.id);
+    }
+    ptClear(); $("panel").close();
+    toast(ptCaption(r) + ": PT ticked, photos kept in the app");
+  }
+  // No photos in the app: take them, or say why not (logged for the office).
+  var PT_WHY = ["Camera not working", "Photos taken on the phone's own camera", "No signal / app not loading", "Other"];
+  function ptNoPhotos(r) {
+    panelRow = r;
+    $("panelBody").innerHTML = '<h2 id="panelTitle">No photos in the app for ' + esc(r.reg || "this car") + "</h2>" +
+      '<p class="sub">The app keeps a copy of PT photos in case of a complaint. Take them with the app\'s camera if you can.</p>' +
+      '<button type="button" class="btn brand ptgo" data-ptcamgo>OPEN CAMERA</button>' +
+      '<label>OR TICK PT ANYWAY, BECAUSE</label><div class="ptwhy">' +
+      PT_WHY.map(function (w) { return '<button type="button" data-ptwhy="' + esc(w) + '">' + esc(w) + "</button>"; }).join("") + "</div>" +
+      '<div class="pbtns"><button type="button" data-ptback>Back</button></div>';
+    if (!$("panel").open) $("panel").showModal();
+  }
+  function ptTickWhy(r, why) {
+    if (why === "Other") {
+      why = (prompt("Why is PT being ticked without photos in the app?") || "").trim().slice(0, 120);
+      if (!why) return toast("Say why, or take the photos.", true);
+    }
+    if (!r.pt_at) tapPick(r, "pt");
+    bkReport(r.id, "PT ticked without photos in the app: " + why);
+    if (pt && pt.id === r.id) { ptForget(pt.id); ptClear(); }
+    $("panel").close();
+    toast(ptCaption(r) + ": PT ticked (" + why + ")");
+  }
   // Small previews (240 px) for the tiles: fifty full-size photos on screen
   // would need close to a gigabyte and cheaper phones would close the app.
   var PT_THUMB = 240;
@@ -1458,7 +1508,12 @@
   //               evenly round the car, small (800 px, about 35 KB).
   // It waits while the camera is open or PT's photos are still being sent:
   // making copies alongside the share sheet stopped PT on an iPhone.
-  var BK = [], bkActive = 0, BK_TRIES = 4, BK_MAX = 800, BK_Q = 0.5, BK_KEEP = 10, R2_MAX = 1280, R2_Q = 0.6;
+  // A failed photo is tried again after 5 s, 15 s, 30 s, 1, 2, 5 and then every
+  // 10 minutes, about 4 hours in all (PT is often done where the signal is
+  // weak); straight away when the phone's connection comes back or the app
+  // is opened again. After a dropped connection, one photo at a time.
+  var BK_DELAYS = [5, 15, 30, 60, 120, 300, 600], BK_WARN_AT = 3, BK_WARNED = {}, bkSlow = false, bkOkRun = 0;
+  var BK = [], bkActive = 0, BK_TRIES = 30, BK_MAX = 800, BK_Q = 0.5, BK_KEEP = 10, R2_MAX = 1280, R2_Q = 0.6;
   // Returns { blob, how }: "bitmap" or "img" (made small), "orig" (couldn't be).
   async function bkSmall(f, good) {
     var max = good ? R2_MAX : BK_MAX, q = good ? R2_Q : BK_Q;
@@ -1514,7 +1569,7 @@
   // Every photo sent to PT: in 3 minutes the car's copy must be saved or on its way.
   function bkWatch(rowId, token, cur) {
     setTimeout(function () {
-      if (BK_SAVED[token] || BK.some(function (y) { return y.token === token && y.x.bk !== "fail"; })) return;
+      if (BK_SAVED[token] || BK.some(function (y) { return y.token === token; })) return;
       var items = (cur && cur.items) || [];
       bkReport(rowId, "copy never started: " + items.length + " photos, " +
         items.filter(function (x) { return x.state === "local"; }).length + " ready, " +
@@ -1523,6 +1578,14 @@
         ", store " + (bkR2() ? "Cloudflare" : "Supabase"));
     }, 180000);
   }
+  // Connection back, or the app opened again: every photo waiting to retry goes now.
+  function bkRetryNow() {
+    var any = false;
+    BK.forEach(function (y) { if (y.x.bk === "fail" && (y.x.tries || 0) < BK_TRIES) { y.x.bk = "wait"; any = true; } });
+    if (any) bkPump();
+  }
+  window.addEventListener("online", function () { setTimeout(bkRetryNow, 2000); });
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") setTimeout(bkRetryNow, 2000); });
   function bkHold() { return !!camStream || !!(pt && pt.mode === "photos" && $("panel").open && (pt.sent || 0) < pt.items.length); }
   // Photos already up (before a reload) join the set too, so it's saved whole.
   function bkQueue(rowId, token, x) {
@@ -1534,7 +1597,7 @@
   }
   function bkPump() {
     if (bkHold()) return;
-    while (bkActive < (IS_IOS ? 1 : 2)) {
+    while (bkActive < (IS_IOS || bkSlow ? 1 : 2)) {
       var j = BK.filter(function (y) { return y.x.bk === "wait"; })[0]; if (!j) break;
       j.x.bk = "up"; bkActive++; bkUpload(j);
     }
@@ -1555,7 +1618,14 @@
       }
     } catch (e) { x.bk = "fail"; x.err = (e && e.message) || String(e); }
     bkActive--;
-    if (x.bk === "fail") { x.tries = (x.tries || 0) + 1; if (x.tries < BK_TRIES) setTimeout(function () { if (x.bk === "fail") { x.bk = "wait"; bkPump(); } }, 5000 * x.tries); }
+    if (x.bk === "done") { if (++bkOkRun >= 5) bkSlow = false; }
+    if (x.bk === "fail") {
+      x.tries = (x.tries || 0) + 1; bkOkRun = 0;
+      if (isNetwork({ message: x.err })) bkSlow = true;
+      if (x.tries < BK_TRIES) setTimeout(function () { if (x.bk === "fail") { x.bk = "wait"; bkPump(); } }, 1000 * BK_DELAYS[Math.min(x.tries - 1, BK_DELAYS.length - 1)]);
+      // Told once per car: still trying, so the office knows why it's late.
+      if (x.tries === BK_WARN_AT && !BK_WARNED[j.token]) { BK_WARNED[j.token] = true; bkReport(j.row, "copy delayed, still trying: " + x.err); }
+    }
     var mine = BK.filter(function (y) { return y.token === j.token; });
     if (mine.length && mine.every(function (y) { return y.x.bk === "done" || (y.x.bk === "fail" && y.x.tries >= BK_TRIES); })) {
       BK = BK.filter(function (y) { return y.token !== j.token; });
@@ -1772,7 +1842,7 @@
 
   // Kept on the phone (IndexedDB) until every photo is sent: Android often
   // reloads the app while WhatsApp is open, and they'd be gone otherwise.
-  var ptDbP = null, PT_KEEP_MS = 12 * 3600000;
+  var ptDbP = null, PT_KEEP_MS = 36 * 3600000;
   function ptDb() {
     return ptDbP || (ptDbP = new Promise(function (ok, no) {
       var q = indexedDB.open("takeoff-pt", 1);
@@ -2057,7 +2127,14 @@
       navigator.share({ text: ptCaption(r) }).then(function () { if (pt) { pt.regSent = true; ptStore(); } openPt(r); }).catch(function () {});
       return;
     }
-    if (t.dataset.ptmark !== undefined) { if (!r.pt_at) { tapPick(r, "pt"); if (!(pt && pt.id === r.id && pt.items.length)) bkReport(r.id, "PT ticked without photos in the app"); } if (pt) ptForget(pt.id); ptClear(); return $("panel").close(); }
+    if (t.dataset.ptmark !== undefined) {
+      if (r.pt_at) { ptClear(); return $("panel").close(); }
+      if (pt && pt.id === r.id && pt.items.length) return ptTickKeep(r);
+      return ptNoPhotos(r);
+    }
+    if (t.dataset.ptcamgo !== undefined) { if (pt && pt.id === r.id) { openPt(r); return ptCamera(r); } return ptStart(r); }
+    if (t.dataset.ptback !== undefined) return pt && pt.id === r.id ? openPt(r) : $("panel").close();
+    if (t.dataset.ptwhy) return ptTickWhy(r, t.dataset.ptwhy);
     if (t.dataset.charge) { recordCharge(r, t.dataset.charge); return openPanel(r); }
     if (t.dataset.chargeundo !== undefined) { recordCharge(r, ""); return openPanel(r); }
     if (t.dataset.chargeagreed !== undefined) { setAgreed(r, t.dataset.chargeagreed); return openPanel(r); }
@@ -3592,7 +3669,7 @@
     if (tag !== appTag) { S.updateReady = true; updateIfSafe(); }
   }
   function updateSafeNow() {
-    return !$("panel").open && !$("menu").open && !pt && !camStream && !S.queue.length && !BK.length &&
+    return !$("panel").open && !$("menu").open && !pt && !camStream && !S.queue.length && !BK.some(function (y) { return y.x.bk === "up"; }) &&
       !(S.view === "import" && S.imp && (S.imp.excelFile || S.imp.stage === "preview" || S.imp.saving)) && !(S.imp && S.imp.saving) &&
       !(document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName));
   }
