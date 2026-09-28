@@ -3043,15 +3043,17 @@
       '<p class="note">PT opens this chat with the reg typed, before the photos are sent.' + (n ? " Now: <b>+" + esc(n) + "</b>" : " Not set.") + "</p>" +
       '<label class="field">Number<input id="ptNumber" type="tel" autocomplete="off" placeholder="07932 029349 or +44 7932 029349" value="' + esc(n ? "+" + n : "") + '"></label>' +
       '<div class="row-actions"><button type="button" class="btn brand" data-savept>Save number</button></div>' +
-      ptMethodSelect("android", "How PT gets the photos: Android phones (and computers)", S.company.pt_method) +
-      ptMethodSelect("ios", "How PT gets the photos: iPhones", S.company.pt_method_ios || S.company.pt_method) +
-      '<p class="note">This phone is ' + (IS_IOS ? "an iPhone" : "not an iPhone") + ", so it uses the " + (IS_IOS ? "iPhone" : "Android") + " choice.</p></div>";
+      '<label class="field" style="margin-top:14px">How PT gets the photos<select data-ptmethod>' +
+      '<option value="photos"' + (S.company.pt_method !== "link" && S.company.pt_method !== "pdf" ? " selected" : "") + ">In the WhatsApp chat: reg, then the photos (10 at a time on Android)</option>" +
+      '<option value="pdf"' + (S.company.pt_method === "pdf" ? " selected" : "") + ">As one PDF with all the photos (one tap)</option>" +
+      '<option value="link"' + (S.company.pt_method === "link" ? " selected" : "") + ">As one link to all the photos (only once PT has agreed)</option></select></label>" +
+      ptIosSelect(S.company.pt_method_ios || S.company.pt_method) + "</div>";
   }
-  function ptMethodSelect(dev, label, now) {
+  // iPhones have their own choice (part 49); the one above is for every other phone.
+  function ptIosSelect(now) {
     function o(v, t) { return '<option value="' + v + '"' + (now === v || (v === "photos" && now !== "pdf" && now !== "link") ? " selected" : "") + ">" + t + "</option>"; }
-    return '<label class="field" style="margin-top:14px">' + label + '<select data-ptmethod="' + dev + '">' +
-      o("photos", "In the WhatsApp chat: reg, then the photos" + (dev === "android" ? " (10 at a time)" : "")) +
-      o("pdf", "As one PDF with all the photos (one tap)") +
+    return '<label class="field" style="margin-top:14px">How PT gets the photos on iPhones<select data-ptmethod="ios">' +
+      o("photos", "In the WhatsApp chat: reg, then the photos") + o("pdf", "As one PDF with all the photos (one tap)") +
       o("link", "As one link to all the photos (only once PT has agreed)") + "</select></label>";
   }
   async function savePtMethod(sel) {
@@ -3059,7 +3061,7 @@
     var r = await sb.rpc(ios ? "set_pt_method_ios" : "set_pt_method", { p_method: sel.value });
     if (r.error) { toast(r.error.message, true); return render(); }
     S.company[ios ? "pt_method_ios" : "pt_method"] = r.data;
-    toast((ios ? "iPhones: " : "Android: ") + (r.data === "link" ? "PT photos now go as a link" : r.data === "pdf" ? "PT photos now go as one PDF" : "PT photos now go in the WhatsApp chat"));
+    toast((ios ? "iPhones: " : "") + (r.data === "link" ? "PT photos now go as a link" : r.data === "pdf" ? "PT photos now go as one PDF" : "PT photos now go in the WhatsApp chat"));
   }
   async function savePtNumber(btn) {
     btn.disabled = true;

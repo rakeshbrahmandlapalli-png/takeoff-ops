@@ -496,10 +496,10 @@ await scenario(async () => {
   await open(page);
   await page.click("#menuBtn"); await sleep(300);
   await page.click('#menuBody [data-view="settings"]'); await sleep(500);
-  const opts = await page.locator('[data-ptmethod="android"] option').allInnerTexts();
+  const opts = await page.locator('select[data-ptmethod=""] option').allInnerTexts();
   check("Settings offers the three PT ways", opts.length === 3 && /PDF/.test(opts.join()) && /link/.test(opts.join()), opts);
   check("Settings has a separate PT choice for iPhones", await page.locator('[data-ptmethod="ios"] option').count() === 3);
-  await page.selectOption('[data-ptmethod="android"]', "pdf"); await sleep(500);
+  await page.selectOption('select[data-ptmethod=""]', "pdf"); await sleep(500);
   check("choosing PDF saves it", db.company.pt_method === "pdf" && db.calls.some((c) => c.fn === "set_pt_method"));
   await page.selectOption('[data-ptmethod="ios"]', "link"); await sleep(500);
   check("the iPhone choice saves on its own", db.company.pt_method_ios === "link" && db.company.pt_method === "pdf" && db.calls.some((c) => c.fn === "set_pt_method_ios"));
