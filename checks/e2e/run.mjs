@@ -176,6 +176,8 @@ async function backend(ctx, db) {
       if (q.id && q.id.startsWith("eq.")) rows = rows.filter((b) => b.id === q.id.slice(3));
       if (q.id && q.id.startsWith("neq.")) rows = rows.filter((b) => b.id !== q.id.slice(4));
       if (q.ref && q.ref.startsWith("eq.")) rows = rows.filter((b) => b.ref === q.ref.slice(3));
+      (db.bookingGets = db.bookingGets || []).push(q);
+      if (q.updated_at && q.updated_at.startsWith("gte.")) { const t = q.updated_at.slice(4); rows = rows.filter((b) => (b.updated_at || "") >= t); }
       if (q.or) { const m = q.or.match(/%([^%]+)%/); const t = m ? m[1].toUpperCase() : ""; rows = rows.filter((b) => [b.reg, b.ref, b.phone, b.name].join(" ").toUpperCase().replace(/\s+/g, "").includes(t)); }
       if ((q.select || "").includes("sheets")) rows = rows.map((b) => ({ ...b, sheets: (({ day, kind }) => ({ day, kind }))(db.sheets.find((s) => s.id === b.sheet_id)) }));
       if (req.headers()["accept"] === "application/vnd.pgrst.object+json") return reply(200, rows[0] || null);
@@ -877,6 +879,28 @@ await scenario(async () => {
   check("a new app version reloads the app by itself when nothing is in progress", !(await page.evaluate(() => window.__stillHere === true)));
   await page.waitForSelector("#main .row, #main .msg", { timeout: 8000 });
   check("after the update the board is back", await page.locator("#main .row").count() > 0);
+});
+
+// 18a. back in the app after a while (WhatsApp, a call): only what changed is
+// fetched, not the whole sheet (the free plan's download allowance).
+await scenario(async () => {
+  const db = makeDb();
+  const page = await phone(browser, db);
+  await open(page);
+  // Signal lost in the car park, then back a few minutes later.
+  await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+  // Meanwhile, on other phones: a note on b2, and b3 carried to tomorrow's sheet.
+  const later = new Date(Date.now() + 5000).toISOString();
+  Object.assign(db.bookings.find((x) => x.id === "b2"), { note: "CALLED BACK", updated_at: later });
+  Object.assign(db.bookings.find((x) => x.id === "b3"), { sheet_id: "d1", updated_at: later });
+  db.bookingGets = [];
+  await sleep(500);
+  await page.evaluate(() => window.dispatchEvent(new Event("online"))); await sleep(1500);
+  const gets = db.bookingGets.filter((q) => q.sheet_id === "eq.d0" || (q.sheet_id || "").startsWith("neq."));
+  check("signal back: the change made meanwhile shows", /CALLED BACK/.test(await text(page, '.row[data-id="b2"]')));
+  check("signal back: a car moved to another sheet leaves this one", await page.locator('.row[data-id="b3"]').count() === 0);
+  check("signal back: only the changes are fetched, not the whole sheet", gets.length > 0 && gets.every((q) => (q.updated_at || "").startsWith("gte.")), gets);
+  check("signal back: no errors", page.__errors.length === 0, page.__errors);
 });
 
 // 18b. import on a phone: the file picker sends the app to the background; the
