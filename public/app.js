@@ -1708,6 +1708,7 @@
     await loadSheets(); await loadRows(); flashId = x.data.id; render();
     toast((r.reg || "Car") + (undo ? " is back on its booked day." : " moved to tonight's sheet as an early return."));
   }
+  function canReturn(r) { return can("import") && r.kind === "drops" && !r.early && !r.cleared_at; }
   function openPanel(r) {
     panelRow = r;
     var drops = r.kind === "drops";
@@ -1731,6 +1732,13 @@
     // driver can fill in a missing one when the car comes in.
     var canReg = can("import") || (can("intake") && !r.reg);
     if (canReg) h += '<label for="regText">REG</label><input id="regText" value="' + esc(r.reg) + '" autocomplete="off" autocapitalize="characters" maxlength="12" placeholder="Type the reg">';
+    // A customer rang to come back another day: the office changes it here too.
+    // The first booked return is kept (WAS tag, charge), and the new day's file
+    // finds this car rather than adding it again (database part 48).
+    if (drops && canReturn(r)) {
+      var rp = r.return_at ? londonParts(new Date(r.return_at)) : { key: "", time: "" };
+      h += '<label for="retD">BACK DATE AND TIME</label><div class="when2"><input id="retD" type="date" value="' + esc(rp.key) + '">' + timeBox("retT", rp.time) + "</div>";
+    }
     if (drops && can("yard")) {
       h += '<label>YARD</label><div class="pseg yard">' + (S.company.yards || []).map(function (y) {
         return '<button type="button" data-setyard="' + esc(y) + '" class="' + (r.yard === y ? "on y-" + esc(y) : "") + '">' + esc(YARD_LABEL[y] || y) + "</button>";
@@ -1756,7 +1764,7 @@
     // PT photos from when the car came in (PICKS), also on its DROPS row: same booking ref.
     h += '<div id="ptPhotos"></div>';
     if (can("import")) h += '<button type="button" class="link rmcar" data-removecar>Remove this car (no show, cancelled)</button>';
-    h += '<div class="pbtns"><button type="button" data-close>Close</button>' + (can("note") || can("flights") || canReg ? '<button type="button" class="save" data-savepanel>Save</button>' : "") + "</div>";
+    h += '<div class="pbtns"><button type="button" data-close>Close</button>' + (can("note") || can("flights") || canReg || (drops && canReturn(r)) ? '<button type="button" class="save" data-savepanel>Save</button>' : "") + "</div>";
     $("panelBody").innerHTML = h;
     if (!$("panel").open) $("panel").showModal();
     ptPhotosList(r);
@@ -1800,6 +1808,14 @@
         if (g !== r.reg) {
           if (!/^[A-Z0-9 ]{0,12}$/.test(g)) return toast("Check the reg: letters and numbers only.", true);
           run("set_reg", { p_booking: r.id, p_reg: g }, r, function (x) { x.reg = g; }); saved = true;
+        }
+      }
+      if ($("retD")) {
+        var rt = readTime("retT"), old = r.return_at ? londonParts(new Date(r.return_at)) : { key: "", time: "" };
+        if (rt === null) return toast("Type the time like 13:20 (or 1320).", true);
+        if ($("retD").value !== old.key || (rt || "") !== old.time) {
+          if (!$("retD").value || !rt) return toast("Enter when the car is back: the date and the time.", true);
+          run("set_return", { p_booking: r.id, p_return_local: $("retD").value + " " + rt }, r); saved = true;
         }
       }
       // The note first: turning a car into NO FLIGHT moves on to the

@@ -106,6 +106,7 @@ function rpc(db, fn, a) {
     case "set_overstay_agreed": { const b = row(a.p_booking); b.charge_agreed = a.p_amount; return b; }
     case "remove_booking": { const b = row(a.p_booking); Object.assign(b, { removed_at: new Date().toISOString(), removed_reason: a.p_reason, removed_by: "s1" }); return b; }
     case "restore_booking": { const b = db.bookings.find((x) => x.id === a.p_booking); Object.assign(b, { removed_at: null, removed_reason: "" }); return b; }
+    case "set_return": { const b = row(a.p_booking); if (!b.orig_return_at) b.orig_return_at = b.return_at; b.return_at = new Date(a.p_return_local.replace(" ", "T") + ":00+01:00").toISOString(); return b; }
     case "set_reg": { const b = row(a.p_booking); b.reg = a.p_reg; return b; }
     case "set_yard": { const b = row(a.p_booking); b.yard = a.p_yard; return b; }
     case "set_flight": { const b = row(a.p_booking); b.flight = a.p_flight; return b; }
@@ -835,6 +836,13 @@ await scenario(async () => {
   await page.click('[data-restore="b2"]'); await sleep(500);
   await page.click("[data-close]").catch(() => {}); await sleep(300);
   check("put back: the car is on the board again, once", await page.locator('.row[data-id="b2"]').count() === 1);
+  // Customer rang: coming back another day
+  await page.click('.row[data-id="b1"] .reg'); await sleep(400);
+  check("return by hand: the panel shows the booked date and time", (await page.inputValue("#retD")) === TONIGHT && /^\d\d:\d\d$/.test(await page.inputValue("#retT")));
+  await page.fill("#retD", addDays(TONIGHT, 2)); await page.fill("#retT", "2330"); await page.click("[data-savepanel]"); await sleep(600);
+  const sr = db.calls.find((c) => c.fn === "set_return");
+  check("return by hand: Save sends the new date and time", !!sr && sr.args.p_return_local === addDays(TONIGHT, 2) + " 23:30", sr && sr.args);
+  check("return by hand: the row shows WAS and the first day", /WAS/.test(await text(page, '.row[data-id="b1"]')), await text(page, '.row[data-id="b1"]'));
 });
 
 // 20. a big night: 400 cars on one sheet stays quick

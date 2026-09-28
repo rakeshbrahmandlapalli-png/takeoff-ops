@@ -21,7 +21,7 @@ declare
   car_tmrw uuid; car_tonight uuid; car_yday uuid; car_gone uuid; car_pick uuid; car_b uuid;
   car_over uuid; car_early_home uuid; car_early_far uuid; car_removed uuid;
   res text[] := '{}'; fails int := 0; total int := 0;
-  s_was uuid; s_now uuid; car_px uuid; car_qq uuid; car_ss uuid; car_nr uuid; car_nr2 uuid;
+  s_was uuid; s_now uuid; s_hb uuid; s_hb2 uuid; car_hb uuid; car_hc uuid; car_px uuid; car_qq uuid; car_ss uuid; car_nr uuid; car_nr2 uuid;
   b bookings; j jsonb; n int; ok boolean; tok text := 'TESTtoken_abcdefghijklmnop';
 begin
   -- ── fixtures ────────────────────────────────────────────────────────────
@@ -279,10 +279,53 @@ begin
   perform set_config('role', 'postgres', true);
   perform set_config('request.jwt.claims', '', true);
 
+  -- ════ return changed by hand in the panel (part 48) ════
+  -- HB: booked back on the "25th" (shift+30), carried as an overstay; the
+  -- customer rings, the office sets the "30th" (shift+35), then the 30th's
+  -- file comes in with an earlier time than the one typed. HC: a carried car
+  -- set back to the day of the sheet it's on.
+  insert into sheets (company_id, kind, day) values (a_co, 'drops', shift + 30) returning id into s_hb;
+  insert into sheets (company_id, kind, day) values (a_co, 'drops', shift + 31) returning id into s_hb2;
+  insert into bookings (company_id, sheet_id, kind, ref, reg, name, num, drop_at, return_at, yard, called_word, called_at, overstay)
+  values (a_co, s_hb, 'drops', '', 'ZZ25HBD', 'Rang in', 1, ((shift + 27) + time '04:00') at time zone 'Europe/London',
+          ((shift + 30) + time '23:30') at time zone 'Europe/London', 'NY', 'Overstay', now(), true) returning id into car_hb;
+  insert into bookings (company_id, sheet_id, kind, ref, reg, name, num, return_at, overstay, called_word, called_at)
+  values (a_co, s_hb2, 'drops', 'REF-HC', 'ZZ25HCC', 'Carried', 1, ((shift + 29) + time '20:00') at time zone 'Europe/London', true, 'Overstay', now()) returning id into car_hc;
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', a_term, 'role', 'authenticated')::text, true);
+  begin perform set_return(car_hb, to_char(shift + 35, 'YYYY-MM-DD') || ' 23:30'); ok := false; exception when others then ok := true; end;
+  total := total + 1; res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'return by hand: the terminal can''t change it'); if not ok then fails := fails + 1; end if;
+  perform set_config('request.jwt.claims', json_build_object('sub', a_own, 'role', 'authenticated')::text, true);
+  begin perform set_return(car_hb, 'soon'); ok := false; exception when others then ok := true; end;
+  total := total + 1; res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'return by hand: not a date and time is refused'); if not ok then fails := fails + 1; end if;
+  b := set_return(car_hb, to_char(shift + 35, 'YYYY-MM-DD') || ' 23:30');
+  total := total + 1; ok := b.return_at = ((shift + 35) + time '23:30') at time zone 'Europe/London'
+    and b.orig_return_at = ((shift + 30) + time '23:30') at time zone 'Europe/London' and b.sheet_id = s_hb and b.overstay and b.called_word = 'Overstay'
+    and exists (select 1 from activity where booking_id = car_hb and action = 'RETURN CHANGED');
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'return by hand: new time saved, first date kept, stays an overstay until its day, logged'); if not ok then fails := fails + 1; end if;
+  j := import_sheet('drops', shift + 35, jsonb_build_array(
+    jsonb_build_object('ref', 'REF-HB', 'reg', 'ZZ25 HBD', 'drop_local', to_char(shift + 27, 'YYYY-MM-DD') || ' 04:00', 'return_local', to_char(shift + 35, 'YYYY-MM-DD') || ' 22:00')), '{}');
+  select * into b from bookings where id = car_hb;
+  select count(*) into n from bookings where company_id = a_co and reg in ('ZZ25HBD', 'ZZ25 HBD');
+  total := total + 1; ok := (j->>'moved')::int = 1 and (j->>'added')::int = 0 and n = 1 and b.sheet_id = (j->>'sheet_id')::uuid
+    and b.return_at = ((shift + 35) + time '22:00') at time zone 'Europe/London'
+    and b.orig_return_at = ((shift + 30) + time '23:30') at time zone 'Europe/London' and not b.overstay and b.called_word = '' and b.yard = 'NY';
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'return by hand: the new day''s file moves the same car (no copy), even at an earlier time'); if not ok then fails := fails + 1; end if;
+  b := set_return(car_hc, to_char(shift + 31, 'YYYY-MM-DD') || ' 19:00');
+  total := total + 1; ok := not b.overstay and b.called_word = '' and b.called_at is null
+    and b.orig_return_at = ((shift + 29) + time '20:00') at time zone 'Europe/London';
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'return by hand: set to the day of its sheet, it leaves the overstay block'); if not ok then fails := fails + 1; end if;
+  b := set_return(car_hc, to_char(shift + 29, 'YYYY-MM-DD') || ' 21:00');
+  total := total + 1; ok := b.orig_return_at is null;
+  res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'return by hand: set back to its first day forgets the WAS date'); if not ok then fails := fails + 1; end if;
+  perform set_config('role', 'postgres', true);
+  perform set_config('request.jwt.claims', '', true);
+
   -- ════ who can call what, from outside ════
   total := total + 1; ok := not has_function_privilege('anon', 'pt_link_view(text)', 'execute') and not has_function_privilege('authenticated', 'pt_link_view(text)', 'execute')
                           and not has_function_privilege('anon', 'early_return(uuid)', 'execute') and not has_function_privilege('authenticated', 'carry_overstays(uuid)', 'execute')
-                          and not has_function_privilege('anon', 'set_reg(uuid,text)', 'execute');
+                          and not has_function_privilege('anon', 'set_reg(uuid,text)', 'execute')
+                          and not has_function_privilege('anon', 'set_return(uuid,text)', 'execute');
   res := res || (case when ok then 'ok   ' else 'FAIL ' end || 'server-only functions can''t be called from a phone'); if not ok then fails := fails + 1; end if;
 
   -- always roll back: the results travel in the error message
