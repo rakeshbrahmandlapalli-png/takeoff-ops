@@ -1474,12 +1474,14 @@
   }
 
   // ── PT as one PDF ──
-  // Every photo on its own page, full quality: the JPEGs go into the PDF as
-  // they are (no re-compressing), so it's quick and sharp. Made in the
+  // Every photo on its own page, made smaller for WhatsApp: 1600 px at 75%
+  // is about 300 KB a photo instead of 1-2 MB, so a 20-photo PDF is ~6 MB and
+  // opens quickly on the other phone, still sharp enough to see marks. (The
+  // app's own copies keep the full-size photos.) Made in the
   // background as soon as the photos are ready, because Chrome only lets a
   // page share within a few seconds of the tap. Android takes 50 MB in one
   // share, so a very big set becomes parts (each one tap).
-  var PDF_PART_MAX = 45 * 1048576;
+  var PDF_PART_MAX = 45 * 1048576, PDF_MAX = 1600, PDF_Q = 0.75;
   function ptWantsPdf() { return !!(S.company && S.company.pt_method === "pdf"); }
   function ptPdfState() {
     var n = pt.items.filter(function (x) { return x.state === "local"; }).length, P = pt.pdf;
@@ -1494,7 +1496,7 @@
     var P = { count: items.length, parts: [], sent: cur.pdfSent || 0 };
     try {
       var jpgs = [];
-      for (var i = 0; i < items.length; i++) jpgs.push(await ptJpegBytes(items[i].file));
+      for (var i = 0; i < items.length; i++) jpgs.push(await ptPdfJpeg(items[i].file));
       var group = [], size = 0;
       jpgs.forEach(function (j) { if (group.length && size + j.bytes.length > PDF_PART_MAX) { P.parts.push(group); group = []; size = 0; } group.push(j); size += j.bytes.length; });
       if (group.length) P.parts.push(group);
@@ -1509,6 +1511,20 @@
     if (pt !== cur || cur.pdfMaking !== items.length) return;
     cur.pdfMaking = 0; cur.pdf = P;
     if ($("panel").open && panelRow && panelRow.id === cur.id && !$("camVideo")) openPt(panelRow);
+  }
+  // The photo made PDF size; kept as it is when it's already small.
+  async function ptPdfJpeg(b) {
+    try {
+      var im = await createImageBitmap(b), k = Math.min(1, PDF_MAX / Math.max(im.width, im.height));
+      if (k === 1 && b.size < 450000) { if (im.close) im.close(); return await ptJpegBytes(b); }
+      var c = document.createElement("canvas"); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+      c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); if (im.close) im.close();
+      var j = await new Promise(function (ok) { c.toBlob(ok, "image/jpeg", PDF_Q); });
+      c.width = c.height = 0;
+      var bytes = new Uint8Array(await j.arrayBuffer()), d = jpegSize(bytes);
+      if (d) return { bytes: bytes, w: d.w, h: d.h, c: d.c };
+    } catch (e) {}
+    return await ptJpegBytes(b);
   }
   // The photo as JPEG bytes with its size (anything else is turned into a JPEG).
   async function ptJpegBytes(b) {

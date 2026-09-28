@@ -192,7 +192,7 @@ async function phone(browser, db, { signedIn = true, ua, width = 390, noBitmap =
     }
     window.__shares = [];
     navigator.canShare = () => true;
-    navigator.share = async (d) => { window.__shares.push({ n: (d.files || []).length, names: (d.files || []).map((f) => f.name), types: (d.files || []).map((f) => f.type), text: d.text || "" }); };
+    navigator.share = async (d) => { window.__shares.push({ n: (d.files || []).length, names: (d.files || []).map((f) => f.name), types: (d.files || []).map((f) => f.type), sizes: (d.files || []).map((f) => f.size), text: d.text || "" }); };
     try { navigator.clipboard.writeText = async () => {}; } catch (e) {}
     // Like an iPhone that won't decode a photo this way.
     if (noBitmap) window.createImageBitmap = () => Promise.reject(new Error("not supported"));
