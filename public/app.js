@@ -2130,6 +2130,26 @@
     await loadRows();
     toast(x.data.reg + " added");
     $("panel").close();
+    if (sh.kind === "picks") await askDrops([x.data.id]);
+  }
+  // A new PICKS car (added by hand, or new in a re-imported file) booked back
+  // on a day whose DROPS sheet is already in isn't on that DROPS sheet: ask,
+  // and put it there (database part 50).
+  async function askDrops(ids) {
+    if (!ids || !ids.length || !can("import")) return;
+    var m = await sb.rpc("drops_missing", { p_ids: ids });
+    var list = (m && m.data) || []; if (!list.length) return;
+    function line(x) { return (x.reg || "NO REG") + (x.name ? " (" + x.name + ")" : "") + ", back " + dayShort(x.return_at) + " " + hhmm(x.return_at); }
+    var q = list.length === 1
+      ? line(list[0]) + ".\n\nThe DROPS sheet for " + sheetLabel({ day: list[0].day, kind: "drops" }).replace(/^DROPS /, "") + " is already in. Add this car to it too?"
+      : list.length + " new cars are booked back on a day whose DROPS sheet is already in:\n\n" + list.map(line).join("\n") + "\n\nAdd them to DROPS too?";
+    if (!confirm(q)) return;
+    var done = [];
+    for (var i = 0; i < list.length; i++) {
+      var a = await sb.rpc("add_pick_to_drops", { p_booking: list[i].id });
+      if (a.error) toast(a.error.message, true); else done.push(list[i].reg);
+    }
+    if (done.length) toast("Added to DROPS: " + done.join(", ") + ". Add the flight there.");
   }
 
   // ── PICKS: returns by day, stats by hour (as on the Sheet app) ──
@@ -2703,6 +2723,8 @@
     // Overstays were carried in from older days and early returns from later
     // ones, so they're never in today's file.
     var gone = S.rows.filter(function (x) { return x.ref && !inFile[x.ref] && !x.overstay && !x.early; });
+    // New cars in a re-imported PICKS file: any back on a day whose DROPS is already in?
+    if (I.kind === "picks" && r.data.new_marked) await askDrops(r.data.added_ids);
     if (gone.length) openGone(gone, r.data.undo_id);
     S.recentImports = null;
   }

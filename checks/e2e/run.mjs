@@ -101,6 +101,11 @@ function rpc(db, fn, a) {
     case "recent_imports": return db.imports || [];
     case "pt_copy_report": (db.reports = db.reports || []).push(a); return null;
     case "undo_import": { const i = (db.imports || []).find((x) => x.id === a.p_id); if (i) i.undone = true; return { removed: 2, kept: 0, restored: 0, sheet_id: "p0", sheet_gone: false }; }
+    case "drops_missing": return (a.p_ids || []).map((id) => db.bookings.find((x) => x.id === id)).filter((b) => b && b.kind === "picks" && b.return_at)
+      .map((b) => ({ b, d: db.sheets.find((s) => s.kind === "drops" && s.day === b.return_at.slice(0, 10)) }))
+      .filter(({ b, d }) => d && !db.bookings.some((x) => x.sheet_id === d.id && x.reg === b.reg))
+      .map(({ b, d }) => ({ id: b.id, reg: b.reg, name: b.name, return_at: b.return_at, day: d.day, sheet_id: d.id }));
+    case "add_pick_to_drops": { const p = db.bookings.find((x) => x.id === a.p_booking), d = db.sheets.find((s) => s.kind === "drops" && s.day === p.return_at.slice(0, 10)); const n = { ...p, id: "dn" + db.bookings.length, sheet_id: d.id, kind: "drops" }; db.bookings.push(n); return n; }
     case "add_booking": { const n = { id: "new" + db.bookings.length, company_id: "c1", sheet_id: a.p_sheet, kind: db.sheets.find((x) => x.id === a.p_sheet).kind, ref: a.p.ref || "", reg: String(a.p.reg).toUpperCase(), name: a.p.name || "", num: 99, return_at: a.p.return_local ? new Date(a.p.return_local.replace(" ", "T") + ":00+01:00").toISOString() : null, note: a.p.note || "" }; db.bookings.push(n); return n; }
     case "set_overstay_paid": { const b = row(a.p_booking); Object.assign(b, { charge_amount: a.p_amount, charge_method: a.p_method, charge_at: a.p_method ? new Date().toISOString() : null, charge_by: a.p_method ? "s1" : null }); return b; }
     case "set_overstay_agreed": { const b = row(a.p_booking); b.charge_agreed = a.p_amount; return b; }
@@ -219,7 +224,8 @@ async function phone(browser, db, { signedIn = true, ua, width = 390, noBitmap =
   page.__errors = [];
   page.on("pageerror", (e) => page.__errors.push(e.message));
   page.on("console", (m) => { if (/Content Security Policy/i.test(m.text())) cspBlocked.push(m.text()); });
-  page.on("dialog", (d) => d.accept());
+  page.__dialogs = [];
+  page.on("dialog", (d) => { page.__dialogs.push(d.message()); d.accept(); });
   ctx.on("page", (p) => { if (p !== page) p.close().catch(() => {}); });
   return page;
 }
@@ -860,6 +866,20 @@ await scenario(async () => {
   await page.fill("#acRetT", "0130"); await page.click("#acGo"); await sleep(600);
   const add = db.calls.find((c) => c.fn === "add_booking");
   check("add a car: 01:30 on the sheet's date is saved as the next morning", !!add && add.args.p.return_local === addDays(TONIGHT, 1) + " 01:30", add && add.args.p);
+  // A car added to PICKS that comes back the same day: asked, then put on DROPS too.
+  await page.selectOption("#sheetPick", "p0"); await sleep(600);
+  await page.click("#menuBtn"); await sleep(300); await page.click("#menu [data-addcar]"); await sleep(300);
+  await page.fill("#acReg", "ZZ28SDR"); await page.fill("#acName", "Same Day"); await page.fill("#acDropT", "0800");
+  await page.fill("#acRetD", TONIGHT); await page.fill("#acRetT", "1900"); await page.click("#acGo"); await sleep(1200);
+  const ask = page.__dialogs.find((m) => /ZZ28SDR/.test(m)) || "";
+  check("same-day PICKS car: the app asks to add it to DROPS", /DROPS/.test(ask) && /Add this car/.test(ask), page.__dialogs);
+  const tw = db.calls.find((c) => c.fn === "add_pick_to_drops");
+  check("same-day PICKS car: said yes, it's added to DROPS", !!tw && db.bookings.some((x) => x.kind === "drops" && x.sheet_id === "d0" && x.reg === "ZZ28SDR"));
+  await page.click("#menuBtn"); await sleep(300); await page.click("#menu [data-addcar]"); await sleep(300);
+  await page.fill("#acReg", "ZZ28LTR"); await page.fill("#acDropT", "0900");
+  await page.fill("#acRetD", addDays(TONIGHT, 5)); await page.fill("#acRetT", "1900"); await page.click("#acGo"); await sleep(1200);
+  check("PICKS car back on a day with no DROPS sheet yet: not asked", !page.__dialogs.some((m) => /ZZ28LTR/.test(m)));
+  await page.selectOption("#sheetPick", "d0"); await sleep(600);
   // Overstay payment
   await page.click('.row[data-id="b3"] .reg'); await sleep(400);
   const due = await page.locator(".chgbox").innerText().catch(() => "");
