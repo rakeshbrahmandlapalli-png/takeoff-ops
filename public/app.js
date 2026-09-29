@@ -1773,18 +1773,26 @@
   function ptWantsPdf() { return ptMethod() === "pdf"; }
   function ptPdfState() {
     var n = pt.items.filter(function (x) { return x.state === "local"; }).length, P = pt.pdf;
-    if (!P || P.count !== n) { ptPdfMake(pt); return { ready: false, label: "Making the PDF…" }; }
+    if (!P || P.count !== n) { ptPdfMake(pt); return { ready: false, label: ptPdfLabel(pt.pdfDone || 0, n) }; }
     if (P.error) return { failed: true };
     return { ready: true, label: P.parts.length === 1 ? "SEND AS ONE PDF (1 TAP)" : "SEND PDF PART " + ((P.sent || 0) + 1) + " OF " + P.parts.length };
   }
+  // "Making the PDF… 12 of 33", so a big set doesn't look stuck.
+  function ptPdfLabel(done, n) { return "Making the PDF… " + done + " of " + n; }
   async function ptPdfMake(cur) {
     var items = cur.items.filter(function (x) { return x.state === "local"; });
     if (cur.pdfMaking === items.length) return;
-    cur.pdfMaking = items.length;
+    cur.pdfMaking = items.length; cur.pdfDone = 0;
     var P = { count: items.length, parts: [], sent: cur.pdfSent || 0 };
     try {
       var jpgs = [];
-      for (var i = 0; i < items.length; i++) jpgs.push(await ptPdfJpeg(items[i].file));
+      for (var i = 0; i < items.length; i++) {
+        jpgs.push(await ptPdfJpeg(items[i].file));
+        if (cur.pdfMaking !== items.length) return;
+        cur.pdfDone = i + 1;
+        var btn = pt === cur && document.querySelector("#panelBody [data-ptpdf]");
+        if (btn && btn.disabled) btn.textContent = ptPdfLabel(i + 1, items.length);
+      }
       var group = [], size = 0;
       jpgs.forEach(function (j) { if (group.length && size + j.bytes.length > PDF_PART_MAX) { P.parts.push(group); group = []; size = 0; } group.push(j); size += j.bytes.length; });
       if (group.length) P.parts.push(group);
