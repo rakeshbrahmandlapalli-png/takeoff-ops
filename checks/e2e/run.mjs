@@ -887,6 +887,7 @@ await scenario(async () => {
 await scenario(async () => {
   const db = makeDb(), b3 = db.bookings.find((x) => x.id === "b3");
   db.company.overstay_rate = 30;
+  Object.assign(db.bookings.find((x) => x.id === "b1"), { make: "VOLKSWAGEN GOLF", flight: "U22334", sched_time: "23:50", est_time: "00:12", flight_status: "landed", sent_at: iso(TONIGHT, "23:41"), sent_by: "s2" });
   Object.assign(b3, { flight: "TBC", overstay: true, called_word: "Called", called_at: iso(TONIGHT, "22:51"), sent_at: iso(TONIGHT, "22:58"), sent_by: "s2", return_at: iso(addDays(TONIGHT, -1), "23:00") });
   const page = await phone(browser, db, { width: 390 });
   await open(page); await page.waitForSelector('.row[data-id="b3"] .reg');
@@ -896,6 +897,13 @@ await scenario(async () => {
   });
   check("row tags: CHECK FLIGHT NO., OVERSTAY and £ DUE all shown", /CHECK FLIGHT/.test(JSON.stringify(r)) && /OVERSTAY/.test(JSON.stringify(r)) && /DUE/.test(JSON.stringify(r)), r);
   check("row tags: none runs under the buttons", r.length > 0 && r.every((x) => x.right <= x.acts), r);
+  // An ordinary landed car keeps flight and times on one line (28 Sept: they wrapped).
+  const one = await page.evaluate(() => {
+    const row = document.querySelector('.row[data-id="b1"]'); if (!row) return null;
+    const a = row.querySelector(".l2a").getBoundingClientRect(), b = row.querySelector(".l2b").getBoundingClientRect(), acts = row.querySelector(".acts").getBoundingClientRect();
+    return { same: Math.abs(a.top - b.top) < 4, right: Math.round(b.right), acts: Math.round(acts.left), text: row.querySelector(".l2").textContent };
+  });
+  check("row: flight and landing times stay on one line, clear of the buttons", !!one && one.same && one.right <= one.acts && /LANDED/.test(one.text), one);
   await page.screenshot({ path: process.env.SHOT_DIR ? process.env.SHOT_DIR + "/row-tags.png" : "/dev/null", clip: { x: 0, y: 0, width: 390, height: 700 } }).catch(() => {});
 });
 

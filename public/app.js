@@ -896,6 +896,13 @@
     if (!r.flight || r.flight === "NO FLIGHT" || r.sched_time || r.cleared_at) return false;
     return /check the flight number$/.test(r.flight_note) || !/^([A-Z0-9]{2}\d{1,5}|[A-Z]{3}\d{1,4})$/.test(r.flight);
   }
+  // The car's tags on a line of their own under the flight and times, and only
+  // when there are any, so the times stay on one line and no tag (e.g. £30
+  // DUE) is ever hidden under the buttons.
+  function rowTags(r, tags) {
+    tags = tags.filter(Boolean);
+    return tags.length ? '<div class="l2 l2t" data-open>' + tags.join(" ") + "</div>" : "";
+  }
   function dropRow(r) {
     var cmpl = r.clear_word === "COMPLAINT", bang = /^!/.test(r.note), overWord = r.called_word === "Overstay";
     var canc = r.flight_status === "cancelled", over = r.overstay || overWord;
@@ -914,12 +921,10 @@
       (r.flight ? esc(r.flight) : can("flights") ? '<button type="button" class="addflight" data-addflight>+ FLIGHT</button>' : "—") + "</span>" +
       '<span class="l2b">' + (booked ? " · " + esc(booked) : "") +
       (eta ? ' &rarr; <span class="eta' + (eta === "DELAY" ? " dly" : "") + (r.flight_status === "expected" ? " exp" : "") + '">' + esc(eta) + "</span>" : "") +
-      (r.flight_status === "landed" ? ' <span class="tag ld">LANDED</span>' : "") +
-      (flightToCheck(r) ? ' · <span class="tag ck">CHECK FLIGHT NO.</span>' : "") +
-      (canc ? ' · <span class="tag cx">CANCELLED</span>' : "") +
-      (over ? ' · <span class="tag ov">OVERSTAY</span>' : "") +
-
-      (cmpl ? ' · <span class="tag cm">COMPLAINT</span>' : "") + chargeTag(r) + "</span></div>" + earlyLine(r) + noteLine(r) + "</div>" +
+      (r.flight_status === "landed" ? ' <span class="tag ld">LANDED</span>' : "") + "</span></div>" +
+      rowTags(r, [flightToCheck(r) ? '<span class="tag ck">CHECK FLIGHT NO.</span>' : "", canc ? '<span class="tag cx">CANCELLED</span>' : "",
+        over ? '<span class="tag ov">OVERSTAY</span>' : "", cmpl ? '<span class="tag cm">COMPLAINT</span>' : "", chargeTag(r).replace(/^ · /, "")]) +
+      earlyLine(r) + noteLine(r) + "</div>" +
       '<div class="acts">' +
       actBtn(r, 'data-act="sent"', "s", "SENT", !!r.sent_at, r.sent_at, can("sent"), r.sent_by) +
       actBtn(r, 'data-act="called"', "c" + (overWord ? " ov" : ""), overWord ? "OVERSTAY" : "CALLED", !!r.called_at, r.called_at, can("called"), r.called_by) +
