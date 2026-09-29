@@ -9,6 +9,8 @@
 //                                               with the SETUP_CODE secret. Clients can no longer
 //                                               be set up with the code (see client_owner).
 //   { action: "client_owner", company_id, name } product owner only: a client's first owner
+//   { action: "client_open", company_id }       product owner only: sign in as their own
+//                                               "(Parking Ops)" owner inside that client
 //   { action: "add", name, role }               office/manager (owner roles by an owner only)
 //   { action: "reset", staff_id }               new link + PIN, the old link stops working
 //   { action: "off" | "on", staff_id }          switch access off / back on (history is kept)
@@ -120,6 +122,38 @@ Deno.serve(async (req) => {
       const clientUrl = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host) ? "https://" + host + "/" : appUrl;
       const made = await createPerson(client.id, name, "owner");
       return reply(200, { ...made, link: clientUrl.replace(/[#?].*$/, "") + made.link.slice(made.link.indexOf("#t=")) });
+    }
+
+    // ── the product owner opens a client's app (database part 56) ──
+    // They sign in as their own owner login inside that client, named
+    // "<name> (Parking Ops)": made the first time, switched back on if the
+    // client switched it off. The client sees it in their Staff screen.
+    if (action === "client_open") {
+      const { data: isAdmin } = await asCaller.rpc("is_platform_admin");
+      if (isAdmin !== true) return reply(403, { error: "Not allowed." });
+      const { data: client } = await admin.from("companies").select("id, slug, name, suspended_at").eq("id", String(body.company_id ?? "")).maybeSingle();
+      if (!client || client.slug === "platform") return reply(404, { error: "Client not found." });
+      if (client.suspended_at) return reply(409, { error: "Resume this client first." });
+      const { data: found } = await admin.from("staff").select("id, user_id, active, removed_at")
+        .eq("company_id", client.id).eq("platform_staff", me.staff_id).maybeSingle();
+      let userId = found?.user_id as string | undefined;
+      if (!found) {
+        const made = await createPerson(client.id, (String(me.name) + " (Parking Ops)").slice(0, 60), "owner");
+        const { error: linkErr } = await admin.from("staff").update({ platform_staff: me.staff_id }).eq("id", made.staff_id);
+        if (linkErr) throw new Error(linkErr.message);
+        const { data: row } = await admin.from("staff").select("user_id").eq("id", made.staff_id).single();
+        userId = row?.user_id;
+      } else if (!found.active || found.removed_at) {
+        if (found.user_id) await admin.auth.admin.updateUserById(found.user_id, { ban_duration: "none" });
+        const { error: onErr } = await admin.from("staff").update({ active: true, removed_at: null }).eq("id", found.id);
+        if (onErr) throw new Error(onErr.message);
+      }
+      if (!userId) return reply(500, { error: "No login found for the Parking Ops owner." });
+      const { data: user, error: userError } = await admin.auth.admin.getUserById(userId);
+      if (userError || !user.user?.email) return reply(500, { error: userError?.message ?? "No login found." });
+      const { data: link, error: linkError } = await admin.auth.admin.generateLink({ type: "magiclink", email: user.user.email });
+      if (linkError || !link.properties?.hashed_token) return reply(500, { error: linkError?.message ?? "Could not start the session." });
+      return reply(200, { token_hash: link.properties.hashed_token, name: client.name });
     }
 
     if (!me.can_staff) return reply(403, { error: "Only the office can manage staff." });

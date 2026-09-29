@@ -80,6 +80,8 @@ function rpc(db, fn, a) {
   const row = (id) => db.bookings.find((x) => x.id === id);
   switch (fn) {
     case "me": return db.me;
+    case "admin_clients": return [{ id: "c1", name: "TAKEOFF", slug: "takeoff", yards: ["NB", "S"], brand: { colour: "#F59E0B", host: "takeoff-ops.vercel.app" }, staff: 14, has_owner: true, sheets_7d: 18, cars_7d: 2074, last_activity: now() }];
+    case "admin_usage": return { db_bytes: 25709715, store_bytes: 0, store_files: 0, clients: [{ id: "c1", name: "TAKEOFF", cars_30d: 2074, sheets_30d: 18, pt_sets_30d: 134, pt_photos_30d: 4277, fr24_calls_30d: 209, fr24_calls_today: 46, timetable_runs_30d: 148, timetable_last_ok: now(), timetable_last_error: "", activity_30d: 5805 }] };
     case "my_permissions": return Object.fromEntries(["sent", "called", "clear", "yard", "summary", "log", "flights", "rtc", "picksinfo", "import", "staff", "settings", "note", "intake"].map((k) => [k, true]));
     case "tap_drop": {
       const b = row(a.p_booking), f = { sent: "sent", called: "called", clear: "cleared" }[a.p_action];
@@ -150,6 +152,12 @@ async function backend(ctx, db) {
       return reply(200, rpc(db, fn, args));
     }
     if (p.startsWith("/storage/v1/object/pt-photos/")) { db.uploads.push(p.slice(29)); (db.uploadMarks = db.uploadMarks || []).push(((req.postDataBuffer() || Buffer.alloc(0)).toString("latin1").match(/name="cacheControl"\r\n\r\n(\d+)/) || [])[1] || ""); return reply(200, { Key: "pt-photos/" + p.slice(29) }); }
+    if (p.startsWith("/functions/v1/manage-staff")) {
+      const a = JSON.parse(req.postData() || "{}"); (db.staffCalls = db.staffCalls || []).push(a);
+      // Opening a client: from now on the phone is that client's owner.
+      if (a.action === "client_open") { db.company = db.clientCompany; db.me = { ...db.me, company_id: db.company.id, name: "RAKESH (PARKING OPS)" }; return reply(200, { token_hash: "th", name: db.company.name }); }
+      return reply(400, { error: "not in the test" });
+    }
     if (p.startsWith("/functions/v1/pt-r2")) {
       const a = JSON.parse(req.postData() || "{}");
       (db.r2Asks = db.r2Asks || []).push({ ...a, auth: req.headers()["authorization"] || "" });
@@ -582,6 +590,31 @@ await scenario(async () => {
   db.r2Down = false;
   await page.evaluate(() => window.dispatchEvent(new Event("online"))); await sleep(6000);
   check("PT (R2 down): connection back, photos saved without reopening the app", db.ptLinks.length === 1 && db.ptLinks[0].paths.length === 3, db.ptLinks.map((l) => l.paths.length));
+});
+await scenario(async () => {
+  // Parking Ops: open a client's board, see Usage, and come back.
+  const db = makeDb();
+  db.clientCompany = db.company;
+  db.company = { id: "c0", name: "Parking Ops", slug: "platform", yards: [], drops_day_end: "06:00:00", brand: {}, time_zone: "Europe/London" };
+  db.me = { ...db.me, company_id: "c0" };
+  const page = await phone(browser, db);
+  await page.goto(BASE + "/"); await page.waitForSelector("[data-clientopen]", { timeout: 8000 });
+  check("Parking Ops: no CONNECTING on the Clients page", (await page.textContent("#sync")) === "");
+  check("Parking Ops: each client has Open board", await page.locator('[data-clientopen="c1"]').count() === 1);
+  await page.click("[data-usage]"); await page.waitForSelector("table.usage", { timeout: 5000 });
+  const use = await page.textContent("#panelBody");
+  check("Parking Ops: Usage shows the database, PT photos, FR24 and AeroDataBox", /24\.5 MB of 500 MB/.test(use) && /134 \/ 4277/.test(use) && /46 · about 1,794 credits/.test(use) && /AeroDataBox now\s*working/.test(use), use.slice(0, 400));
+  await page.click("#panelBody [data-close]");
+  await page.click('[data-clientopen="c1"]');
+  await page.waitForSelector("#main .row", { timeout: 8000 });
+  check("Parking Ops: Open board opens the client's board as their owner", (db.staffCalls || []).some((x) => x.action === "client_open" && x.company_id === "c1") && await page.locator('.row[data-id="b1"]').count() === 1);
+  check("Parking Ops: the way back is in the top bar", await page.isVisible("#homeBtn"));
+  db.company = { id: "c0", name: "Parking Ops", slug: "platform", yards: [], drops_day_end: "06:00:00", brand: {}, time_zone: "Europe/London" };
+  db.me = { ...db.me, company_id: "c0", name: "RAKESH" };
+  await page.click("#homeBtn");
+  await page.waitForSelector("[data-clientopen]", { timeout: 8000 });
+  check("Parking Ops: back on the Clients page, no way-back button left", !(await page.isVisible("#homeBtn")) && (await page.evaluate(() => localStorage.getItem("po_home"))) === null);
+  check("Parking Ops: no errors", page.__errors.length === 0, page.__errors);
 });
 await scenario(async () => {
   const { db, page } = await ptRun("pdf", 8, { pdfLabels: true });

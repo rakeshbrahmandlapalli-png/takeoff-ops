@@ -436,3 +436,14 @@ td input{width:100px;min-height:36px;padding:0 8px;border:1px solid var(--bad);b
 .hist .hb{min-width:0;overflow-wrap:anywhere;}
 .hist .hk{font-size:10px;color:#5f6368;border:1px solid #dadce0;border-radius:3px;padding:0 3px;}
 .hist .hv{display:block;color:#3c4043;}
+
+/* Parking Ops: back from a client's app; the Usage panel. */
+.homebtn{flex:0 0 auto;border:1px solid #334155;background:#334155;color:#fff;border-radius:8px;font:700 12px/1 inherit;padding:8px 8px;letter-spacing:.02em;}
+.clienthead{gap:8px;}
+.usehead{margin:16px 0 6px;font-size:15px;}
+table.usage{width:100%;border-collapse:collapse;font-size:14px;}
+table.usage th{text-align:left;font-weight:500;color:var(--muted,#5b6472);padding:5px 8px 5px 0;vertical-align:top;}
+table.usage td{text-align:right;padding:5px 0;font-weight:600;}
+table.usage tr+tr{border-top:1px solid #e5e7eb;}
+.warnt{color:#b42318;font-weight:600;}
+.clienthead .title{margin-right:auto;}

@@ -229,7 +229,7 @@
     S.staff = {}; (res[2].data || []).forEach(function (p) { S.staff[p.id] = p; });
     // The product owner's own login: no board, just the Clients page.
     S.platform = !!(S.company && S.company.slug === "platform");
-    if (S.platform) { S.view = "clients"; only("app"); render(); return; }
+    if (S.platform) { try { localStorage.removeItem(HOME_KEY); } catch (e) {} S.view = "clients"; only("app"); render(); return; }
     loadQueue();
     pickDefaultSheet();
     await loadRows();
@@ -511,6 +511,8 @@
   }
   function renderSync() {
     var el = $("sync"); if (!el) return;
+    // Parking Ops has no board, so no live link to wait for.
+    if (S.platform) { el.className = "pend"; el.textContent = ""; return; }
     var waiting = S.queue.length;
     // Silent while all is well, like the Sheet app: it only speaks up when a
     // tap is waiting or live updates have dropped.
@@ -539,6 +541,7 @@
     document.body.classList.toggle("picks", picks);
     document.body.classList.toggle("on-board", board);
     $("who").textContent = S.me.name.toUpperCase();
+    show("homeBtn", !S.platform && !!homeSaved());
     $("clock").textContent = londonParts(new Date()).time;
     var shift = currentShiftKey();
     $("sheetPick").innerHTML = S.sheets.length || S.archiveSheet ? pickerHtml(shift) : "<option>No sheets yet</option>";
@@ -2970,7 +2973,7 @@
   function renderClients() {
     if (S.clients === undefined) { S.clients = null; loadClients(); }
     var list = S.clients;
-    var h = '<div class="clienthead"><h2 class="title">Clients</h2><button type="button" class="btn brand" data-clientedit="new">Add a client</button></div>';
+    var h = '<div class="clienthead"><h2 class="title">Clients</h2><button type="button" class="btn ghost" data-usage>Usage</button><button type="button" class="btn brand" data-clientedit="new">Add a client</button></div>';
     if (list === null) return h + '<p class="note">Loading…</p>';
     if (list === false) return h + '<div class="msg">Couldn\'t load the clients. Refresh to try again.</div>';
     if (!list.length) return h + '<p class="note">No clients yet.</p>';
@@ -2981,7 +2984,8 @@
       return '<div class="client' + (c.suspended_at ? " off" : "") + '"><div class="cl1"><span class="swatch" style="background:' + esc(b.colour || "#334155") + '"></span><strong>' + esc(c.name) + "</strong>" + status + "</div>" +
         '<div class="cmeta">' + esc(c.slug) + " · " + esc(host) + " · yards " + esc((c.yards || []).join(", ")) + "</div>" +
         '<div class="cnums"><div><b class="num">' + c.staff + "</b><span>staff</span></div><div><b class=\"num\">" + c.cars_7d + "</b><span>cars, last 7 days</span></div><div><b class=\"num\">" + c.sheets_7d + "</b><span>sheets, last 7 days</span></div><div><b>" + esc(last) + "</b><span>last activity</span></div></div>" +
-        '<div class="row-actions"><button type="button" class="btn ghost small" data-clientedit="' + c.id + '">Edit</button>' +
+        '<div class="row-actions">' + (c.suspended_at ? "" : '<button type="button" class="btn brand small" data-clientopen="' + c.id + '">Open board</button>') +
+        '<button type="button" class="btn ghost small" data-clientedit="' + c.id + '">Edit</button>' +
         (!c.has_owner && !c.suspended_at ? '<button type="button" class="btn brand small" data-clientowner="' + c.id + '">Create first owner</button>' : "") +
         '<button type="button" class="btn ghost small' + (c.suspended_at ? "" : " warn") + '" data-clientsuspend="' + c.id + '">' + (c.suspended_at ? "Resume" : "Suspend") + "</button></div></div>";
     }).join("") + "</div>";
@@ -3071,6 +3075,61 @@
     if (r.error) return toast(r.error.message, true);
     toast(c.name + (on ? " suspended" : " resumed"));
     loadClients();
+  }
+
+  // ── Open a client's app (database part 56) ──
+  // The product owner signs in as their own "(Parking Ops)" owner inside the
+  // client: the client's board, Settings and Staff, exactly as their owner has
+  // them. The Parking Ops sign-in is kept on this phone for the way back.
+  var HOME_KEY = "po_home";
+  function homeSaved() { try { return JSON.parse(localStorage.getItem(HOME_KEY) || "null"); } catch (e) { return null; } }
+  async function openClientBoard(btn) {
+    var c = (S.clients || []).filter(function (x) { return x.id === btn.dataset.clientopen; })[0]; if (!c) return;
+    if (!confirm("Open " + c.name + "'s app? You'll be their owner, shown as \"" + S.me.name + " (Parking Ops)\" in their Staff list and activity. Tap ‹ PARKING OPS at the top to come back.")) return;
+    btn.disabled = true;
+    try {
+      var s = (await sb.auth.getSession()).data.session;
+      if (!s) throw new Error("Sign in again.");
+      var r = await callFunction("manage-staff", { action: "client_open", company_id: c.id, app_url: location.origin + "/" }, true);
+      try { localStorage.setItem(HOME_KEY, JSON.stringify({ a: s.access_token, r: s.refresh_token })); } catch (e) {}
+      var v = await sb.auth.verifyOtp({ type: "magiclink", token_hash: r.token_hash });
+      if (v.error) { try { localStorage.removeItem(HOME_KEY); } catch (e) {} await sb.auth.setSession({ access_token: s.access_token, refresh_token: s.refresh_token }); throw v.error; }
+      location.reload();
+    } catch (err) { btn.disabled = false; toast(err.message || String(err), true); }
+  }
+  async function backToPlatform() {
+    var h = homeSaved(); if (!h) return;
+    $("homeBtn").disabled = true;
+    try { await sb.auth.signOut({ scope: "local" }); } catch (e) {}
+    var r = await sb.auth.setSession({ access_token: h.a, refresh_token: h.r });
+    try { localStorage.removeItem(HOME_KEY); } catch (e) {}
+    if (r.error) { toast("Sign in to Parking Ops again with your link and PIN.", true); return showSignIn(); }
+    location.reload();
+  }
+  // ── Usage (database part 56): what each client uses, last 30 days ──
+  var FR24_CREDITS = 39;   // about this many credits per live check, from the FR24 account
+  function mb(n) { return n >= 1073741824 ? (n / 1073741824).toFixed(2) + " GB" : (n / 1048576).toFixed(1) + " MB"; }
+  async function openUsage() {
+    $("panelBody").innerHTML = '<h2 id="panelTitle">Usage</h2><p class="note">Loading…</p>';
+    if (!$("panel").open) $("panel").showModal();
+    var r = await sb.rpc("admin_usage");
+    if (r.error) { $("panelBody").innerHTML = '<h2 id="panelTitle">Usage</h2><div class="msg">' + esc(r.error.message) + '</div><div class="pbtns"><button type="button" data-close>Close</button></div>'; return; }
+    var u = r.data || {}, rows = function (list) { return list.map(function (x) { return "<tr><th>" + x[0] + "</th><td class=\"num\">" + x[1] + "</td></tr>"; }).join(""); };
+    $("panelBody").innerHTML = '<h2 id="panelTitle">Usage</h2>' +
+      '<h3 class="usehead">Everyone</h3><table class="usage">' + rows([
+        ["Database", esc(mb(u.db_bytes || 0)) + " of 500 MB"],
+        ["Supabase file store", esc(mb(u.store_bytes || 0)) + " · " + (u.store_files || 0) + " files"]]) + "</table>" +
+      '<p class="hint">Download traffic (egress, 5 GB a month free) is only on the <a href="https://supabase.com/dashboard/project/_/settings/billing/usage" target="_blank" rel="noopener">Supabase usage page</a>. PT copies are in Cloudflare R2, counted below.</p>' +
+      (u.clients || []).map(function (c) {
+        var tt = c.timetable_last_error ? '<span class="warnt">' + esc(c.timetable_last_error.slice(0, 90)) + "</span>" : c.timetable_last_ok ? "working · last " + esc(dayShort(c.timetable_last_ok) + " " + hhmm(c.timetable_last_ok)) : "not used";
+        return '<h3 class="usehead">' + esc(c.name) + '</h3><table class="usage">' + rows([
+          ["Cars (30 days)", c.cars_30d], ["Sheets (30 days)", c.sheets_30d],
+          ["PT sets / photos (30 days)", c.pt_sets_30d + " / " + c.pt_photos_30d],
+          ["FR24 checks today", c.fr24_calls_today + " · about " + (c.fr24_calls_today * FR24_CREDITS).toLocaleString("en-GB") + " credits"],
+          ["FR24 checks (30 days)", c.fr24_calls_30d + " · about " + (c.fr24_calls_30d * FR24_CREDITS).toLocaleString("en-GB") + " credits"],
+          ["AeroDataBox (30 days)", c.timetable_runs_30d + " checks"], ["AeroDataBox now", tt],
+          ["Taps and changes (30 days)", c.activity_30d]]) + "</table>";
+      }).join("") + '<div class="pbtns"><button type="button" data-close>Close</button></div>';
   }
 
   // Mirrors can() in database part 3: what each role gets before any per-person change.
@@ -3585,6 +3644,9 @@
     if (t.dataset.manage) return openStaffPanel(t.dataset.manage);
     if (t.dataset.clientedit && S.platform) return openClient(t.dataset.clientedit);
     if (t.dataset.clientsuspend && S.platform) return suspendClient(t);
+    if (t.dataset.clientopen && S.platform) return openClientBoard(t);
+    if (t.dataset.usage !== undefined && S.platform) return openUsage();
+    if (t.id === "homeBtn") return backToPlatform();
     if (t.dataset.clientowner && S.platform) return askClientOwner(t.dataset.clientowner);
     if (t.id === "qClear") { S.q = ""; S.other = null; $("q").value = ""; show("qClear", false); $("main").innerHTML = renderBoard(); $("q").focus(); return; }
     if (t.dataset.othersheet) { var oq = t.dataset.otherreg; S.other = null; await openArchived(t.dataset.othersheet, oq); searchOtherDays(); window.scrollTo(0, 0); return; }
