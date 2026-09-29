@@ -197,10 +197,16 @@ async function backend(ctx, db) {
 }
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 const JWT = b64({ alg: "HS256" }) + "." + b64({ sub: "u1", role: "authenticated", exp: 4102444800 }) + ".sig";
-async function phone(browser, db, { signedIn = true, ua, width = 390, noBitmap = false, still = "" } = {}) {
+async function phone(browser, db, { signedIn = true, ua, width = 390, noBitmap = false, still = "", pdfLabels = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, userAgent: ua, permissions: ["camera"] });
   await backend(ctx, db);
-  await ctx.addInitScript(([jwt, signedIn, noBitmap, still]) => {
+  await ctx.addInitScript(([jwt, signedIn, noBitmap, still, pdfLabels]) => {
+    // Every label the PDF button shows, however quickly it changes.
+    if (pdfLabels) {
+      window.__pdfLabels = [];
+      new MutationObserver(() => { const b = document.querySelector("[data-ptpdf]"); if (b && window.__pdfLabels[window.__pdfLabels.length - 1] !== b.textContent) window.__pdfLabels.push(b.textContent); })
+        .observe(document, { childList: true, subtree: true, characterData: true });
+    }
     // A pretend Android camera for real photos: "ok" (landscape, like the
     // video), "side" (handed back on its side) or "fail".
     if (still) {
@@ -228,7 +234,7 @@ async function phone(browser, db, { signedIn = true, ua, width = 390, noBitmap =
     try { navigator.clipboard.writeText = async () => {}; } catch (e) {}
     // Like an iPhone that won't decode a photo this way.
     if (noBitmap) window.createImageBitmap = () => Promise.reject(new Error("not supported"));
-  }, [JWT, signedIn, noBitmap, still]);
+  }, [JWT, signedIn, noBitmap, still, pdfLabels]);
   const page = await ctx.newPage();
   page.setDefaultTimeout(6000);
   page.__errors = [];
@@ -578,8 +584,10 @@ await scenario(async () => {
   check("PT (R2 down): connection back, photos saved without reopening the app", db.ptLinks.length === 1 && db.ptLinks[0].paths.length === 3, db.ptLinks.map((l) => l.paths.length));
 });
 await scenario(async () => {
-  const { db, page } = await ptRun("pdf", 8);
+  const { db, page } = await ptRun("pdf", 8, { pdfLabels: true });
   await page.waitForSelector("[data-ptpdf]:not([disabled])", { timeout: 8000 });
+  const labels = await page.evaluate(() => window.__pdfLabels);
+  check("PT (PDF): while it's made, the button counts the photos (x of 8)", new Set(labels.filter((l) => /^Making the PDF… \d of 8$/.test(l))).size >= 3 && labels.every((l) => !/Making/.test(l) || /\d of 8$/.test(l)), labels);
   check("PT (PDF): only the PDF button is offered", await page.locator("[data-ptreg]").count() === 0);
   await page.click("[data-ptpdf]"); await sleep(800);
   const sh = await page.evaluate(() => window.__shares);
