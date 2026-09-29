@@ -141,12 +141,13 @@ body.picks{--actw:var(--actwp);}
 select.code.pick{-webkit-appearance:none;appearance:none;height:20px;padding:0 5px;font:700 10px/1 system-ui,sans-serif;letter-spacing:.2px;cursor:pointer;}
 select.code.pick.unset{color:#7a5c00;background:#fff2cc;border:1px dashed #d4a72c;}
 .pin{margin-left:auto;padding-left:4px;min-width:0;font-size:10px;color:#5f6368;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.l2{margin-top:1px;font-size:12px;color:#5f6368;display:flex;flex-wrap:wrap;align-items:baseline;cursor:pointer;}
+.l2{margin-top:1px;font-size:12px;color:#5f6368;display:flex;align-items:baseline;cursor:pointer;}
 .l2a{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-/* The tags wrap onto the next line rather than run under the buttons (a
-   car with CHECK FLIGHT NO., OVERSTAY and £30 DUE hid the money, 28 Sept). */
-.l2b{flex:0 1 auto;min-width:0;white-space:normal;}
-.l2b .tag{white-space:nowrap;}
+.l2b{flex:0 0 auto;white-space:nowrap;}
+/* Tags (CHECK FLIGHT NO., OVERSTAY, £ DUE…) on their own line under the times;
+   they wrap there, never under the buttons (28 Sept: £30 DUE was hidden). */
+.l2t{flex-wrap:wrap;gap:3px 6px;margin-top:2px;}
+.l2t .tag{white-space:nowrap;}
 .left{overflow:hidden;}
 .l2 .mk{color:#3c4043;font-weight:600;}
 .l2 .eta{color:#202124;font-weight:700;}
