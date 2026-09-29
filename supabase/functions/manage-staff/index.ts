@@ -9,6 +9,8 @@
 //                                               with the SETUP_CODE secret. Clients can no longer
 //                                               be set up with the code (see client_owner).
 //   { action: "client_owner", company_id, name } product owner only: a client's first owner
+//   { action: "client_open", company_id }       product owner only: sign in as their own
+//                                               "(Parking Ops)" owner inside that client
 //   { action: "add", name, role }               office/manager (owner roles by an owner only)
 //   { action: "reset", staff_id }               new link + PIN, the old link stops working
 //   { action: "off" | "on", staff_id }          switch access off / back on (history is kept)
