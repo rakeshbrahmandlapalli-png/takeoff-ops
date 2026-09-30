@@ -261,8 +261,17 @@ async function checkSchedule(admin: SupabaseClient, c: Company, days: string[], 
       // of the same number on another day is not this car's flight.
       const run = timed[0] ?? (runs.every((a) => a.cancelled) ? runs.find((a) => !a.sched) ?? null : null);
       if (!run) {
-        const near = runs.find((a) => a.sched);
-        flag(near ? `Lands ${hhmm(near.sched!, tz)}, over 6 h from the booked time · check the flight number` : NOT_FOUND);
+        // The flight is on, just far from the booked time: the car takes the
+        // flight's time (so the board orders it by that) and keeps the warning.
+        const near = runs.filter((a) => a.sched && !a.cancelled)
+          .sort((x, y) => booked ? Math.abs(minsBetween(booked, x.sched!)) - Math.abs(minsBetween(booked, y.sched!)) : 0)[0];
+        if (!near) { flag(NOT_FOUND); continue; }
+        tally.notfound++;
+        const note = `Lands ${hhmm(near.sched!, tz)}, over 6 h from the booked time · check the flight number`;
+        if (!b.sched_at || new Date(b.sched_at).getTime() !== near.sched!.getTime() || (b.flight_status === "" || b.flight_status === "scheduled") && b.flight_note !== note) {
+          Object.assign(patchOf(changes, b), { sched_at: near.sched!.toISOString(), sched_time: hhmm(near.sched!, tz),
+            ...(["", "scheduled", "cancelled"].includes(b.flight_status) ? { flight_status: "scheduled", flight_note: note } : {}) });
+        }
         continue;
       }
 
@@ -333,7 +342,7 @@ async function checkLive(admin: SupabaseClient, c: Company, day: string, trigger
     // An ETA that has passed with the aircraft gone from the feed: it's down.
     // Costs nothing to work out.
     if (b.flight_status === "airborne" && b.est_at && new Date(b.est_at) < now) {
-      Object.assign(patchOf(changes, b), { flight_status: "landed", flight_note: `Landed about ${b.est_time} (last ETA)` });
+      Object.assign(patchOf(changes, b), { flight_status: "landed", flight_note: /check the flight number$/.test(b.flight_note) ? b.flight_note : `Landed about ${b.est_time} (last ETA)` });
       tally.landed++; continue;
     }
     const tracked = ["airborne", "expected"].includes(b.flight_status) && b.est_at;
@@ -385,9 +394,11 @@ async function checkLive(admin: SupabaseClient, c: Company, day: string, trigger
     for (const b of cars) {
       const p = patchOf(changes, b);
       p.flight_checked_at = now.toISOString();
+      // A car flagged "check the flight number" keeps that warning over any FR24 news.
+      const warn = /check the flight number$/.test(b.flight_note) ? b.flight_note : "";
       const base = new Date((b.sched_at ?? b.return_at)!);
       if (eta && minsBetween(base, eta) >= -MAX_EARLY && minsBetween(base, eta) <= MAX_DELAY) {
-        Object.assign(p, { est_at: eta.toISOString(), est_time: hhmm(eta, tz), flight_status: "airborne", flight_note: `ETA · FR24, checked ${stamp}` });
+        Object.assign(p, { est_at: eta.toISOString(), est_time: hhmm(eta, tz), flight_status: "airborne", flight_note: warn || `ETA · FR24, checked ${stamp}` });
         tally.written++;
       } else if (!eta && ["", "scheduled", "delayed"].includes(b.flight_status)) {
         // Only a delay if it ought to be in the air by now. Well past the time,
@@ -395,9 +406,9 @@ async function checkLive(admin: SupabaseClient, c: Company, day: string, trigger
         const due = minsBetween(now, base);
         if (due <= DELAY_WITHIN && due >= -DELAY_AFTER) {
           if (b.flight_status !== "delayed") tally.delayed++;
-          Object.assign(p, { est_at: null, est_time: "DELAY", flight_status: "delayed", flight_note: `Not airborne at ${stamp}, so it will be late` });
+          Object.assign(p, { est_at: null, est_time: "DELAY", flight_status: "delayed", flight_note: warn || `Not airborne at ${stamp}, so it will be late` });
         } else if (b.flight_status === "delayed") {
-          Object.assign(p, { est_time: "", flight_status: b.sched_at ? "scheduled" : "", flight_note: "" });
+          Object.assign(p, { est_time: "", flight_status: b.sched_at ? "scheduled" : "", flight_note: warn });
         }
       }
     }
