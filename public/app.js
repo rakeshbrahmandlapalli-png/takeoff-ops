@@ -896,7 +896,11 @@
   // The flights check couldn't find this number among the day's arrivals, or
   // it isn't a flight number at all (TBC, …): the office needs to look.
   function flightToCheck(r) {
-    if (!r.flight || r.flight === "NO FLIGHT" || r.sched_time || r.cleared_at) return false;
+    if (!r.flight || r.flight === "NO FLIGHT" || r.cleared_at) return false;
+    // Flight found but landing far from when they booked to be back: it has
+    // the flight's time (for the order) and still needs a look.
+    if (/over 6 h from the booked time/.test(r.flight_note)) return true;
+    if (r.sched_time) return false;
     return /check the flight number$/.test(r.flight_note) || !/^([A-Z0-9]{2}\d{1,5}|[A-Z]{3}\d{1,4})$/.test(r.flight);
   }
   // The car's tags on a line of their own under the flight and times, and only
@@ -926,7 +930,8 @@
       (eta ? ' &rarr; <span class="eta' + (eta === "DELAY" ? " dly" : "") + (r.flight_status === "expected" ? " exp" : "") + '">' + esc(eta) + "</span>" : "") +
       (r.flight_status === "landed" ? ' <span class="tag ld">LANDED</span>' : "") + "</span></div>" +
       // Not in the day's timetable: the flight may still be on, so the office checks by hand.
-      rowTags(r, [flightToCheck(r) ? '<span class="tag ck">' + (/^Not in the timetable/.test(r.flight_note) ? "CHECK MANUALLY" : "CHECK FLIGHT NO.") + "</span>" : "", canc ? '<span class="tag cx">CANCELLED</span>' : "",
+      rowTags(r, [flightToCheck(r) ? '<span class="tag ck">' + (/^Not in the timetable/.test(r.flight_note) ? "CHECK MANUALLY"
+        : /over 6 h from the booked time/.test(r.flight_note) && r.return_at ? "CHECK FLIGHT · BOOKED " + esc(hhmm(r.return_at)) : "CHECK FLIGHT NO.") + "</span>" : "", canc ? '<span class="tag cx">CANCELLED</span>' : "",
         over ? '<span class="tag ov">OVERSTAY</span>' : "", cmpl ? '<span class="tag cm">COMPLAINT</span>' : "", chargeTag(r).replace(/^ · /, "")]) +
       earlyLine(r) + noteLine(r) + "</div>" +
       '<div class="acts">' +
