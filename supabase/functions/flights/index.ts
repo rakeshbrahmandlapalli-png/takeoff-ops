@@ -342,7 +342,7 @@ async function checkLive(admin: SupabaseClient, c: Company, day: string, trigger
     // An ETA that has passed with the aircraft gone from the feed: it's down.
     // Costs nothing to work out.
     if (b.flight_status === "airborne" && b.est_at && new Date(b.est_at) < now) {
-      Object.assign(patchOf(changes, b), { flight_status: "landed", flight_note: /check the flight number$/.test(b.flight_note) ? b.flight_note : `Landed about ${b.est_time} (last ETA)` });
+      Object.assign(patchOf(changes, b), { flight_status: "landed", flight_note: /over 6 h from the booked time/.test(b.flight_note) ? b.flight_note : `Landed about ${b.est_time} (last ETA)` });
       tally.landed++; continue;
     }
     const tracked = ["airborne", "expected"].includes(b.flight_status) && b.est_at;
@@ -394,8 +394,9 @@ async function checkLive(admin: SupabaseClient, c: Company, day: string, trigger
     for (const b of cars) {
       const p = patchOf(changes, b);
       p.flight_checked_at = now.toISOString();
-      // A car flagged "check the flight number" keeps that warning over any FR24 news.
-      const warn = /check the flight number$/.test(b.flight_note) ? b.flight_note : "";
+      // A flight far from the booked time keeps that warning over any FR24 news
+      // (one missing from the timetable but found in the air is simply on).
+      const warn = /over 6 h from the booked time/.test(b.flight_note) ? b.flight_note : "";
       const base = new Date((b.sched_at ?? b.return_at)!);
       if (eta && minsBetween(base, eta) >= -MAX_EARLY && minsBetween(base, eta) <= MAX_DELAY) {
         Object.assign(p, { est_at: eta.toISOString(), est_time: hhmm(eta, tz), flight_status: "airborne", flight_note: warn || `ETA · FR24, checked ${stamp}` });
