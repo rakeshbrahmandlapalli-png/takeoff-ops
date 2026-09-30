@@ -923,14 +923,17 @@ await scenario(async () => {
   check("after the update the board is back", await page.locator("#main .row").count() > 0);
 });
 
-// A flight AeroDataBox left out gets its usual time: shown, tagged, no CHECK FLIGHT NO.
+// A flight not in the day's timetable reads CHECK MANUALLY (it may still fly); a
+// flight landing far from the booked time still reads CHECK FLIGHT NO.
 await scenario(async () => {
   const db = makeDb();
-  Object.assign(db.bookings.find((x) => x.id === "b2"), { flight: "U22330", sched_time: "21:30", flight_status: "scheduled", flight_note: "Usual time · not in today's timetable yet" });
+  Object.assign(db.bookings.find((x) => x.id === "b2"), { flight: "U22330", flight_note: "Not in the timetable · check the flight number" });
+  Object.assign(db.bookings.find((x) => x.id === "b1"), { flight_note: "Lands 11:25, over 6 h from the booked time · check the flight number" });
   const page = await phone(browser, db);
   await open(page); await page.waitForSelector('.row[data-id="b2"] .reg');
-  const t = await page.textContent('.row[data-id="b2"]');
-  check("usual time: the time shows with a USUAL TIME tag, not CHECK FLIGHT NO.", /21:30/.test(t) && /USUAL TIME/.test(t) && !/CHECK FLIGHT/.test(t), t);
+  const t2 = await page.textContent('.row[data-id="b2"]'), t1 = await page.textContent('.row[data-id="b1"]');
+  check("not in the timetable: CHECK MANUALLY, no time made up", /CHECK MANUALLY/.test(t2) && !/CHECK FLIGHT NO/.test(t2), t2);
+  check("far from the booked time: still CHECK FLIGHT NO.", /CHECK FLIGHT NO/.test(t1), t1);
 });
 
 // A car with several tags (CHECK FLIGHT NO., OVERSTAY, £ DUE) on a phone: every tag stays
