@@ -447,5 +447,3 @@ table.usage td{text-align:right;padding:5px 0;font-weight:600;}
 table.usage tr+tr{border-top:1px solid #e5e7eb;}
 .warnt{color:#b42318;font-weight:600;}
 .clienthead .title{margin-right:auto;}
-/* A landing time taken from the flight's usual time (not in today's timetable). */
-.tag.us{background:#e8eef6;color:#334e6f;}
