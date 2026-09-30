@@ -923,6 +923,16 @@ await scenario(async () => {
   check("after the update the board is back", await page.locator("#main .row").count() > 0);
 });
 
+// A flight AeroDataBox left out gets its usual time: shown, tagged, no CHECK FLIGHT NO.
+await scenario(async () => {
+  const db = makeDb();
+  Object.assign(db.bookings.find((x) => x.id === "b2"), { flight: "U22330", sched_time: "21:30", flight_status: "scheduled", flight_note: "Usual time · not in today's timetable yet" });
+  const page = await phone(browser, db);
+  await open(page); await page.waitForSelector('.row[data-id="b2"] .reg');
+  const t = await page.textContent('.row[data-id="b2"]');
+  check("usual time: the time shows with a USUAL TIME tag, not CHECK FLIGHT NO.", /21:30/.test(t) && /USUAL TIME/.test(t) && !/CHECK FLIGHT/.test(t), t);
+});
+
 // A car with several tags (CHECK FLIGHT NO., OVERSTAY, £ DUE) on a phone: every tag stays
 // clear of the buttons (on 28 Sept they ran under SENT and hid the money due).
 await scenario(async () => {

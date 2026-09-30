@@ -54,6 +54,11 @@ const AERO_GAP_MS = 1200;
 // On a car whose flight number isn't among the day's arrivals: usually the
 // customer gave the outbound flight, or a typo. The app shows it on the row.
 const NOT_FOUND = "Not in the timetable · check the flight number";
+// AeroDataBox sometimes leaves a flight out of a day it does fly. When it has
+// flown on 2+ recent days, the car gets its usual landing time instead, marked
+// as such; the real one replaces it as soon as the timetable lists it.
+const USUAL = "Usual time · not in today's timetable yet";
+const USUAL_DAYS = 21;
 
 type Company = { id: string; name: string; time_zone: string; drops_day_end: string; airport_iata: string; airport_icao: string; flight_settings?: Partial<Timing> };
 type Booking = {
@@ -94,6 +99,12 @@ function localParts(d: Date, tz: string) {
   return { day: `${p.year}-${p.month}-${p.day}`, time: `${hour}:${p.minute}`, hour: Number(hour) };
 }
 const hhmm = (d: Date, tz: string) => localParts(d, tz).time;
+// "10:45" on "2026-09-30" in the airport's time zone, as a Date.
+function atLocal(day: string, time: string, tz: string) {
+  const guess = new Date(`${day}T${time}:00Z`), l = localParts(guess, tz);
+  const shown = new Date(`${l.day}T${l.time}:00Z`);
+  return new Date(guess.getTime() - (shown.getTime() - guess.getTime()));
+}
 function addDays(day: string, n: number) { const d = new Date(day + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
 // "2026-08-29 17:00Z" / "2026-08-29T17:00:00Z" / "2026-08-29 18:00+01:00"
 function parseApiTime(v: unknown): Date | null {
@@ -207,7 +218,7 @@ async function checkSchedule(admin: SupabaseClient, c: Company, days: string[], 
   const key = Deno.env.get("AERODATABOX_KEY");
   if (!key) return { skipped: "No AeroDataBox key yet" };
   const now = new Date(), tz = c.time_zone;
-  const tally = { filled: 0, moved: 0, expected: 0, landed: 0, cancelled: 0, notfound: 0, sheets: 0, error: "" };
+  const tally = { filled: 0, moved: 0, expected: 0, landed: 0, cancelled: 0, notfound: 0, usual: 0, sheets: 0, error: "" };
   let fetchedDays = 0;
 
   for (const day of days) {
@@ -241,6 +252,7 @@ async function checkSchedule(admin: SupabaseClient, c: Company, days: string[], 
 
     const changes = new Map<string, Record<string, unknown>>();
     const activity: Record<string, unknown>[] = [];
+    const missing: Booking[] = [];
     for (const b of cars) {
       const k = canon(b.flight), booked = b.return_at ? new Date(b.return_at) : null;
       const runs = arrivals.filter((a) => a.keys.includes(k));
@@ -248,7 +260,7 @@ async function checkSchedule(admin: SupabaseClient, c: Company, days: string[], 
         tally.notfound++;
         if (!b.flight_status && !b.sched_at && b.flight_note !== note) patchOf(changes, b).flight_note = note;
       };
-      if (!runs.length) { flag(NOT_FOUND); continue; }
+      if (!runs.length) { missing.push(b); continue; }
       // A daily number appears more than once in 26 hours: take the run
       // nearest the time the customer booked, and never one 6 h away.
       const timed = runs.filter((a) => a.sched && (!booked || Math.abs(minsBetween(booked, a.sched!)) <= MAX_DELAY))
@@ -274,7 +286,7 @@ async function checkSchedule(admin: SupabaseClient, c: Company, days: string[], 
       if (!run.sched) continue;
 
       const p = patchOf(changes, b);
-      if (/check the flight number$/.test(b.flight_note)) p.flight_note = "";
+      if (/check the flight number$/.test(b.flight_note) || b.flight_note === USUAL) p.flight_note = "";
       if (!b.sched_at || new Date(b.sched_at).getTime() !== run.sched.getTime()) {
         Object.assign(p, { sched_at: run.sched.toISOString(), sched_time: hhmm(run.sched, tz) });
         if (b.sched_at) tally.moved++; else tally.filled++;
@@ -294,6 +306,41 @@ async function checkSchedule(admin: SupabaseClient, c: Company, days: string[], 
         tally.expected++;
       }
       if (!Object.keys(p).length) changes.delete(b.id);
+    }
+
+    // Not in today's timetable: its usual time, if it has flown recently.
+    if (missing.length) {
+      const keys = [...new Set(missing.map((b) => canon(b.flight)))];
+      const since = new Date(now.getTime() - USUAL_DAYS * 24 * 60 * MIN).toISOString();
+      const { data: past } = await admin.from("timetable").select("flight, sched_at")
+        .eq("company_id", c.id).in("flight", keys).gte("sched_at", since).lt("sched_at", atLocal(day, "05:00", tz).toISOString()).neq("status", "cancelled");
+      for (const b of missing) {
+        const times = (past ?? []).filter((r) => r.flight === canon(b.flight)).map((r) => hhmm(new Date(r.sched_at), tz));
+        const booked = b.return_at ? new Date(b.return_at) : null;
+        let usual: Date | null = null;
+        if (times.length >= 2 && booked) {
+          // The time it lands most often; a tie goes to the one nearest the booked time.
+          const count = new Map<string, number>();
+          times.forEach((t) => count.set(t, (count.get(t) ?? 0) + 1));
+          const best = Math.max(...count.values());
+          const nearest = (t: string) => [atLocal(day, t, tz), atLocal(addDays(day, 1), t, tz)]
+            .sort((x, y) => Math.abs(minsBetween(booked, x)) - Math.abs(minsBetween(booked, y)))[0];
+          usual = [...count.keys()].filter((t) => count.get(t) === best).map(nearest)
+            .filter((d) => Math.abs(minsBetween(booked, d)) <= MAX_DELAY)
+            .sort((x, y) => Math.abs(minsBetween(booked, x)) - Math.abs(minsBetween(booked, y)))[0] ?? null;
+        }
+        if (!usual) {
+          tally.notfound++;
+          if (!b.flight_status && !b.sched_at && b.flight_note !== NOT_FOUND) patchOf(changes, b).flight_note = NOT_FOUND;
+          continue;
+        }
+        tally.usual++;
+        // Never over a time this car already has from the timetable or FR24.
+        if (b.sched_at && b.flight_note !== USUAL && !/check the flight number$/.test(b.flight_note)) continue;
+        if (b.sched_at && new Date(b.sched_at).getTime() === usual.getTime() && b.flight_note === USUAL) continue;
+        Object.assign(patchOf(changes, b), { sched_at: usual.toISOString(), sched_time: hhmm(usual, tz), flight_note: USUAL,
+          ...(!b.flight_status || b.flight_status === "cancelled" ? { flight_status: "scheduled" } : {}) });
+      }
     }
     await saveChanges(admin, changes);
     if (activity.length) await admin.from("activity").insert(activity);

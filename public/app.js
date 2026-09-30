@@ -925,7 +925,8 @@
       '<span class="l2b">' + (booked ? " · " + esc(booked) : "") +
       (eta ? ' &rarr; <span class="eta' + (eta === "DELAY" ? " dly" : "") + (r.flight_status === "expected" ? " exp" : "") + '">' + esc(eta) + "</span>" : "") +
       (r.flight_status === "landed" ? ' <span class="tag ld">LANDED</span>' : "") + "</span></div>" +
-      rowTags(r, [flightToCheck(r) ? '<span class="tag ck">CHECK FLIGHT NO.</span>' : "", canc ? '<span class="tag cx">CANCELLED</span>' : "",
+      rowTags(r, [flightToCheck(r) ? '<span class="tag ck">CHECK FLIGHT NO.</span>' : "",
+        /^Usual time/.test(r.flight_note) && !eta ? '<span class="tag us">USUAL TIME</span>' : "", canc ? '<span class="tag cx">CANCELLED</span>' : "",
         over ? '<span class="tag ov">OVERSTAY</span>' : "", cmpl ? '<span class="tag cm">COMPLAINT</span>' : "", chargeTag(r).replace(/^ · /, "")]) +
       earlyLine(r) + noteLine(r) + "</div>" +
       '<div class="acts">' +
