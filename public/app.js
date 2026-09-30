@@ -1367,7 +1367,7 @@
     if (!b || pt !== cur) return;
     cur.items.push({ file: b, url: thumb, state: cur.mode === "photos" ? "local" : "wait", n: cur.items.length + 1, ready: true });
     var el = $("camCount"); if (el) el.textContent = camCountText();
-    ptPump(r);
+    ptPump(r); ptPdfWarm(cur);
   }
   // ── Android: a real photo ──
   // Chrome on Android can ask the camera for a proper still photo (full size,
@@ -1796,7 +1796,7 @@
     try {
       var jpgs = [];
       for (var i = 0; i < items.length; i++) {
-        jpgs.push(await ptPdfJpeg(items[i].file));
+        jpgs.push(await ptPdfItem(items[i]));
         if (cur.pdfMaking !== items.length) return;
         cur.pdfDone = i + 1;
         var btn = pt === cur && document.querySelector("#panelBody [data-ptpdf]");
@@ -1816,6 +1816,24 @@
     if (pt !== cur || cur.pdfMaking !== items.length) return;
     cur.pdfMaking = 0; cur.pdf = P;
     if ($("panel").open && panelRow && panelRow.id === cur.id && !$("camVideo")) openPt(panelRow);
+  }
+  // Each photo's PDF page is made once, and while the camera is still open
+  // (one at a time, between shots), so Done has little left to do: 46 photos
+  // took over a minute when all were made after Done (30 Sept).
+  function ptPdfItem(x) {
+    return x.pdfP || (x.pdfP = ptPdfJpeg(x.file).catch(function (e) { x.pdfP = null; throw e; }));
+  }
+  async function ptPdfWarm(cur) {
+    if (!ptWantsPdf() || cur.pdfWarming) return;
+    cur.pdfWarming = true;
+    try {
+      for (;;) {
+        var next = cur.items.filter(function (x) { return x.state === "local" && !x.pdfP; })[0];
+        if (!next || pt !== cur) break;
+        try { await ptPdfItem(next); } catch (e) { break; }
+        await new Promise(function (ok) { setTimeout(ok, 120); });   // let the camera have the phone
+      }
+    } finally { cur.pdfWarming = false; }
   }
   // The photo made PDF size; kept as it is when it's already small.
   async function ptPdfJpeg(b) {
