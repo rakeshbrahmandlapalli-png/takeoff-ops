@@ -100,6 +100,7 @@ function rpc(db, fn, a) {
     case "set_note": { const b = row(a.p_booking); b.note = a.p_note; return b; }
     case "download_my_company": return { format: "takeoff-ops-company-export", bookings: db.bookings };
     case "import_sheet": { const sh = db.sheets.find((x) => x.kind === a.p_kind && x.day === a.p_day); (db.imports = db.imports || []).push({ id: 70 + db.imports.length, kind: a.p_kind, day: a.p_day, at: now(), by: "RAKESH", added: a.p_rows.length, changed: 0, undone: false, latest: true }); return { sheet_id: sh ? sh.id : "p0", added: a.p_rows.length, updated: 0, early: 0, moved: 0, new_marked: 0, undo_id: 70 + db.imports.length - 1 }; }
+    case "admin_save_client": (db.clientSaves = db.clientSaves || []).push(a.p); return { id: a.p.id, name: a.p.name, brand: a.p.brand };
     case "recent_imports": return db.imports || [];
     case "pt_copy_report": (db.reports = db.reports || []).push(a); return null;
     case "undo_import": { const i = (db.imports || []).find((x) => x.id === a.p_id); if (i) i.undone = true; return { removed: 2, kept: 0, restored: 0, sheet_id: "p0", sheet_gone: false }; }
@@ -628,6 +629,14 @@ await scenario(async () => {
   const use = await page.textContent("#panelBody");
   check("Parking Ops: Usage shows the database, PT photos, FR24 and AeroDataBox", /24\.5 MB of 500 MB/.test(use) && /134 \/ 4277/.test(use) && /46 · about 1,794 credits/.test(use) && /AeroDataBox now\s*working/.test(use), use.slice(0, 400));
   await page.click("#panelBody [data-close]");
+  check("Parking Ops: each client card says which look it has", /Standard/.test(await text(page, ".client")));
+  await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
+  check("Parking Ops: the client editor offers the Airport Parking Bay UI", (await page.locator("#clLook option").allInnerTexts()).join("|") === "Standard|Airport Parking Bay UI");
+  await page.selectOption("#clLook", "pro"); await page.click("#clGo"); await sleep(400);
+  check("Parking Ops: choosing Airport Parking Bay UI saves theme pro", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "pro"), db.clientSaves);
+  await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
+  await page.selectOption("#clLook", ""); await page.click("#clGo"); await sleep(400);
+  check("Parking Ops: back to Standard saves no theme", (db.clientSaves || []).slice(-1)[0].brand.theme === "");
   await page.click('[data-clientopen="c1"]');
   await page.waitForSelector("#main .row", { timeout: 8000 });
   check("Parking Ops: Open board opens the client's board as their owner", (db.staffCalls || []).some((x) => x.action === "client_open" && x.company_id === "c1") && await page.locator('.row[data-id="b1"]').count() === 1);
