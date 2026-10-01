@@ -292,7 +292,7 @@ await scenario(async () => {
       font: document.fonts.check("700 16px 'Barlow Semi Condensed'"), theme: document.querySelector('meta[name="theme-color"]').content };
   });
   check("pro theme: switched on by the company's brand", look.pro, look);
-  check("pro theme: regs are yellow number plates", look.plate === "rgb(247, 209, 23)", look.plate);
+  check("pro theme: regs are white number plates", look.plate === "rgb(255, 255, 255)", look.plate);
   check("pro theme: the bar wears the brand's dark colour", look.bar === "rgb(14, 63, 126)" && look.theme === "#0E3F7E", look);
   check("pro theme: the mark letter and the Barlow fonts load (CSP allows them)", look.mark === "P" && look.font, look);
   check("pro theme: no sideways scrolling on a 360 px phone", await noSideScroll(page));
