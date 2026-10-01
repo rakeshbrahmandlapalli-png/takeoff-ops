@@ -14,7 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = process.env.APP_ROOT || path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../public");
-const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".png": "image/png", ".webmanifest": "application/manifest+json" };
+const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".png": "image/png", ".webmanifest": "application/manifest+json", ".woff2": "font/woff2" };
 let passed = 0, failed = 0;
 const check = (name, cond, detail) => {
   if (cond) passed++; else failed++;
@@ -100,6 +100,7 @@ function rpc(db, fn, a) {
     case "set_note": { const b = row(a.p_booking); b.note = a.p_note; return b; }
     case "download_my_company": return { format: "takeoff-ops-company-export", bookings: db.bookings };
     case "import_sheet": { const sh = db.sheets.find((x) => x.kind === a.p_kind && x.day === a.p_day); (db.imports = db.imports || []).push({ id: 70 + db.imports.length, kind: a.p_kind, day: a.p_day, at: now(), by: "RAKESH", added: a.p_rows.length, changed: 0, undone: false, latest: true }); return { sheet_id: sh ? sh.id : "p0", added: a.p_rows.length, updated: 0, early: 0, moved: 0, new_marked: 0, undo_id: 70 + db.imports.length - 1 }; }
+    case "admin_save_client": (db.clientSaves = db.clientSaves || []).push(a.p); return { id: a.p.id, name: a.p.name, brand: a.p.brand };
     case "recent_imports": return db.imports || [];
     case "pt_copy_report": (db.reports = db.reports || []).push(a); return null;
     case "undo_import": { const i = (db.imports || []).find((x) => x.id === a.p_id); if (i) i.undone = true; return { removed: 2, kept: 0, restored: 0, sheet_id: "p0", sheet_gone: false }; }
@@ -273,6 +274,29 @@ await scenario(async () => {
   const page = await phone(browser, makeDb(), { signedIn: false });
   await page.goto(BASE + "/"); await sleep(800);
   check("no personal link: shows the 'ask for your link' screen", await page.isVisible("#noLink"));
+});
+
+// 1b. the "pro" look: on for a company whose brand says so, and only for it
+await scenario(async () => {
+  const plain = await phone(browser, makeDb());
+  await open(plain);
+  check("a company without the pro theme keeps the usual look", !(await plain.evaluate(() => document.documentElement.classList.contains("pro"))));
+  const db = makeDb();
+  db.company = { ...db.company, name: "Airport Parking Bay", slug: "airport-parking-bay", yards: ["GS", "MY", "T"], brand: { colour: "#1560BD", ink: "#FFFFFF", soft: "#E8F0FB", text: "#0E3F7E", short: "Parking Bay", theme: "pro", chrome: "#0E3F7E", mark: "P" } };
+  const page = await phone(browser, db, { width: 360 });
+  await open(page); await sleep(300);
+  const look = await page.evaluate(async () => {
+    await document.fonts.ready;
+    const reg = getComputedStyle(document.querySelector(".row .reg")), bar = getComputedStyle(document.querySelector(".top"));
+    return { pro: document.documentElement.classList.contains("pro"), plate: reg.backgroundColor, bar: bar.backgroundColor, mark: document.querySelector(".tobrand").dataset.mark,
+      font: document.fonts.check("700 16px 'Barlow Semi Condensed'"), theme: document.querySelector('meta[name="theme-color"]').content };
+  });
+  check("pro theme: switched on by the company's brand", look.pro, look);
+  check("pro theme: regs are yellow number plates", look.plate === "rgb(247, 209, 23)", look.plate);
+  check("pro theme: the bar wears the brand's dark colour", look.bar === "rgb(14, 63, 126)" && look.theme === "#0E3F7E", look);
+  check("pro theme: the mark letter and the Barlow fonts load (CSP allows them)", look.mark === "P" && look.font, look);
+  check("pro theme: no sideways scrolling on a 360 px phone", await noSideScroll(page));
+  check("pro theme: no errors", page.__errors.length === 0, page.__errors);
 });
 
 // 2. DROPS board
@@ -605,6 +629,14 @@ await scenario(async () => {
   const use = await page.textContent("#panelBody");
   check("Parking Ops: Usage shows the database, PT photos, FR24 and AeroDataBox", /24\.5 MB of 500 MB/.test(use) && /134 \/ 4277/.test(use) && /46 · about 1,794 credits/.test(use) && /AeroDataBox now\s*working/.test(use), use.slice(0, 400));
   await page.click("#panelBody [data-close]");
+  check("Parking Ops: each client card says which look it has", /Standard/.test(await text(page, ".client")));
+  await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
+  check("Parking Ops: the client editor offers the Airport Parking Bay UI", (await page.locator("#clLook option").allInnerTexts()).join("|") === "Standard|Airport Parking Bay UI");
+  await page.selectOption("#clLook", "pro"); await page.click("#clGo"); await sleep(400);
+  check("Parking Ops: choosing Airport Parking Bay UI saves theme pro", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "pro"), db.clientSaves);
+  await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
+  await page.selectOption("#clLook", ""); await page.click("#clGo"); await sleep(400);
+  check("Parking Ops: back to Standard saves no theme", (db.clientSaves || []).slice(-1)[0].brand.theme === "");
   await page.click('[data-clientopen="c1"]');
   await page.waitForSelector("#main .row", { timeout: 8000 });
   check("Parking Ops: Open board opens the client's board as their owner", (db.staffCalls || []).some((x) => x.action === "client_open" && x.company_id === "c1") && await page.locator('.row[data-id="b1"]').count() === 1);

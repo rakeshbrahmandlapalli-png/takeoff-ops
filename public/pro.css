@@ -1,0 +1,225 @@
+/* The "pro" look, for companies whose brand has theme: "pro" (Airport Parking
+   Bay first). Same board, same buttons in the same places, so nobody relearns
+   anything. What changes is the finish: a navy bar like the airport's own
+   signs, regs as number plates, Barlow (drawn from road signage) for type, and
+   status colours that read at arm's length. Everything here sits under
+   html.pro, so a company without the theme never loads a font or sees a pixel
+   of it. Colours: --brand from companies.brand, --chrome its dark partner. */
+
+@font-face{font-family:"Barlow";font-weight:400;font-style:normal;font-display:swap;src:url(/fonts/barlow-400.woff2) format("woff2");}
+@font-face{font-family:"Barlow";font-weight:500;font-style:normal;font-display:swap;src:url(/fonts/barlow-500.woff2) format("woff2");}
+@font-face{font-family:"Barlow";font-weight:600;font-style:normal;font-display:swap;src:url(/fonts/barlow-600.woff2) format("woff2");}
+@font-face{font-family:"Barlow";font-weight:700;font-style:normal;font-display:swap;src:url(/fonts/barlow-700.woff2) format("woff2");}
+@font-face{font-family:"Barlow Semi Condensed";font-weight:600;font-style:normal;font-display:swap;src:url(/fonts/barlow-semi-condensed-600.woff2) format("woff2");}
+@font-face{font-family:"Barlow Semi Condensed";font-weight:700;font-style:normal;font-display:swap;src:url(/fonts/barlow-semi-condensed-700.woff2) format("woff2");}
+
+html.pro{
+  --chrome:#0E3F7E;--chrome-2:rgb(255 255 255 / .12);--chrome-line:rgb(255 255 255 / .24);
+  --ink:#121A26;--ink-2:#566173;--ink-3:#7B8595;--line:#D9DEE5;--line-soft:#E8EBF0;--surface:#F4F6F9;
+  --ok:#1E7D46;--bad:#B4322A;--amber:#B86100;
+  --plate:#F7D117;
+  --sans:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --cond:"Barlow Semi Condensed","Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --r:8px;
+}
+html.pro,html.pro body{font-family:var(--sans);color:var(--ink);}
+html.pro body{min-height:100vh;}
+html.pro body:not(.on-board){background:var(--surface);}
+html.pro :focus-visible{outline:2px solid var(--brand);outline-offset:2px;}
+
+/* ── the mark: their P, in their blue, wherever the name appears ── */
+html.pro .tobrand,html.pro span.brand{display:inline-flex;align-items:center;gap:8px;background:none;border-radius:0;padding:0;font:700 17px/1 var(--cond);letter-spacing:.02em;}
+html.pro .tobrand::before,html.pro span.brand::before{content:attr(data-mark);display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:28px;height:28px;border-radius:5px;background:var(--brand);color:var(--brand-ink);font:700 20px/1 var(--sans);box-shadow:inset 0 0 0 1.5px rgb(255 255 255 / .9);}
+html.pro .tobrand{color:#fff;padding:2px 2px 2px 0;}
+
+/* ── sign-in screens: a card on the navy ── */
+html.pro .gate{background:var(--chrome);}
+html.pro .gate-box{max-width:400px;padding:28px 24px 22px;background:#fff;border-radius:14px;gap:12px;}
+html.pro .gate span.brand{color:var(--chrome);font-size:21px;gap:10px;}
+html.pro .gate span.brand::before{width:40px;height:40px;font-size:28px;border-radius:7px;box-shadow:none;}
+html.pro .gate h1{margin-top:18px;font:700 26px/1.15 var(--sans);letter-spacing:-.01em;}
+html.pro .gate p{font-size:15.5px;color:var(--ink-2);}
+html.pro .gate input,html.pro .field input,html.pro .field select{border:1px solid #C3CAD4;border-radius:var(--r);}
+html.pro .gate input:focus,html.pro .sheet input:focus,html.pro .sheet textarea:focus,html.pro .sheet select:focus,html.pro .field input:focus{outline:0;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft);}
+html.pro #pin{font:600 30px/1 var(--sans);letter-spacing:.5em;padding-left:.5em;}
+
+/* ── buttons ── */
+html.pro .btn{border-radius:var(--r);background:var(--chrome);border-color:var(--chrome);font-family:var(--sans);font-weight:700;letter-spacing:.01em;}
+html.pro .btn.brand{background:var(--brand);border-color:var(--brand);color:var(--brand-ink);}
+html.pro .btn.ghost{background:#fff;color:var(--ink);border-color:#C9D0D9;}
+html.pro .btn:active:not(:disabled){filter:brightness(.92);}
+html.pro .link{color:var(--ink-2);}
+
+/* ── top bar ── */
+html.pro .top{background:var(--chrome);border-bottom:0;}
+html.pro .bar{gap:8px;padding:8px 10px;}
+html.pro #sheetPick{height:34px;color:#fff;background-color:var(--chrome-2);border:1px solid var(--chrome-line);border-radius:6px;font:700 15px/1 var(--cond);letter-spacing:.04em;}
+html.pro #sheetPick option{color:var(--ink);background:#fff;}
+html.pro .who{color:rgb(255 255 255 / .9);font:700 11.5px/1 var(--cond);letter-spacing:.06em;}
+html.pro .when{color:rgb(255 255 255 / .65);font:600 12px/1 var(--cond);}
+html.pro .rf{background:transparent;border:1px solid var(--chrome-line);border-radius:6px;color:#fff;}
+html.pro .rf:active{background:var(--chrome-2);}
+html.pro .pend{font:700 10.5px/1 var(--cond);letter-spacing:.08em;padding:5px 8px;border-radius:4px;background:#FFE08A;color:#4D3800;}
+html.pro .pend.stuck{background:#FFB4AB;color:#5C0F0A;}
+html.pro .homebtn{background:var(--chrome-2);border-color:var(--chrome-line);border-radius:6px;font-family:var(--cond);}
+@media(max-width:430px){html.pro .tobrand{font-size:0;gap:0;}html.pro .tobrand::before{font-size:19px;}}
+/* Small phones: the day picker needs the room more than the name does (it is in the menu). */
+@media(max-width:380px){html.pro .who{display:none;}}
+
+/* ── counters ── */
+html.pro .tally{gap:1px;background:var(--line);border-top:0;}
+html.pro .tally button{padding:7px 2px 8px;background:#fff;}
+html.pro .tally span{font:600 10px/1.1 var(--cond);letter-spacing:.09em;color:var(--ink-3);text-transform:uppercase;}
+html.pro .tally b{display:block;margin-top:3px;font:700 20px/1 var(--sans);font-variant-numeric:tabular-nums;color:var(--ink);}
+html.pro .tally button.on{background:var(--chrome);}
+html.pro .tally button.on span{color:rgb(255 255 255 / .75);}
+html.pro .tally button.on b{color:#fff;}
+html.pro .tally button.warn:not(.on){background:#FFF6DB;box-shadow:inset 0 -3px 0 #E8A400;}
+html.pro .tally button.warn:not(.on) b{color:#7A4F00;}
+html.pro .tally.cats button.same b,html.pro .tally.cats button.next b{color:var(--brand);}
+html.pro .tally.cats button.short b{color:var(--ok);}
+html.pro .tally.cats button.long b{color:var(--amber);}
+html.pro .tally.cats button.on b{color:#fff;}
+html.pro .shortpick{background:#fff;}
+html.pro .shortpick span{font:600 10px/1.1 var(--cond);letter-spacing:.09em;color:var(--ink-3);}
+html.pro .shortpick select{margin-top:3px;border:1px solid #C9D0D9;border-radius:5px;font:700 13px/1 var(--cond);letter-spacing:.04em;}
+html.pro .shortpick.unset{background:#FFF6DB;}
+
+/* ── tabs, search, column heads ── */
+html.pro .tabs{border-top:1px solid var(--line);background:#fff;}
+html.pro .tabs button{padding:10px 0 9px;background:#fff;border-right:0;color:var(--ink-3);font:700 13px/1 var(--cond);letter-spacing:.08em;}
+html.pro .tabs button.on{color:var(--chrome);box-shadow:inset 0 -3px 0 var(--brand);}
+html.pro #q{padding:10px 46px 10px 38px;border-top:1px solid var(--line);background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237B8595' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m16 16 4.5 4.5'/%3E%3C/svg%3E") no-repeat 12px 50%/17px;font-family:var(--sans);color:var(--ink);}
+html.pro #q::placeholder{color:var(--ink-3);}
+html.pro #q:focus{background-color:#fff;box-shadow:inset 0 -2px 0 var(--brand);}
+html.pro .qclear{background:#E4E8EE;color:var(--ink-2);}
+html.pro .head{padding:5px 10px;background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line);font:700 10px/1.2 var(--cond);letter-spacing:.1em;color:var(--ink-3);}
+html.pro .viewhead{background:#fff;border-top:1px solid var(--line);}
+html.pro .viewhead button{border-color:#C9D0D9;border-radius:6px;font-family:var(--cond);letter-spacing:.04em;color:var(--ink);}
+html.pro .viewhead strong{font:700 14px/1 var(--cond);letter-spacing:.06em;text-transform:uppercase;}
+
+/* ── section bands (COMING UP, NEXT IN QUEUE…) ── */
+html.pro .sec{align-items:center;padding:8px 10px;background:var(--surface);border-top:1px solid var(--line);border-bottom:1px solid var(--line);font:700 12px/1 var(--cond);letter-spacing:.12em;color:#3A4352;}
+html.pro .sec b{display:inline-block;min-width:22px;padding:3px 6px;border-radius:10px;background:#fff;border:1px solid var(--line);font:700 11px/1 var(--sans);letter-spacing:0;text-align:center;color:var(--ink);}
+html.pro .sec span{font:500 12px/1.2 var(--sans);letter-spacing:0;color:var(--ink-3);}
+html.pro .sec.hot{background:var(--brand);border-color:var(--brand);color:#fff;}
+html.pro .sec.hot b{background:rgb(255 255 255 / .18);border-color:transparent;color:#fff;}
+html.pro .sec.hot span{color:rgb(255 255 255 / .8);}
+html.pro .sec.old{background:#FBF1E4;border-color:#EBD7BD;color:#7A4108;}
+html.pro .sec.old b{border-color:#EBD7BD;}
+html.pro .sec.old span{color:#8E6235;}
+
+/* ── a car ── */
+html.pro .row{gap:8px;padding:7px 10px;border-bottom:1px solid var(--line-soft);font-size:15px;color:var(--ink);}
+html.pro .row.called{background:#EEF4FC;box-shadow:inset 3px 0 0 var(--brand);}
+html.pro .row.warn{background:#FFF6DB;box-shadow:inset 3px 0 0 #E8A400;}
+html.pro .row.late{background:#FDE8E5;box-shadow:inset 3px 0 0 var(--bad);}
+html.pro .row.done{background:#F7F8FA;}
+html.pro .row.cmpl{background:#FDECEA;box-shadow:inset 3px 0 0 var(--bad);}
+html.pro .row.ovst{background:#FFF2E3;box-shadow:inset 3px 0 0 var(--amber);}
+html.pro .row.coll{background:#EEF7F1;}
+html.pro .row.nosh{background:#F4F5F7;}
+html.pro .row.rtc{background:#FDEEEC;}
+html.pro .row.flash{background:#FFF6DB;}
+html.pro .l1{gap:7px;}
+/* The reg as the plate on the back of the car: what a driver actually looks for. */
+html.pro .reg{padding:3px 6px 2px;border-radius:3px;background:var(--plate);box-shadow:inset 0 0 0 1px rgb(0 0 0 / .55);color:#0B0B0B;font:700 15.5px/1.1 var(--cond);letter-spacing:.07em;}
+html.pro .row.done .reg{background:#E4E7EB;box-shadow:inset 0 0 0 1px #C3C8D0;color:#7B8595;}
+html.pro .row.done .l2{color:var(--ink-3);}
+html.pro .dn{font:600 12px/1 var(--sans);color:var(--ink-3);}
+html.pro .pin{font:500 12px/1.2 var(--sans);color:var(--ink-2);}
+html.pro .l2{margin-top:4px;font-size:13.5px;color:var(--ink-2);}
+html.pro .l2 .mk{color:var(--ink);font-weight:600;}
+html.pro .l2 .eta{color:var(--ink);font-weight:700;}
+html.pro .l2 .eta.dly{color:var(--bad);}
+html.pro .l2 .eta.exp{color:var(--amber);}
+html.pro .l2 .tag{font:700 11.5px/1.5 var(--cond);letter-spacing:.05em;color:var(--brand);}
+html.pro .l2 .tag.ov{color:var(--amber);}
+html.pro .l2 .tag.cm{color:var(--bad);}
+html.pro .l2 .tag.ld{color:var(--ok);}
+html.pro .l2 .tag.ea{background:var(--brand);color:#fff;padding:0 6px;border-radius:3px;}
+html.pro .l2 .tag.ck{background:var(--amber);color:#fff;padding:0 6px;border-radius:3px;}
+html.pro .l2 .tag.cx,html.pro .l2 .tag.due{background:var(--bad);color:#fff;padding:0 6px;border-radius:3px;}
+html.pro .l2 .tag.pd{background:#E3F2E8;color:var(--ok);padding:0 6px;border-radius:3px;}
+html.pro .l2 .tag.nb{background:#FBE1C4;color:#7A4108;padding:0 6px;border-radius:3px;}
+html.pro .l3{margin-top:5px;padding:2px 7px;border-radius:3px;background:#FFF0B3;color:#4A3A00;font:600 12px/1.4 var(--sans);}
+html.pro .l3.bang{background:#FBD5D0;color:#6E1610;}
+html.pro .l3.early{background:var(--brand);color:#fff;}
+html.pro .code{border-radius:3px;font:700 11px/1.3 var(--cond);letter-spacing:.06em;}
+html.pro select.code.pick{height:21px;font:700 11px/1 var(--cond);letter-spacing:.06em;}
+html.pro .cat{border-radius:3px;font:700 10.5px/1.4 var(--cond);letter-spacing:.06em;}
+html.pro .cat.same,html.pro .cat.next{color:#0E4A94;background:#DCE9F9;}
+html.pro .cat.short{color:#17643A;background:#DDF0E3;}
+html.pro .cat.long{color:#7A4108;background:#FBE1C4;}
+html.pro .cat.was{color:#fff;background:var(--amber);}
+html.pro .addflight{border-radius:3px;font:700 11px/19px var(--cond);letter-spacing:.06em;}
+
+/* The three (or four) buttons: white until pressed, then solid, so a glance
+   down the board shows what's done. Same colour meanings as before:
+   green done, blue called, grey cleared, red trouble, amber overstay. */
+html.pro .acts{gap:4px;}
+html.pro .acts button{min-height:46px;border:1px solid #C9D0D9;border-radius:6px;background:#fff;color:#4A5565;font:700 11px/1.1 var(--cond);letter-spacing:.07em;}
+html.pro .acts button.lng{font-size:9.5px;letter-spacing:.02em;}
+html.pro .acts button small{font:700 12.5px/1.1 var(--sans);letter-spacing:0;margin-top:2px;font-variant-numeric:tabular-nums;}
+html.pro .acts button em.by{font:600 10px/1.2 var(--cond);letter-spacing:.04em;opacity:.9;}
+html.pro .acts button:active:not(:disabled){background:#E9EDF2;}
+html.pro .acts button.on.s,html.pro .acts button.on.k{background:var(--ok);border-color:var(--ok);color:#fff;}
+html.pro .acts button.on.c{background:var(--brand);border-color:var(--brand);color:#fff;}
+html.pro .acts button.on.p{background:#3D5A80;border-color:#3D5A80;color:#fff;}
+html.pro .acts button.on.x,html.pro .acts button.on.n{background:#5B6573;border-color:#5B6573;color:#fff;}
+html.pro .acts button.on.r,html.pro .acts button.on.x.cm{background:var(--bad);border-color:var(--bad);color:#fff;}
+html.pro .acts button.on.c.ov{background:var(--amber);border-color:var(--amber);color:#fff;}
+
+/* ── other-day search hits, messages ── */
+html.pro .otherhit b{font:700 17px/1.1 var(--cond);letter-spacing:.07em;}
+html.pro .otherhit i{font:700 12px/1.2 var(--cond);letter-spacing:.06em;color:var(--ink-3);}
+html.pro .msg,html.pro .empty{color:var(--ink-2);}
+
+/* ── car panel and menu ── */
+html.pro dialog.sheet{border-top:0;border-radius:16px 16px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));color:var(--ink);box-shadow:0 -8px 30px rgb(10 25 50 / .18);}
+@media(min-width:700px){html.pro dialog.sheet{border-radius:16px;}}
+html.pro dialog::backdrop{background:rgb(9 22 42 / .55);}
+html.pro .sheet h2{font:700 26px/1.1 var(--cond);letter-spacing:.06em;}
+html.pro .sheet h2 small{font:600 15px/1 var(--sans);color:var(--ink-3);letter-spacing:0;}
+html.pro .sheet .sub{margin:4px 0 14px;font:700 12px/1.2 var(--cond);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);}
+html.pro .sheet label{margin:14px 0 5px;font:700 11px/1.2 var(--cond);letter-spacing:.1em;color:var(--ink-3);}
+html.pro .sheet input,html.pro .sheet textarea,html.pro .sheet select{border:1px solid #C9D0D9;border-radius:var(--r);font-family:var(--sans);}
+html.pro .tel{background:var(--brand);border:0;border-radius:10px;color:var(--brand-ink);padding:14px;font:700 17px/1.2 var(--sans);letter-spacing:.01em;}
+html.pro .tel:active{filter:brightness(.92);}
+html.pro .det{border:1px solid var(--line);border-radius:10px;}
+html.pro .det div{padding:9px 12px;border-top:1px solid var(--line-soft);}
+html.pro .det b{flex:0 0 86px;padding-top:3px;font:700 11px/1.2 var(--cond);letter-spacing:.1em;color:var(--ink-3);}
+html.pro .det span{font:600 15.5px/1.35 var(--sans);}
+html.pro .pseg button{border:1px solid #C9D0D9;border-radius:var(--r);color:var(--ink-2);font:700 13px/1 var(--cond);letter-spacing:.07em;}
+html.pro .pseg:not(.yard) button.on:not(.nb):not(.cm){background:var(--brand);border-color:var(--brand);color:#fff;}
+html.pro .pseg button.on.nb{background:var(--amber);border-color:var(--amber);color:#fff;}
+html.pro .pseg button.on.cm{background:var(--bad);border-color:var(--bad);color:#fff;}
+html.pro .pbtns button{border:1px solid #C9D0D9;border-radius:var(--r);background:#fff;color:var(--ink);font:700 14px/1 var(--cond);letter-spacing:.08em;}
+html.pro .pbtns button.save{background:var(--chrome);border-color:var(--chrome);color:#fff;}
+html.pro .pbtns button.undo{background:#FDECEA;border-color:#EFB7B1;color:#7A1A13;}
+html.pro .pclose{width:40px;height:40px;border:0;background:var(--surface);color:var(--ink-2);font-size:19px;}
+html.pro .hist,html.pro .acc,html.pro .ptset{border-color:var(--line);border-radius:10px;}
+html.pro .chgbox{border-radius:10px;}
+html.pro .suggest button{border-color:#C9D0D9;border-radius:var(--r);}
+html.pro .suggest button b{font:700 16px/1.1 var(--cond);letter-spacing:.06em;}
+html.pro .suggest button span{color:var(--brand);}
+html.pro .menu-list{border:1px solid var(--line);border-radius:12px;}
+html.pro .menu-list button{position:relative;padding:15px 34px 15px 16px;border-top:1px solid var(--line-soft);font:600 16px/1.25 var(--sans);color:var(--ink);}
+html.pro .menu-list button::after{content:"";position:absolute;right:16px;top:50%;width:7px;height:7px;margin-top:-4px;border-right:2px solid #A6AEBA;border-top:2px solid #A6AEBA;transform:rotate(45deg);}
+html.pro .menu-list button.danger{color:var(--bad);}
+html.pro .menu-list button[aria-current=page]{box-shadow:inset 3px 0 0 var(--brand);background:var(--brand-soft);color:var(--brand-text);}
+
+/* ── the other screens: white cards on a light grey ── */
+html.pro .title{font:700 24px/1.2 var(--sans);letter-spacing:-.01em;}
+html.pro .section-label{margin:20px 0 8px;font:700 12px/1.2 var(--cond);letter-spacing:.1em;color:var(--ink-3);}
+html.pro .box,html.pro .stat,html.pro .client,html.pro .result div,html.pro .table-wrap{border-color:var(--line);border-radius:10px;}
+html.pro .stat strong,html.pro .result strong{font-weight:700;font-variant-numeric:tabular-nums;}
+html.pro .seg{border-color:#C9D0D9;}
+html.pro .seg button{font-family:var(--cond);letter-spacing:.06em;}
+html.pro .seg button[aria-pressed=true]{background:var(--chrome);}
+html.pro .drop{border-color:#C9D0D9;border-radius:10px;}
+html.pro .drop label{border-color:#C9D0D9;background:var(--surface);}
+html.pro th{font:700 11px/1.2 var(--cond);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);}
+html.pro .toast{border-radius:10px;background:var(--chrome);font:500 15px/1.35 var(--sans);box-shadow:0 8px 28px rgb(9 22 42 / .28);}
+html.pro .toast.bad{background:var(--bad);}
+html.pro .nudge{border-left-color:var(--amber);}
