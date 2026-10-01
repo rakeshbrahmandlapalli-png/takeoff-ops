@@ -2766,10 +2766,15 @@
     var t = document.querySelector('meta[name="apple-mobile-web-app-title"]');
     if (t) t.setAttribute("content", short);
 
+    // The "pro" look (pro.css) is the company's choice, in its brand: theme "pro".
+    var pro = b.theme === "pro";
+    document.documentElement.classList.toggle("pro", pro);
+    var mark = String(b.mark || short.charAt(0) || "P").slice(0, 2);
     // Only the wordmark and the board button. NOT ".brand" on its own: the
     Array.prototype.forEach.call(document.querySelectorAll("span.brand, .tobrand"), function (el) {
       var isGateScreen = el.closest(".gate") !== null;
       el.textContent = isGateScreen ? name : short;
+      el.setAttribute("data-mark", mark);
       if (el.classList.contains("tobrand")) el.setAttribute("aria-label", name + " menu");
     });
 
@@ -2779,8 +2784,10 @@
       if (b.ink) root.setProperty("--brand-ink", b.ink);
       if (b.soft) root.setProperty("--brand-soft", b.soft);
       if (b.text) root.setProperty("--brand-text", b.text);
+      // The pro look's bar: the brand's own dark colour, else its text colour.
+      if (b.chrome || b.text) root.setProperty("--chrome", b.chrome || b.text);
       var meta = document.querySelector('meta[name="theme-color"]');
-      if (meta) meta.setAttribute("content", b.colour);
+      if (meta) meta.setAttribute("content", pro ? (b.chrome || b.text || b.colour) : b.colour);
     }
     if (b.logo) {
       Array.prototype.forEach.call(document.querySelectorAll('link[rel="apple-touch-icon"], link[rel="icon"]'), function (l) { l.href = b.logo; });

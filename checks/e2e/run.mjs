@@ -14,7 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = process.env.APP_ROOT || path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../public");
-const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".png": "image/png", ".webmanifest": "application/manifest+json" };
+const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".png": "image/png", ".webmanifest": "application/manifest+json", ".woff2": "font/woff2" };
 let passed = 0, failed = 0;
 const check = (name, cond, detail) => {
   if (cond) passed++; else failed++;
@@ -273,6 +273,29 @@ await scenario(async () => {
   const page = await phone(browser, makeDb(), { signedIn: false });
   await page.goto(BASE + "/"); await sleep(800);
   check("no personal link: shows the 'ask for your link' screen", await page.isVisible("#noLink"));
+});
+
+// 1b. the "pro" look: on for a company whose brand says so, and only for it
+await scenario(async () => {
+  const plain = await phone(browser, makeDb());
+  await open(plain);
+  check("a company without the pro theme keeps the usual look", !(await plain.evaluate(() => document.documentElement.classList.contains("pro"))));
+  const db = makeDb();
+  db.company = { ...db.company, name: "Airport Parking Bay", slug: "airport-parking-bay", yards: ["GS", "MY", "T"], brand: { colour: "#1560BD", ink: "#FFFFFF", soft: "#E8F0FB", text: "#0E3F7E", short: "Parking Bay", theme: "pro", chrome: "#0E3F7E", mark: "P" } };
+  const page = await phone(browser, db, { width: 360 });
+  await open(page); await sleep(300);
+  const look = await page.evaluate(async () => {
+    await document.fonts.ready;
+    const reg = getComputedStyle(document.querySelector(".row .reg")), bar = getComputedStyle(document.querySelector(".top"));
+    return { pro: document.documentElement.classList.contains("pro"), plate: reg.backgroundColor, bar: bar.backgroundColor, mark: document.querySelector(".tobrand").dataset.mark,
+      font: document.fonts.check("700 16px 'Barlow Semi Condensed'"), theme: document.querySelector('meta[name="theme-color"]').content };
+  });
+  check("pro theme: switched on by the company's brand", look.pro, look);
+  check("pro theme: regs are yellow number plates", look.plate === "rgb(247, 209, 23)", look.plate);
+  check("pro theme: the bar wears the brand's dark colour", look.bar === "rgb(14, 63, 126)" && look.theme === "#0E3F7E", look);
+  check("pro theme: the mark letter and the Barlow fonts load (CSP allows them)", look.mark === "P" && look.font, look);
+  check("pro theme: no sideways scrolling on a 360 px phone", await noSideScroll(page));
+  check("pro theme: no errors", page.__errors.length === 0, page.__errors);
 });
 
 // 2. DROPS board
