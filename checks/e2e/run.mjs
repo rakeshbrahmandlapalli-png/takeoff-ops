@@ -276,38 +276,54 @@ await scenario(async () => {
   check("no personal link: shows the 'ask for your link' screen", await page.isVisible("#noLink"));
 });
 
-// 1b. the "pro" look: on for a company whose brand says so, and only for it
+// 1b. the looks: Standard, Airport Parking Bay UI ("pro") and Cards ("cards"), each only by brand
+const apbBrand = (theme) => ({ colour: "#1560BD", ink: "#FFFFFF", soft: "#E8F0FB", text: "#0E3F7E", short: "Parking Bay", theme, chrome: "#0E3F7E", mark: "P" });
+const apbDb = (theme) => { const db = makeDb(); db.company = { ...db.company, name: "Airport Parking Bay", slug: "airport-parking-bay", yards: ["GS", "MY", "T"], brand: apbBrand(theme) }; return db; };
 await scenario(async () => {
   const plain = await phone(browser, makeDb());
   await open(plain);
-  check("a company without the pro theme keeps the usual look", !(await plain.evaluate(() => document.documentElement.classList.contains("pro"))));
-  check("the usual look has no cards, bottom bar or display setting", await plain.evaluate(() => getComputedStyle(document.querySelector(".row .rt")).display === "none" && getComputedStyle(document.getElementById("bnav")).display === "none" && /SENT/.test(document.querySelector('.row [data-act="sent"]').textContent)));
-  const db = makeDb();
-  db.company = { ...db.company, name: "Airport Parking Bay", slug: "airport-parking-bay", yards: ["GS", "MY", "T"], brand: { colour: "#1560BD", ink: "#FFFFFF", soft: "#E8F0FB", text: "#0E3F7E", short: "Parking Bay", theme: "pro", chrome: "#0E3F7E", mark: "P" } };
-  const page = await phone(browser, db, { width: 360 });
+  check("Standard: no pro or cards look", await plain.evaluate(() => !document.documentElement.classList.contains("pro") && !document.documentElement.classList.contains("cards")));
+  check("Standard: no cards, bottom bar or display setting", await plain.evaluate(() => getComputedStyle(document.querySelector(".row .rt")).display === "none" && getComputedStyle(document.getElementById("bnav")).display === "none" && /SENT/.test(document.querySelector('.row [data-act="sent"]').textContent)));
+
+  const page = await phone(browser, apbDb("pro"), { width: 360 });
   await open(page); await sleep(300);
   const look = await page.evaluate(async () => {
     await document.fonts.ready;
-    const reg = getComputedStyle(document.querySelector(".row .reg")), bar = getComputedStyle(document.querySelector(".bar"));
-    return { pro: document.documentElement.classList.contains("pro"), plate: reg.backgroundColor, bar: bar.backgroundColor, mark: document.querySelector(".tobrand").dataset.mark,
-      font: document.fonts.check("700 16px 'Barlow Semi Condensed'"), theme: document.querySelector('meta[name="theme-color"]').content };
+    const reg = getComputedStyle(document.querySelector(".row .reg")), bar = getComputedStyle(document.querySelector(".top"));
+    return { pro: document.documentElement.classList.contains("pro"), cards: document.documentElement.classList.contains("cards"), plate: reg.backgroundColor, bar: bar.backgroundColor, mark: document.querySelector(".tobrand").dataset.mark,
+      font: document.fonts.check("700 16px 'Barlow Semi Condensed'"), theme: document.querySelector('meta[name="theme-color"]').content,
+      rt: getComputedStyle(document.querySelector(".row .rt")).display, nav: getComputedStyle(document.getElementById("bnav")).display, word: document.querySelector('.row [data-act="sent"]').textContent };
   });
-  check("pro theme: switched on by the company's brand", look.pro, look);
-  check("pro theme: regs are yellow number plates", look.plate === "rgb(255, 212, 59)", look.plate);
-  check("pro theme: the bar wears the brand's dark colour", look.bar === "rgb(14, 63, 126)" && look.theme === "#0E3F7E", look);
-  check("pro theme: the mark letter and the Barlow fonts load (CSP allows them)", look.mark === "P" && look.font, look);
-  check("pro theme: no sideways scrolling on a 360 px phone", await noSideScroll(page));
+  check("Airport Parking Bay UI: switched on by the company's brand, and only that look", look.pro && !look.cards, look);
+  check("Airport Parking Bay UI: regs are yellow number plates", look.plate === "rgb(247, 209, 23)", look.plate);
+  check("Airport Parking Bay UI: the bar wears the brand's dark colour", look.bar === "rgb(14, 63, 126)" && look.theme === "#0E3F7E", look);
+  check("Airport Parking Bay UI: the mark letter and the Barlow fonts load (CSP allows them)", look.mark === "P" && look.font, look);
+  check("Airport Parking Bay UI: one line a car as before (no cards, no bottom bar)", look.rt === "none" && look.nav === "none" && /SENT/.test(look.word), look);
+  check("Airport Parking Bay UI: no sideways scrolling on a 360 px phone", await noSideScroll(page));
+  check("Airport Parking Bay UI: no errors", page.__errors.length === 0, page.__errors);
+});
+await scenario(async () => {
+  const page = await phone(browser, apbDb("cards"), { width: 360 });
+  await open(page); await sleep(300);
+  const look = await page.evaluate(async () => {
+    await document.fonts.ready;
+    return { pro: document.documentElement.classList.contains("pro"), cards: document.documentElement.classList.contains("cards"), plate: getComputedStyle(document.querySelector(".row .reg")).backgroundColor,
+      bar: getComputedStyle(document.querySelector(".bar")).backgroundColor, font: document.fonts.check("700 16px 'Barlow Semi Condensed'") };
+  });
+  check("Cards: switched on by the company's brand, and only that look", look.cards && !look.pro, look);
+  check("Cards: yellow plates, the brand's dark bar, Barlow loads", look.plate === "rgb(255, 212, 59)" && look.bar === "rgb(14, 63, 126)" && look.font, look);
+  check("Cards: no sideways scrolling on a 360 px phone", await noSideScroll(page));
   const card = await page.evaluate(() => ({ time: (document.querySelector('.row[data-id="b1"] .rt b') || {}).textContent, name: document.querySelector('.row[data-id="b1"] .pin').textContent,
     word: document.querySelector('.row[data-id="b3"] [data-act="sent"] .w').textContent, nav: getComputedStyle(document.getElementById("bnav")).display, tabs: document.getElementById("tabTodo").textContent }));
-  check("pro theme: each car is a card with its time, the name as written, and words on the buttons", card.time === "22:45" && card.name === "Senior Miss" && card.word === "Sent" && /^To do · \d+$/.test(card.tabs), card);
-  check("pro theme: the bottom bar is there", card.nav === "flex", card);
+  check("Cards: each car is a card with its time, the name as written, and words on the buttons", card.time === "22:45" && card.name === "Senior Miss" && card.word === "Sent" && /^To do · \d+$/.test(card.tabs), card);
+  check("Cards: the bottom bar is there", card.nav === "flex", card);
   await page.click('#bnav [data-bn="menuBtn"]'); await page.waitForSelector('[data-mode="dark"]');
   await page.click('[data-mode="dark"]'); await sleep(200);
   const dark = await page.evaluate(() => ({ on: document.documentElement.classList.contains("dark"), bg: getComputedStyle(document.body).backgroundColor, kept: localStorage.getItem("takeoff_mode") }));
-  check("pro theme: Dark in the menu turns the app dark and is remembered on the phone", dark.on && dark.bg === "rgb(10, 17, 29)" && dark.kept === "dark", dark);
+  check("Cards: Dark in the menu turns the app dark and is remembered on the phone", dark.on && dark.bg === "rgb(10, 17, 29)" && dark.kept === "dark", dark);
   await page.click('[data-mode="light"]'); await sleep(200);
-  check("pro theme: Light turns it back", !(await page.evaluate(() => document.documentElement.classList.contains("dark"))));
-  check("pro theme: no errors", page.__errors.length === 0, page.__errors);
+  check("Cards: Light turns it back", !(await page.evaluate(() => document.documentElement.classList.contains("dark"))));
+  check("Cards: no errors", page.__errors.length === 0, page.__errors);
 });
 
 // 2. DROPS board
@@ -642,9 +658,12 @@ await scenario(async () => {
   await page.click("#panelBody [data-close]");
   check("Parking Ops: each client card says which look it has", /Standard/.test(await text(page, ".client")));
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
-  check("Parking Ops: the client editor offers the Airport Parking Bay UI", (await page.locator("#clLook option").allInnerTexts()).join("|") === "Standard|Airport Parking Bay UI");
+  check("Parking Ops: the client editor offers the three looks", (await page.locator("#clLook option").allInnerTexts()).join("|") === "Standard|Airport Parking Bay UI|Cards (light and dark)");
   await page.selectOption("#clLook", "pro"); await page.click("#clGo"); await sleep(400);
   check("Parking Ops: choosing Airport Parking Bay UI saves theme pro", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "pro"), db.clientSaves);
+  await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
+  await page.selectOption("#clLook", "cards"); await page.click("#clGo"); await sleep(400);
+  check("Parking Ops: choosing Cards saves theme cards", (db.clientSaves || []).slice(-1)[0].brand.theme === "cards");
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
   await page.selectOption("#clLook", ""); await page.click("#clGo"); await sleep(400);
   check("Parking Ops: back to Standard saves no theme", (db.clientSaves || []).slice(-1)[0].brand.theme === "");
