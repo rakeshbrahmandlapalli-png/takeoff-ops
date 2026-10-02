@@ -550,6 +550,12 @@
     show("flBtn", !S.platform && can("flights") && !picks);
     show("rtBtn", !S.platform && can("picksinfo") && picks);
     show("psBtn", !S.platform && can("picksinfo"));
+    // The Airport Parking Bay UI's bottom bar mirrors the top bar's buttons.
+    show("bnav", isPro() && !S.platform);
+    Array.prototype.forEach.call(document.querySelectorAll("#bnav [data-bn]"), function (b) {
+      var src = $(b.dataset.bn); b.classList.toggle("hidden", !!src && src.classList.contains("hidden"));
+    });
+    $("bnBoard").classList.toggle("on", board);
     show("boardHead", board);
     show("viewHead", !board);
     if (!board) $("viewTitle").textContent = VIEW_TITLE[S.view] || "";
@@ -678,17 +684,20 @@
       var none = open.filter(function (r) { return !r.yard; }).length;
       if (none && can("yard")) cells.push(["NO YARD", "-", none]);
     }
+    var pro = isPro();
     $("tally").innerHTML = cells.map(function (x) {
-      return '<button type="button" data-tally="' + esc(x[1]) + '" class="' + (S.yardFilter === x[1] ? "on" : "") + (x[1] === "-" ? " warn" : "") + '" aria-pressed="' + (S.yardFilter === x[1]) + '"><span>' + esc(x[0]) + '</span><b class="num">' + x[2] + "</b></button>";
+      var label = pro && x[0].length > 3 ? sentence(x[0]).replace(/^Coll$/, "Collected") : x[0];
+      return '<button type="button" data-tally="' + esc(x[1]) + '" class="' + (S.yardFilter === x[1] ? "on" : "") + (x[1] === "-" ? " warn" : "") + '" aria-pressed="' + (S.yardFilter === x[1]) + '"><span>' + esc(label) + '</span><b class="num">' + x[2] + "</b></button>";
     }).join("");
     renderCatStrip(picks);
-    $("tabTodo").textContent = "TO DO (" + S.rows.filter(waiting).length + ")";
-    $("tabAll").textContent = "ALL (" + S.rows.length + ")";
+    $("tabTodo").textContent = pro ? "To do · " + S.rows.filter(waiting).length : "TO DO (" + S.rows.filter(waiting).length + ")";
+    $("tabAll").textContent = pro ? "All · " + S.rows.length : "ALL (" + S.rows.length + ")";
     $("tabTodo").classList.toggle("on", S.filter === "todo");
     $("tabAll").classList.toggle("on", S.filter === "all");
     $("tabTodo").setAttribute("aria-pressed", S.filter === "todo");
     $("tabAll").setAttribute("aria-pressed", S.filter === "all");
     if (document.activeElement !== $("q")) $("q").value = S.q;
+    $("q").placeholder = pro ? "Search reg or name" : "Search reg, name, number or note";
     show("qClear", !!S.q);
     $("colHead").innerHTML = '<span class="hl">' + (picks ? "CAR · CUSTOMER" : "CAR · FLIGHT") + '</span><span class="hr">' +
       (picks ? "<span>COLL</span><span>NO SHOW</span><span>RTC</span><span>PT</span>" : "<span>SENT</span><span>CALLED</span><span>CLEAR</span>") + "</span>";
@@ -702,7 +711,7 @@
     // Board strip: SHORT LEFT, LONG LEFT, SHORT, LONG (SAME DAY and NEXT DAY stay in the stats panel).
     var strip = set ? LEFT_CATS.concat(CATS.slice(2)) : LEFT_CATS.slice(0, 1);
     var cells = strip.map(function (c) {
-      return '<button type="button" data-cat="' + c[0] + '" class="' + (c[2] || c[0]) + (S.catFilter === c[0] ? " on" : "") + '" aria-pressed="' + (S.catFilter === c[0]) + '"><span>' + c[1] + '</span><b class="num">' + n[c[0]] + "</b></button>";
+      return '<button type="button" data-cat="' + c[0] + '" class="' + (c[2] || c[0]) + (S.catFilter === c[0] ? " on" : "") + '" aria-pressed="' + (S.catFilter === c[0]) + '"><span>' + (isPro() ? sentence(c[1]) : c[1]) + '</span><b class="num">' + n[c[0]] + "</b></button>";
     }).join("");
     var pick = "";
     if (can("yard")) {
@@ -799,10 +808,19 @@
   function earlyLine(r) { return r.early ? '<div class="l3 early">EARLY · booked ' + esc(r.return_at ? dayShort(r.return_at) + " " + hhmm(r.return_at) : "later") + "</div>" : ""; }
   function noteLine(r) { return r.note ? '<div class="l3' + (/^!/.test(r.note) ? " bang" : "") + '">' + esc(r.note.replace(/^!\s*/, "")) + "</div>" : ""; }
   // A pressed button shows the time and the first name of whoever pressed it.
+  // The Airport Parking Bay UI's buttons are big enough for words, not codes.
+  var PRO_WORDS = { COLL: "Collected", "NO SHOW": "No show", SENT: "Sent", CALLED: "Called", CLEAR: "Clear", OVERSTAY: "Overstay", COMPLAINT: "Complaint" };
+  function isPro() { return document.documentElement.classList.contains("pro"); }
+  // Booking sites send names in capitals; the Airport Parking Bay UI shows them as written ("Senior Miss").
+  function niceMake(m) { return m.length <= 3 ? m : nice(m); }
+  function sentence(t) { t = String(t || ""); return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase(); }
+  function nice(t) { t = String(t || ""); return isPro() ? t.toLowerCase().replace(/(^|[\s\-'(])([a-z])/g, function (m, a, b) { return a + b.toUpperCase(); }) : t; }
   function actBtn(r, attrs, cls, label, on, at, allowed, who) {
-    var name = on && at ? staffName(who).trim().split(/\s+/)[0] : "";
+    var pro = isPro();
+    if (pro && PRO_WORDS[label]) label = PRO_WORDS[label];
+    var name = on && at ? nice(staffName(who).trim().split(/\s+/)[0]) : "";
     return '<button type="button" class="' + cls + (on ? " on" : "") + (label.length > 7 ? " lng" : "") + '" ' + attrs + (allowed ? "" : " disabled") + ">" +
-      label + (on && at ? '<small class="num">' + esc(hhmm(at)) + "</small>" : "") + (name ? '<em class="by">' + esc(name) + "</em>" : "") + "</button>";
+      (pro ? '<span class="w">' + label + "</span>" : label) + (on && at ? '<small class="num">' + esc(hhmm(at)) + "</small>" : "") + (name ? '<em class="by">' + esc(name) + "</em>" : "") + "</button>";
   }
 
   // The brand only ("SKODA KODIAQ SE IV PHEV SA BLUE" -> "SKODA"), for the row.
@@ -921,11 +939,15 @@
     // An early return shows no booked time here (it was for another day): the EARLY tag says when.
     var booked = r.early ? r.sched_time : (r.sched_time || hhmm(r.return_at) || "—");
     var eta = canc ? "" : r.est_time;
-    return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' +
+    // The card's time block (Airport Parking Bay UI only; hidden in the standard look).
+    var big = eta && eta !== "DELAY" ? eta : booked;
+    var rt = '<div class="rt" data-open><b class="num' + (eta === "DELAY" ? " dly" : eta && r.flight_status === "expected" ? " exp" : "") + '">' + esc(big || "—") + "</b><small>" + esc(r.flight || "No flight") + "</small>" +
+      (eta && booked && eta !== booked ? '<i class="num">booked ' + esc(booked) + "</i>" : "") + (r.flight_status === "landed" ? '<i class="ld">Landed</i>' : "") + "</div>";
+    return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' + rt +
       '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" + yardChip(r) +
-      (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + catTag(r) + wasTag(r) + '<span class="pin">' + esc(r.name) + "</span></div>" +
-      '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(makeOnly(r.make)) + "</span> · " : "") +
-      (r.flight ? esc(r.flight) : can("flights") ? '<button type="button" class="addflight" data-addflight>+ FLIGHT</button>' : "—") + "</span>" +
+      (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + catTag(r) + wasTag(r) + '<span class="pin">' + esc(nice(r.name)) + "</span></div>" +
+      '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(niceMake(makeOnly(r.make))) + "</span>" : "") +
+      '<span class="flp' + (r.flight ? " has" : "") + '">' + (makeOnly(r.make) ? " · " : "") + (r.flight ? esc(r.flight) : can("flights") ? '<button type="button" class="addflight" data-addflight>+ FLIGHT</button>' : "—") + "</span></span>" +
       '<span class="l2b">' + (booked ? " · " + esc(booked) : "") +
       (eta ? ' &rarr; <span class="eta' + (eta === "DELAY" ? " dly" : "") + (r.flight_status === "expected" ? " exp" : "") + '">' + esc(eta) + "</span>" : "") +
       (r.flight_status === "landed" ? ' <span class="tag ld">LANDED</span>' : "") + "</span></div>" +
@@ -962,10 +984,11 @@
     var cls = r.intake === "Collected" ? " coll" : r.intake === "No Show" ? " nosh" : r.intake === "RTC" ? " rtc" : bang ? " cmpl" : "";
     function b(v, c, label, perm) { return actBtn(r, 'data-pick="' + v + '"', c, label, r.intake === v, r.intake_at, can("intake") && (!perm || can(perm)), r.intake_by); }
     return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' +
+      '<div class="rt" data-open><b class="num">' + esc(hhmm(r.drop_at) || "—") + "</b><small>Drop-off</small></div>" +
       '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" +
-      (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + catTag(r) + '<span class="pin">' + esc(r.name) + "</span></div>" +
+      (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + catTag(r) + '<span class="pin">' + esc(nice(r.name)) + "</span></div>" +
       // Just the make on the row; the full car and booking ref are in the car's panel.
-      '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(makeOnly(r.make)) + "</span> · " : "") + "drop " + esc(hhmm(r.drop_at) || "—") + (S.ptUnsaved[r.id] && r.pt_at ? ' · <span class="tag due">PT NOT SAVED</span>' : "") + (r.pick_called ? ' · <span class="tag' + (r.pick_called === "New Booking" ? ' nb">NEW BOOKING' : '">' + esc(r.pick_called)) + "</span> " + esc(hhmm(r.pick_called_at)) : "") + "</span></div>" +
+      '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(niceMake(makeOnly(r.make))) + "</span>" : "") + '<span class="dp">' + (makeOnly(r.make) ? " · " : "") + "drop " + esc(hhmm(r.drop_at) || "—") + "</span>" + (S.ptUnsaved[r.id] && r.pt_at ? ' · <span class="tag due">PT NOT SAVED</span>' : "") + (r.pick_called ? ' · <span class="tag' + (r.pick_called === "New Booking" ? ' nb">NEW BOOKING' : '">' + esc(r.pick_called)) + "</span> " + esc(hhmm(r.pick_called_at)) : "") + "</span></div>" +
       noteLine(r) + "</div>" +
       '<div class="acts">' + b("Collected", "k", "COLL") + b("No Show", "n", "NO SHOW") + b("RTC", "r", "RTC", "rtc") +
       actBtn(r, "data-pt", "p", "PT", !!r.pt_at, r.pt_at, can("intake"), r.pt_by) + "</div></div>";
@@ -2753,6 +2776,26 @@
     } catch (e) {}
     return PRODUCT;
   }
+  // Light or dark (Airport Parking Bay UI): the phone's own setting unless
+  // this phone has picked one in the menu. Kept on the phone only.
+  var MODE_KEY = "takeoff_mode", darkMq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  function getMode() { try { return localStorage.getItem(MODE_KEY) || "auto"; } catch (e) { return "auto"; } }
+  function applyMode() {
+    var m = getMode(), dark = isPro() && (m === "dark" || (m === "auto" && !!darkMq && darkMq.matches));
+    document.documentElement.classList.toggle("dark", dark);
+    document.documentElement.style.colorScheme = dark ? "dark" : "light";
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta && isPro()) meta.setAttribute("content", dark ? "#0A111D" : getComputedStyle(document.documentElement).getPropertyValue("--chrome").trim() || "#0E3F7E");
+  }
+  function setMode(m) { try { localStorage.setItem(MODE_KEY, m); } catch (e) {} applyMode(); }
+  if (darkMq && darkMq.addEventListener) darkMq.addEventListener("change", applyMode);
+  function modeHtml() {
+    if (!isPro()) return "";
+    var m = getMode();
+    return '<label>DISPLAY</label><div class="pseg mode">' + [["auto", "Auto"], ["light", "Light"], ["dark", "Dark"]].map(function (x) {
+      return '<button type="button" data-mode="' + x[0] + '" class="' + (m === x[0] ? "on" : "") + '" aria-pressed="' + (m === x[0]) + '">' + x[1] + "</button>";
+    }).join("") + '</div><p class="hint">Auto follows this phone\'s own light or dark setting.</p>';
+  }
   function applyBrand(co) {
     var b = (co && co.brand) || {};
     // Remembered on this phone so the NEXT sign-in screen already wears the
@@ -2792,6 +2835,7 @@
     if (b.logo) {
       Array.prototype.forEach.call(document.querySelectorAll('link[rel="apple-touch-icon"], link[rel="icon"]'), function (l) { l.href = b.logo; });
     }
+    applyMode();
   }
 
   // Wear the remembered brand immediately, before anyone signs in.
@@ -3646,6 +3690,8 @@
     if (t.dataset.saverate !== undefined) return saveOverstayRate(t);
     if (t.dataset.view) return go(t.dataset.view);
     if (t.id === "menuBtn") return openMenu();
+    if (t.dataset.bn) { if (S.view !== "board" && t.dataset.bn !== "menuBtn") go("board"); return $(t.dataset.bn).click(); }
+    if (t.dataset.mode) { setMode(t.dataset.mode); return openMenu(); }
     if (t.id === "logBtn") return go("summary");
     if (t.id === "flBtn") return checkFlights(t);
     if (t.id === "rtBtn") return openReturns();
@@ -3792,8 +3838,8 @@
     $("menuBody").innerHTML = "<h2>" + esc(S.company.name) + '</h2><p class="sub">' + esc(S.me.name) + " · " + esc(ROLE_LABEL[S.me.role] || S.me.role) + "</p>" +
       '<div class="menu-list">' + items.filter(function (x) { return x[2]; }).map(function (x) {
         return '<button type="button" data-view="' + x[0] + '"' + (S.view === x[0] ? ' aria-current="page"' : "") + ">" + x[1] + "</button>";
-      }).join("") + "</div>" + sheetTools + '<div class="pbtns"><button type="button" data-closemenu>Close</button></div>';
-    $("menu").showModal();
+      }).join("") + "</div>" + sheetTools + modeHtml() + '<div class="pbtns"><button type="button" data-closemenu>Close</button></div>';
+    if (!$("menu").open) $("menu").showModal();
   }
   $("menu").addEventListener("click", function (e) { if (outside("menu", e) || e.target.closest("[data-closemenu]")) $("menu").close(); });
   // The clock, and the CALLED colours that change with waiting time.

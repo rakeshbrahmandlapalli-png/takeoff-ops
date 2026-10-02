@@ -281,21 +281,32 @@ await scenario(async () => {
   const plain = await phone(browser, makeDb());
   await open(plain);
   check("a company without the pro theme keeps the usual look", !(await plain.evaluate(() => document.documentElement.classList.contains("pro"))));
+  check("the usual look has no cards, bottom bar or display setting", await plain.evaluate(() => getComputedStyle(document.querySelector(".row .rt")).display === "none" && getComputedStyle(document.getElementById("bnav")).display === "none" && /SENT/.test(document.querySelector('.row [data-act="sent"]').textContent)));
   const db = makeDb();
   db.company = { ...db.company, name: "Airport Parking Bay", slug: "airport-parking-bay", yards: ["GS", "MY", "T"], brand: { colour: "#1560BD", ink: "#FFFFFF", soft: "#E8F0FB", text: "#0E3F7E", short: "Parking Bay", theme: "pro", chrome: "#0E3F7E", mark: "P" } };
   const page = await phone(browser, db, { width: 360 });
   await open(page); await sleep(300);
   const look = await page.evaluate(async () => {
     await document.fonts.ready;
-    const reg = getComputedStyle(document.querySelector(".row .reg")), bar = getComputedStyle(document.querySelector(".top"));
+    const reg = getComputedStyle(document.querySelector(".row .reg")), bar = getComputedStyle(document.querySelector(".bar"));
     return { pro: document.documentElement.classList.contains("pro"), plate: reg.backgroundColor, bar: bar.backgroundColor, mark: document.querySelector(".tobrand").dataset.mark,
       font: document.fonts.check("700 16px 'Barlow Semi Condensed'"), theme: document.querySelector('meta[name="theme-color"]').content };
   });
   check("pro theme: switched on by the company's brand", look.pro, look);
-  check("pro theme: regs are white number plates", look.plate === "rgb(255, 255, 255)", look.plate);
+  check("pro theme: regs are yellow number plates", look.plate === "rgb(255, 212, 59)", look.plate);
   check("pro theme: the bar wears the brand's dark colour", look.bar === "rgb(14, 63, 126)" && look.theme === "#0E3F7E", look);
   check("pro theme: the mark letter and the Barlow fonts load (CSP allows them)", look.mark === "P" && look.font, look);
   check("pro theme: no sideways scrolling on a 360 px phone", await noSideScroll(page));
+  const card = await page.evaluate(() => ({ time: (document.querySelector('.row[data-id="b1"] .rt b') || {}).textContent, name: document.querySelector('.row[data-id="b1"] .pin').textContent,
+    word: document.querySelector('.row[data-id="b3"] [data-act="sent"] .w').textContent, nav: getComputedStyle(document.getElementById("bnav")).display, tabs: document.getElementById("tabTodo").textContent }));
+  check("pro theme: each car is a card with its time, the name as written, and words on the buttons", card.time === "22:45" && card.name === "Senior Miss" && card.word === "Sent" && /^To do · \d+$/.test(card.tabs), card);
+  check("pro theme: the bottom bar is there", card.nav === "flex", card);
+  await page.click('#bnav [data-bn="menuBtn"]'); await page.waitForSelector('[data-mode="dark"]');
+  await page.click('[data-mode="dark"]'); await sleep(200);
+  const dark = await page.evaluate(() => ({ on: document.documentElement.classList.contains("dark"), bg: getComputedStyle(document.body).backgroundColor, kept: localStorage.getItem("takeoff_mode") }));
+  check("pro theme: Dark in the menu turns the app dark and is remembered on the phone", dark.on && dark.bg === "rgb(10, 17, 29)" && dark.kept === "dark", dark);
+  await page.click('[data-mode="light"]'); await sleep(200);
+  check("pro theme: Light turns it back", !(await page.evaluate(() => document.documentElement.classList.contains("dark"))));
   check("pro theme: no errors", page.__errors.length === 0, page.__errors);
 });
 
