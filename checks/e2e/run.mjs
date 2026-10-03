@@ -654,7 +654,7 @@ await scenario(async () => {
   check("Parking Ops: each client has Open board", await page.locator('[data-clientopen="c1"]').count() === 1);
   await page.click("[data-usage]"); await page.waitForSelector("table.usage", { timeout: 5000 });
   const use = await page.textContent("#panelBody");
-  check("Parking Ops: Usage shows the database, PT photos, FR24 and AeroDataBox", /24\.5 MB of 500 MB/.test(use) && /134 \/ 4277/.test(use) && /46 · about 1,794 credits/.test(use) && /AeroDataBox now\s*working/.test(use), use.slice(0, 400));
+  check("Parking Ops: Usage shows the database, PT photos, FR24 and AeroDataBox", /24\.5 MB of 8 GB/.test(use) && /134 \/ 4277/.test(use) && /46 · about 1,794 credits/.test(use) && /AeroDataBox now\s*working/.test(use), use.slice(0, 400));
   await page.click("#panelBody [data-close]");
   check("Parking Ops: each client card says which look it has", /Standard/.test(await text(page, ".client")));
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");

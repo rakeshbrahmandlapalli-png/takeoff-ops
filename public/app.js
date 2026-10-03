@@ -1580,7 +1580,7 @@
   //               120 KB), kept 30 days: ~14 GB, a few pence a month over
   //               the free 10 GB. The pt-r2 function hands out upload
   //               addresses; paths start "r2:".
-  //   otherwise   Supabase's store (1 GB on the free plan): 10 photos spread
+  //   otherwise   Supabase's store (100 GB on Pro), kept 30 days: 10 photos spread
   //               evenly round the car, small (800 px, about 35 KB).
   // It waits while the camera is open or PT's photos are still being sent:
   // making copies alongside the share sheet stopped PT on an iPhone.
@@ -2154,7 +2154,7 @@
           (a.value ? '<span class="hv">' + esc(a.value) + "</span>" : "") + "</span></div>";
       }).join("") + "</div>");
   }
-  // The car's PT photos (kept 3 days in Supabase, 30 in Cloudflare). View opens the same page PT gets.
+  // The car's PT photos (kept 30 days, in Supabase or Cloudflare). View opens the same page PT gets.
   async function ptPhotosList(r) {
     var res = await sb.rpc("pt_photos_for", { p_booking: r.id });
     var el = $("ptPhotos"); if (!el || panelRow !== r || res.error) return;
@@ -3199,9 +3199,9 @@
     var u = r.data || {}, rows = function (list) { return list.map(function (x) { return "<tr><th>" + x[0] + "</th><td class=\"num\">" + x[1] + "</td></tr>"; }).join(""); };
     $("panelBody").innerHTML = '<h2 id="panelTitle">Usage</h2>' +
       '<h3 class="usehead">Everyone</h3><table class="usage">' + rows([
-        ["Database", esc(mb(u.db_bytes || 0)) + " of 500 MB"],
-        ["Supabase file store", esc(mb(u.store_bytes || 0)) + " · " + (u.store_files || 0) + " files"]]) + "</table>" +
-      '<p class="hint">Download traffic (egress, 5 GB a month free) is only on the <a href="https://supabase.com/dashboard/project/_/settings/billing/usage" target="_blank" rel="noopener">Supabase usage page</a>. PT copies are in Cloudflare R2, counted below.</p>' +
+        ["Database", esc(mb(u.db_bytes || 0)) + " of 8 GB"],
+        ["Supabase file store", esc(mb(u.store_bytes || 0)) + " of 100 GB · " + (u.store_files || 0) + " files"]]) + "</table>" +
+      '<p class="hint">Download traffic (egress, 250 GB a month on Pro) is only on the <a href="https://supabase.com/dashboard/project/_/settings/billing/usage" target="_blank" rel="noopener">Supabase usage page</a>. PT copies are in Cloudflare R2, counted below.</p>' +
       (u.clients || []).map(function (c) {
         var tt = c.timetable_last_error ? '<span class="warnt">' + esc(c.timetable_last_error.slice(0, 90)) + "</span>" : c.timetable_last_ok ? "working · last " + esc(dayShort(c.timetable_last_ok) + " " + hhmm(c.timetable_last_ok)) : "not used";
         return '<h3 class="usehead">' + esc(c.name) + '</h3><table class="usage">' + rows([
