@@ -921,7 +921,8 @@
   // A pressed button shows the time and the first name of whoever pressed it.
   // The Cards look's buttons are big enough for words, not codes.
   var PRO_WORDS = { COLL: "Collected", "NO SHOW": "No show", SENT: "Sent", CALLED: "Called", CLEAR: "Clear", OVERSTAY: "Overstay", COMPLAINT: "Complaint" };
-  function isCards() { return document.documentElement.classList.contains("cards"); }
+  // A card per car (Cards or Premium look); isPremium tells the two apart.
+  function isCards() { var c = document.documentElement.classList; return c.contains("cards") || c.contains("premium"); }
   function isPremium() { return document.documentElement.classList.contains("premium"); }
   // Booking sites send names in capitals; the Cards look shows them as written ("Senior Miss").
   function niceMake(m) { return m.length <= 3 ? m : nice(m); }
@@ -2973,9 +2974,10 @@
     if (t) t.setAttribute("content", short);
 
     // The look is the company's choice, in its brand (Clients → Edit → LOOK):
-    // theme "pro" wears pro.css, theme "cards" wears cards.css, none is Standard.
-    // Premium is the Cards look with its own top (premium.css over cards.css).
-    var premium = b.theme === "premium", cards = b.theme === "cards" || premium, pro = b.theme === "pro" || cards;
+    // theme "pro" wears pro.css, "cards" cards.css, "premium" premium.css, none is Standard.
+    // Cards and Premium share the card-per-car layout (isCards) but each wears
+    // only its own stylesheet: html.cards → cards.css, html.premium → premium.css.
+    var premium = b.theme === "premium", cards = b.theme === "cards", pro = b.theme === "pro" || cards || premium;
     document.documentElement.classList.toggle("pro", b.theme === "pro");
     document.documentElement.classList.toggle("cards", cards);
     document.documentElement.classList.toggle("premium", premium);
@@ -3243,7 +3245,7 @@
   }
   // ── Clients (product owner only, database part 19) ──
   // Counts only: this page never sees a client's customers.
-  // The looks a client's app can wear (brand.theme): "pro" is pro.css, "cards" is cards.css.
+  // The looks a client's app can wear (brand.theme): "pro" is pro.css, "cards" is cards.css, "premium" is premium.css (three separate stylesheets).
   var LOOKS = [["", "Standard"], ["pro", "Airport Parking Bay UI"], ["cards", "Cards (light and dark)"], ["premium", "Premium UI"]];
   function lookName(b) { var l = LOOKS.filter(function (x) { return x[0] === ((b && b.theme) || ""); })[0]; return l ? l[1] : "Standard"; }
   function renderClients() {

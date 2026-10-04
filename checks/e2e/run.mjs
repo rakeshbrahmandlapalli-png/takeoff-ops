@@ -296,11 +296,11 @@ await scenario(async () => {
   const look = await page.evaluate(async () => {
     await document.fonts.ready;
     const reg = getComputedStyle(document.querySelector(".row .reg")), bar = getComputedStyle(document.querySelector(".top"));
-    return { pro: document.documentElement.classList.contains("pro"), cards: document.documentElement.classList.contains("cards"), plate: reg.backgroundColor, bar: bar.backgroundColor, mark: document.querySelector(".tobrand").dataset.mark,
+    return { pro: document.documentElement.classList.contains("pro"), cards: document.documentElement.classList.contains("cards"), premium: document.documentElement.classList.contains("premium"), plate: reg.backgroundColor, bar: bar.backgroundColor, mark: document.querySelector(".tobrand").dataset.mark,
       font: document.fonts.check("700 16px 'Barlow Semi Condensed'"), theme: document.querySelector('meta[name="theme-color"]').content,
       rt: getComputedStyle(document.querySelector(".row .rt")).display, nav: getComputedStyle(document.getElementById("bnav")).display, word: document.querySelector('.row [data-act="sent"]').textContent };
   });
-  check("Airport Parking Bay UI: switched on by the company's brand, and only that look", look.pro && !look.cards, look);
+  check("Airport Parking Bay UI: switched on by the company's brand, and only that look", look.pro && !look.cards && !look.premium, look);
   check("Airport Parking Bay UI: regs are yellow number plates", look.plate === "rgb(247, 209, 23)", look.plate);
   check("Airport Parking Bay UI: the bar wears the brand's dark colour", look.bar === "rgb(14, 63, 126)" && look.theme === "#0E3F7E", look);
   check("Airport Parking Bay UI: the mark letter and the Barlow fonts load (CSP allows them)", look.mark === "P" && look.font, look);
@@ -313,10 +313,10 @@ await scenario(async () => {
   await open(page); await sleep(300);
   const look = await page.evaluate(async () => {
     await document.fonts.ready;
-    return { pro: document.documentElement.classList.contains("pro"), cards: document.documentElement.classList.contains("cards"), plate: getComputedStyle(document.querySelector(".row .reg")).backgroundColor,
+    return { pro: document.documentElement.classList.contains("pro"), cards: document.documentElement.classList.contains("cards"), premium: document.documentElement.classList.contains("premium"), plate: getComputedStyle(document.querySelector(".row .reg")).backgroundColor,
       bar: getComputedStyle(document.querySelector(".bar")).backgroundColor, font: document.fonts.check("700 16px 'Barlow Semi Condensed'") };
   });
-  check("Cards: switched on by the company's brand, and only that look", look.cards && !look.pro, look);
+  check("Cards: switched on by the company's brand, and only that look", look.cards && !look.pro && !look.premium, look);
   check("Cards: yellow plates, the brand's dark bar, Barlow loads", look.plate === "rgb(255, 212, 59)" && look.bar === "rgb(14, 63, 126)" && look.font, look);
   check("Cards: no sideways scrolling on a 360 px phone", await noSideScroll(page));
   const card = await page.evaluate(() => ({ reg: document.querySelector('.row[data-id="b1"] .reg').textContent, name: document.querySelector('.row[data-id="b1"] .pin').textContent,
@@ -349,7 +349,7 @@ await scenario(async () => {
     pro: document.documentElement.classList.contains("pro"), head: document.getElementById("cHead").innerText, shiftBtn: !document.getElementById("shiftBtn").classList.contains("hidden"),
     tile: getComputedStyle(document.querySelector("#tally button")).backgroundColor, num: getComputedStyle(document.querySelector("#tally b")).color,
     underline: getComputedStyle(document.querySelector('#kindSeg [aria-pressed="true"]')).borderBottomColor, tabs: document.getElementById("tabTodo").textContent }));
-  check("Premium: switched on by the brand, wearing the Cards base too", look.cards && look.premium && !look.pro, look);
+  check("Premium: switched on by the brand, its own look only (not Cards, not Airport Parking Bay UI)", look.premium && !look.cards && !look.pro, look);
   check("Premium: the title bar names the company, who is on and when it updated", /Parking Bay operations/.test(look.head) && /RAKESH · Owner/.test(look.head) && /Updated \d\d:\d\d/.test(look.head), look.head);
   check("Premium: white tiles with dark figures, brand-blue active tab underline", look.tile === "rgba(0, 0, 0, 0)" && look.num === "rgb(17, 24, 39)" && look.underline === "rgb(21, 96, 189)", look);
   check("Premium: the tab reads 'TO DO (N)' and the navy shift button is gone", /^TO DO \(\d+\)$/.test(look.tabs) && !look.shiftBtn, look);
