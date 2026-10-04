@@ -307,3 +307,18 @@ html.cards .alert{background:var(--bad-bg);color:var(--bad-tx);}
 html.cards .toast{border-radius:12px;background:#16202E;font:500 15px/1.35 var(--sans);box-shadow:0 10px 30px rgb(0 0 0 / .3);}
 html.cards.dark .toast{background:#22314A;}
 html.cards .toast.bad{background:#9A2A20;}
+
+/* ── the shift header and the Choose shift sheet (Cards look) ── */
+html.cards .shiftbtn:not(.hidden){display:flex;flex:1;min-width:0;flex-direction:column;align-items:flex-start;gap:1px;padding:4px 10px;border:0;border-radius:10px;background:var(--head-tile);color:var(--head-ink);text-align:left;}
+html.cards .shiftbtn .st-tag{font:700 10px/1.2 var(--cond);letter-spacing:.1em;color:var(--head-2);text-transform:uppercase;}
+html.cards .shiftbtn .st-when{font:700 15px/1.15 var(--sans);color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+html.cards .shiftbtn .st-when::after{content:" \25be";color:var(--head-2);font-size:11px;}
+html.cards .shiftbtn .st-sub{font:500 10.5px/1.2 var(--sans);color:var(--head-2);}
+html.cards #shiftBody h2{font:700 24px/1.1 var(--cond);letter-spacing:.04em;margin:0 0 14px;}
+html.cards #shiftBody label{display:block;margin:14px 0 7px;font:700 11px/1.2 var(--cond);letter-spacing:.1em;color:var(--ink-3);}
+html.cards .shiftlist{display:flex;flex-direction:column;gap:8px;}
+html.cards .shiftrow{display:flex;flex-direction:column;gap:2px;align-items:flex-start;padding:13px 14px;border:1px solid var(--field-line);border-radius:12px;background:var(--card);color:var(--ink);text-align:left;}
+html.cards .shiftrow.on{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand);background:var(--brand-soft);}
+html.cards.dark .shiftrow.on{background:#15233b;}
+html.cards .shiftrow .sr-when{font:700 16px/1.2 var(--sans);}
+html.cards .shiftrow .sr-tag{font:700 10.5px/1.2 var(--cond);letter-spacing:.09em;color:var(--ink-3);text-transform:uppercase;}

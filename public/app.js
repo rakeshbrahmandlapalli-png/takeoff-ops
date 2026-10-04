@@ -544,8 +544,11 @@
     show("homeBtn", !S.platform && !!homeSaved());
     $("clock").textContent = londonParts(new Date()).time;
     var shift = currentShiftKey();
+    var cardsLook = isCards();
     $("sheetPick").innerHTML = S.sheets.length || S.archiveSheet ? pickerHtml(shift) : "<option>No sheets yet</option>";
-    show("sheetPick", !S.platform);
+    show("sheetPick", !S.platform && !cardsLook);
+    show("shiftBtn", !S.platform && cardsLook);
+    if (cardsLook) $("shiftBtn").innerHTML = shiftBtnHtml(sh);
     show("logBtn", !S.platform && (can("summary") || can("log")));
     show("flBtn", !S.platform && can("flights") && !picks);
     show("rtBtn", !S.platform && can("picksinfo") && picks);
@@ -565,6 +568,50 @@
 
   // Today and anything ahead first, then a group per month, so 90 days of
   // DROPS and PICKS stay quick to scroll on a phone.
+  // The Cards look shows the open sheet as a shift, and a "Choose shift" sheet.
+  // A DROPS day is the night that ends at drops_day_end (06:00), so it reads as
+  // two dates: "Sat 3 Oct → Sun 4 Oct". PICKS is the single day.
+  function longDay(key) { return new Date(key + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }); }
+  function shiftWhen(s) {
+    if (!s || !s.day) return "";
+    return s.kind === "drops" ? longDay(s.day) + " → " + longDay(addDaysKey(s.day, 1)) : longDay(s.day);
+  }
+  function shiftTag(s) {
+    if (!s || !s.day) return "";
+    var now = currentShiftKey();
+    if (s.day === now) return s.kind === "drops" ? "CURRENT NIGHT SHIFT" : "TODAY";
+    if (s.day === addDaysKey(now, 1)) return "NEXT SHIFT";
+    return s.day > now ? "COMING UP" : "PAST SHIFT";
+  }
+  function shiftBtnHtml(sh) {
+    if (!sh) return '<span class="st-tag">No sheets yet</span>';
+    var end = (S.company && S.company.drops_day_end || "06:00:00").slice(0, 5);
+    var sub = sh.kind === "drops" ? "Ends at " + end + " · London" : "Pick-ups · London";
+    return '<span class="st-tag">' + esc(sh.kind.toUpperCase() + " · " + shiftTag(sh)) + "</span>" +
+      '<span class="st-when">' + esc(shiftWhen(sh)) + '</span><span class="st-sub">' + esc(sub) + "</span>";
+  }
+  function openShiftPick() {
+    var shift = currentShiftKey();
+    var order = S.sheets.slice().sort(function (a, b) { return a.day > b.day ? -1 : a.day < b.day ? 1 : a.kind < b.kind ? -1 : 1; });
+    var ahead = order.filter(function (s) { return s.day >= shift; }).reverse();
+    var past = order.filter(function (s) { return s.day < shift; });
+    var item = function (s) {
+      return '<button type="button" class="shiftrow' + (s.id === S.sheetId ? " on" : "") + '" data-pickshift="' + s.id + '">' +
+        '<span class="sr-when">' + esc(shiftWhen(s)) + '</span><span class="sr-tag">' + esc(s.kind.toUpperCase() + " · " + shiftTag(s)) + "</span></button>";
+    };
+    var h = '<h2>Choose shift</h2>';
+    if (ahead.length) h += '<div class="shiftlist">' + ahead.map(item).join("") + "</div>";
+    if (past.length) h += '<label>EARLIER</label><div class="shiftlist">' + past.slice(0, 20).map(item).join("") + "</div>";
+    $("shiftBody").innerHTML = h + '<div class="pbtns"><button type="button" data-closeshift>Close</button></div>';
+    if (!$("shiftPick").open) $("shiftPick").showModal();
+  }
+  function chooseShift(id) {
+    $("shiftPick").close();
+    if (id === S.sheetId) return;
+    S.sheetId = id; S.q = ""; S.other = null; S.yardFilter = ""; S.catFilter = ""; S.view = "board"; S.runs = null;
+    try { sessionStorage.setItem(openSheetKey(), id); } catch (e) {}
+    loadRows().then(render).then(function () { window.scrollTo(0, 0); });
+  }
   function pickerHtml(shift) {
     function opt(s) { return '<option value="' + s.id + '"' + (s.id === S.sheetId ? " selected" : "") + ">" + esc(sheetLabel(s)) + (s.day === shift ? " · today" : "") + "</option>"; }
     var ahead = S.sheets.filter(function (s) { return s.day >= shift; }).sort(function (a, b) { return a.day < b.day ? -1 : a.day > b.day ? 1 : a.kind < b.kind ? -1 : 1; });
@@ -3806,6 +3853,9 @@
     if (t.dataset.saverate !== undefined) return saveOverstayRate(t);
     if (t.dataset.view) return go(t.dataset.view);
     if (t.id === "menuBtn") return openMenu();
+    if (t.id === "shiftBtn") return openShiftPick();
+    if (t.dataset.pickshift) return chooseShift(t.dataset.pickshift);
+    if (t.dataset.closeshift !== undefined) return $("shiftPick").close();
     if (t.dataset.bn) { if (S.view !== "board" && t.dataset.bn !== "menuBtn") go("board"); return $(t.dataset.bn).click(); }
     if (t.dataset.mode) { setMode(t.dataset.mode); return openMenu(); }
     if (t.id === "logBtn") return go("summary");
@@ -3960,6 +4010,7 @@
     if (!$("menu").open) $("menu").showModal();
   }
   $("menu").addEventListener("click", function (e) { if (outside("menu", e) || e.target.closest("[data-closemenu]")) $("menu").close(); });
+  $("shiftPick").addEventListener("click", function (e) { if (outside("shiftPick", e)) $("shiftPick").close(); });
   // The clock, and the CALLED colours that change with waiting time.
   setInterval(function () {
     if (!S.me) return;

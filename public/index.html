@@ -68,6 +68,7 @@
       <button type="button" class="homebtn hidden" id="homeBtn" title="Back to Parking Ops">‹ PARKING OPS</button>
       <button type="button" class="tobrand" id="menuBtn" title="Menu" aria-label="Parking menu" aria-haspopup="dialog">Parking Ops</button>
       <select id="sheetPick" aria-label="Day sheet"></select>
+      <button type="button" class="shiftbtn hidden" id="shiftBtn" aria-haspopup="dialog"></button>
       <span class="pend" id="sync" aria-live="polite"></span>
       <span class="who" id="who"></span>
       <span class="when num" id="clock"></span>
@@ -105,6 +106,7 @@
 
 <dialog id="panel" class="sheet" aria-labelledby="panelTitle"><div id="panelBody"></div></dialog>
 <dialog id="menu" class="sheet" aria-label="Menu"><div id="menuBody"></div></dialog>
+<dialog id="shiftPick" class="sheet" aria-label="Choose shift"><div id="shiftBody"></div></dialog>
 
 <script src="/vendor/supabase-2.117.2.js"></script>
 <script src="/reader.js"></script>

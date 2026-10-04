@@ -331,6 +331,13 @@ await scenario(async () => {
   check("Cards: Dark in the menu turns the app dark and is remembered on the phone", dark.on && dark.bg === "rgb(10, 17, 29)" && dark.kept === "dark", dark);
   await page.click('[data-mode="light"]'); await sleep(200);
   check("Cards: Light turns it back", !(await page.evaluate(() => document.documentElement.classList.contains("dark"))));
+  await page.keyboard.press("Escape"); await sleep(300);
+  check("Cards: the shift header replaces the day dropdown", await page.isVisible("#shiftBtn") && !(await page.isVisible("#sheetPick")) && /CURRENT NIGHT SHIFT|TODAY/.test(await page.locator("#shiftBtn").innerText()));
+  await page.click("#shiftBtn"); await page.waitForSelector("[data-pickshift]");
+  check("Cards: Choose shift lists the sheets", /Choose shift/i.test(await page.locator("#shiftBody").innerText()) && (await page.locator("[data-pickshift]").count()) >= 2);
+  const other = await page.locator("[data-pickshift]").nth(1).getAttribute("data-pickshift");
+  await page.click('[data-pickshift="' + other + '"]'); await sleep(500);
+  check("Cards: picking a shift opens it and closes the sheet", !(await page.isVisible("#shiftPick")) && (await page.locator("#sheetPick").inputValue()) === other);
   check("Cards: no errors", page.__errors.length === 0, page.__errors);
 });
 
