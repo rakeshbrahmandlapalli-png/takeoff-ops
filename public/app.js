@@ -690,8 +690,8 @@
       return '<button type="button" data-tally="' + esc(x[1]) + '" class="' + (S.yardFilter === x[1] ? "on" : "") + (x[1] === "-" ? " warn" : "") + '" aria-pressed="' + (S.yardFilter === x[1]) + '"><span>' + esc(label) + '</span><b class="num">' + x[2] + "</b></button>";
     }).join("");
     renderCatStrip(picks);
-    $("tabTodo").textContent = pro ? "To do · " + S.rows.filter(waiting).length : "TO DO (" + S.rows.filter(waiting).length + ")";
-    $("tabAll").textContent = pro ? "All · " + S.rows.length : "ALL (" + S.rows.length + ")";
+    $("tabTodo").textContent = pro ? S.rows.filter(waiting).length + " Waiting for action" : "TO DO (" + S.rows.filter(waiting).length + ")";
+    $("tabAll").textContent = pro ? "All " + S.rows.length : "ALL (" + S.rows.length + ")";
     $("tabTodo").classList.toggle("on", S.filter === "todo");
     $("tabAll").classList.toggle("on", S.filter === "all");
     $("tabTodo").setAttribute("aria-pressed", S.filter === "todo");
@@ -787,8 +787,22 @@
     if (!S.rows.length) return '<div class="msg">No cars on this sheet.</div>';
     if (!rows.length) return '<div class="msg">' + (S.filter === "todo" && !S.q && !S.yardFilter ? "Nothing outstanding." : S.q ? (S.other && S.other.length ? "Not on this sheet. Found on another day below." : searchWords().tight.length >= 3 && S.other ? "Not found on any sheet." : "Not on this sheet.") : "Nothing matches.") + "</div>";
     var draw = sh.kind === "picks" ? pickRow : dropRow;
+    var cardsLook = isCards();
     return groups.map(function (g) {
-      return (g.title ? '<div class="sec' + g.cls + '">' + g.title + ' <b class="num">' + g.rows.length + "</b>" + (g.note ? "<span>" + g.note + "</span>" : "") + "</div>" : "") + g.rows.map(draw).join("");
+      var head = "";
+      if (g.title) {
+        var note = g.note;
+        if (cardsLook && g.title === "COMING UP") {
+          var prog = g.rows.filter(function (r) { return r.sent_at && !r.cleared_at; }).length;
+          note = g.rows.length + (g.rows.length === 1 ? " car" : " cars") + (prog ? ", including " + prog + " in progress" : "");
+          head = '<div class="sec' + g.cls + '">' + g.title + ' <span>' + note + "</span></div>";
+        } else if (cardsLook) {
+          head = '<div class="sec' + g.cls + '">' + g.title + ' · ' + g.rows.length + (note ? ' <span>' + note + "</span>" : "") + "</div>";
+        } else {
+          head = '<div class="sec' + g.cls + '">' + g.title + ' <b class="num">' + g.rows.length + "</b>" + (note ? "<span>" + note + "</span>" : "") + "</div>";
+        }
+      }
+      return head + g.rows.map(draw).join("");
     }).join("");
   }
 
@@ -928,6 +942,38 @@
     tags = tags.filter(Boolean);
     return tags.length ? '<div class="l2 l2t" data-open>' + tags.join(" ") + "</div>" : "";
   }
+  // The DROPS card for the Cards look: the reg is the hero, the make/flight and
+  // booked → landing time read on one line, the flight status on its own, then
+  // the three full-width buttons. Same data and taps as the standard row.
+  function flightLine(r) {
+    if (r.flight_status === "landed") return '<div class="fst land">Landed</div>';
+    if (r.flight_status === "cancelled") return '<div class="fst stop">Flight cancelled</div>';
+    if (r.est_time === "DELAY") return '<div class="fst stop">Delayed</div>';
+    if (r.flight_status === "expected" && r.est_time) return '<div class="fst due">Expected ' + esc(r.est_time) + "</div>";
+    return "";
+  }
+  function dropCard(r, cls, overWord, cmpl, canc, over) {
+    var booked = r.early ? r.sched_time : (r.sched_time || hhmm(r.return_at) || "—");
+    var eta = canc ? "" : r.est_time;
+    var mk = makeOnly(r.make) ? esc(niceMake(makeOnly(r.make))) : "";
+    var flt = r.flight ? esc(r.flight) : can("flights") ? '<button type="button" class="addflight" data-addflight>+ FLIGHT</button>' : "";
+    var mid = [mk, flt].filter(Boolean).join(" · ");
+    var times = booked ? '<span class="bk">booked ' + esc(booked) + (eta && eta !== "DELAY" && eta !== booked ? ' &rarr; <b>' + esc(eta) + "</b>" : "") + "</span>" : "";
+    return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' +
+      '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" + yardChip(r) +
+      catTag(r) + wasTag(r) + '<span class="pin">' + (r.num ? "#" + r.num + " · " : "") + esc(nice(r.name)) + "</span></div>" +
+      '<div class="l2" data-open>' + mid + (mid && times ? " · " : "") + times + "</div>" +
+      flightLine(r) +
+      rowTags(r, [flightToCheck(r) ? '<span class="tag ck">' + (/^Not in the timetable/.test(r.flight_note) ? "CHECK MANUALLY"
+        : /over 6 h from the booked time/.test(r.flight_note) && r.return_at ? "CHECK FLIGHT · BOOKED " + esc(hhmm(r.return_at)) : "CHECK FLIGHT NO.") + "</span>" : "",
+        over ? '<span class="tag ov">OVERSTAY</span>' : "", cmpl ? '<span class="tag cm">COMPLAINT</span>' : "", chargeTag(r).replace(/^ · /, "")]) +
+      earlyLine(r) + noteLine(r) + "</div>" +
+      '<div class="acts">' +
+      actBtn(r, 'data-act="sent"', "s", "SENT", !!r.sent_at, r.sent_at, can("sent"), r.sent_by) +
+      actBtn(r, 'data-act="called"', "c" + (overWord ? " ov" : ""), overWord ? "OVERSTAY" : "CALLED", !!r.called_at, r.called_at, can("called"), r.called_by) +
+      actBtn(r, 'data-act="clear"', "x" + (cmpl ? " cm" : ""), cmpl ? "COMPLAINT" : "CLEAR", !!r.cleared_at, r.cleared_at, can("clear"), r.cleared_by) +
+      "</div></div>";
+  }
   function dropRow(r) {
     var cmpl = r.clear_word === "COMPLAINT", bang = /^!/.test(r.note), overWord = r.called_word === "Overstay";
     var canc = r.flight_status === "cancelled", over = r.overstay || overWord;
@@ -936,6 +982,7 @@
     else if (r.cleared_at) cls = " done";
     else if (over) cls = " ovst";
     else if (r.called_at) { var w = minsSince(r.called_at); cls = w > LATE_MINS ? " late" : w > WARN_MINS ? " warn" : " called"; }
+    if (isCards()) return dropCard(r, cls, overWord, cmpl, canc, over);
     // An early return shows no booked time here (it was for another day): the EARLY tag says when.
     var booked = r.early ? r.sched_time : (r.sched_time || hhmm(r.return_at) || "—");
     var eta = canc ? "" : r.est_time;

@@ -319,9 +319,11 @@ await scenario(async () => {
   check("Cards: switched on by the company's brand, and only that look", look.cards && !look.pro, look);
   check("Cards: yellow plates, the brand's dark bar, Barlow loads", look.plate === "rgb(255, 212, 59)" && look.bar === "rgb(14, 63, 126)" && look.font, look);
   check("Cards: no sideways scrolling on a 360 px phone", await noSideScroll(page));
-  const card = await page.evaluate(() => ({ time: (document.querySelector('.row[data-id="b1"] .rt b') || {}).textContent, name: document.querySelector('.row[data-id="b1"] .pin').textContent,
+  const card = await page.evaluate(() => ({ reg: document.querySelector('.row[data-id="b1"] .reg').textContent, name: document.querySelector('.row[data-id="b1"] .pin').textContent,
+    noTimeCol: !document.querySelector('.row[data-id="b1"] .rt'),
     word: document.querySelector('.row[data-id="b3"] [data-act="sent"] .w').textContent, nav: getComputedStyle(document.getElementById("bnav")).display, tabs: document.getElementById("tabTodo").textContent }));
-  check("Cards: each car is a card with its time, the name as written, and words on the buttons", card.time === "22:45" && card.name === "Senior Miss" && card.word === "Sent" && /^To do · \d+$/.test(card.tabs), card);
+  check("Cards: the reg is the hero, the name reads as written, buttons have words, no time column", card.reg === "EK14JPV" && /Senior Miss/.test(card.name) && card.noTimeCol && card.word === "Sent", card);
+  check("Cards: the tab reads 'N Waiting for action'", /^\d+ Waiting for action$/.test(card.tabs), card.tabs);
   check("Cards: the bottom bar is there", card.nav === "flex", card);
   await page.click('#bnav [data-bn="menuBtn"]'); await page.waitForSelector('[data-mode="dark"]');
   await page.click('[data-mode="dark"]'); await sleep(200);
