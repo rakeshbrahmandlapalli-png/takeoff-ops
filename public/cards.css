@@ -93,31 +93,34 @@ html.cards #boardHead{display:grid;grid-template-columns:auto 1fr;gap:0 10px;ali
 html.cards #boardHead > *{grid-column:1/-1;}
 html.cards #boardHead > .tabs{grid-column:1;}
 html.cards #boardHead > .qwrap{grid-column:2;}
-html.cards .tally,html.cards .tally.cats{display:flex;gap:8px;padding:2px 14px 14px;background:var(--head);border:0;}
-html.cards .tally.cats{padding-top:0;}
-html.cards .tally button{flex:1;min-width:0;padding:9px 10px 8px;background:var(--head-tile);border:1px solid transparent;border-radius:11px;text-align:left;}
-html.cards.dark .tally button{border-color:var(--head-line);}
-html.cards .tally b{display:block;order:-1;font:600 22px/1 var(--sans);font-variant-numeric:tabular-nums;color:var(--head-ink);}
-html.cards .tally button{display:flex;flex-direction:column;gap:4px;}
-html.cards .tally span{font:500 11.5px/1.1 var(--sans);letter-spacing:0;color:var(--head-2);text-transform:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* The day's numbers as one joined panel of cells on the navy band (Cards look). */
+html.cards .tally,html.cards .tally.cats{display:flex;gap:0;margin:0;padding:0 12px;background:var(--head);border:0;border-radius:0;}
+html.cards .tally{padding-top:6px;}
+html.cards body:not(.picks) .tally{padding-bottom:14px;}
+html.cards .tally.cats{padding-bottom:14px;}
+html.cards .tally button,html.cards .shortpick{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;align-items:flex-start;padding:10px 11px 11px;background:var(--head-tile);border:0;border-right:1px solid var(--head-line);border-radius:0;text-align:left;}
+html.cards .tally button:last-child,html.cards .shortpick:last-child{border-right:0;}
+html.cards .tally button:first-child{border-top-left-radius:12px;}
+html.cards .tally button:last-child{border-top-right-radius:12px;}
+html.cards body:not(.picks) .tally button:first-child{border-bottom-left-radius:12px;}
+html.cards body:not(.picks) .tally button:last-child{border-bottom-right-radius:12px;}
+html.cards body.picks .tally.cats button,html.cards body.picks .tally.cats .shortpick{border-top:1px solid var(--head-line);}
+html.cards .tally.cats button:first-child{border-bottom-left-radius:12px;}
+html.cards .tally.cats .shortpick:last-child{border-bottom-right-radius:12px;}
+html.cards .tally span,html.cards .shortpick span{order:0;font:600 10px/1.1 var(--cond);letter-spacing:.08em;color:var(--head-2);text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+html.cards .tally b{order:1;margin:0;font:700 24px/1 var(--sans);font-variant-numeric:tabular-nums;color:#fff;}
 html.cards .tally button.on{background:#fff;}
-html.cards .tally button.on b{color:#0E3F7E;}
 html.cards .tally button.on span{color:#4B5563;}
-html.cards.dark .tally button.on{background:#22314A;border-color:#2F6FD6;}
-html.cards.dark .tally button.on b{color:#fff;}
-html.cards.dark .tally button.on span{color:#A3AFC2;}
-html.cards .tally button.warn:not(.on){background:var(--warn-tile);}
-html.cards.dark .tally button.warn:not(.on){border-color:#5C4513;}
-html.cards .tally button.warn:not(.on) b,html.cards .tally button.warn:not(.on) span{color:var(--warn-tile-ink);}
+html.cards .tally button.on b{color:#0E3F7E;}
+html.cards .tally button.warn:not(.on){background:rgb(245 184 61 / .16);box-shadow:none;}
+html.cards .tally button.warn:not(.on) b,html.cards .tally button.warn:not(.on) span{color:#FFCF5A;}
 html.cards .tally.cats button.short b{color:#7EE2A8;}
 html.cards .tally.cats button.long b{color:#FFC27A;}
 html.cards .tally.cats button.on.short b{color:#17603A;}
 html.cards .tally.cats button.on.long b{color:#87490A;}
-html.cards .shortpick{flex:1;min-width:0;align-items:flex-start;padding:7px 10px;background:var(--head-tile);border-radius:11px;}
-html.cards .shortpick span{font:500 11.5px/1.1 var(--sans);letter-spacing:0;color:var(--head-2);}
-html.cards .shortpick select{margin-top:4px;max-width:100%;border:0;border-radius:6px;background:rgb(255 255 255 / .92);color:#111827;font:600 13px/1 var(--sans);padding:3px 4px;}
-html.cards .shortpick.unset{background:var(--warn-tile);}
-html.cards .shortpick.unset span,html.cards .shortpick b{color:var(--warn-tile-ink);}
+html.cards .shortpick select{margin:0;border:0;background:none;color:#FFCF5A;font:700 16px/1 var(--sans);padding:0;}
+html.cards .shortpick.unset{background:rgb(245 184 61 / .16);}
+html.cards .shortpick.unset span,html.cards .shortpick b{color:#FFCF5A;}
 
 /* To do / All as a segmented control, the search beside it */
 html.cards .tabs{grid-column:1;display:flex;margin:12px 0 4px 12px;padding:3px;background:var(--seg);border:0;border-radius:11px;}

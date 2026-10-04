@@ -751,7 +751,7 @@
     }
     var pro = isCards();
     $("tally").innerHTML = cells.map(function (x) {
-      var label = pro && x[0].length > 3 ? sentence(x[0]).replace(/^Coll$/, "Collected") : x[0];
+      var label = x[0];
       return '<button type="button" data-tally="' + esc(x[1]) + '" class="' + (S.yardFilter === x[1] ? "on" : "") + (x[1] === "-" ? " warn" : "") + '" aria-pressed="' + (S.yardFilter === x[1]) + '"><span>' + esc(label) + '</span><b class="num">' + x[2] + "</b></button>";
     }).join("");
     renderCatStrip(picks);
@@ -776,7 +776,7 @@
     // Board strip: SHORT LEFT, LONG LEFT, SHORT, LONG (SAME DAY and NEXT DAY stay in the stats panel).
     var strip = set ? LEFT_CATS.concat(CATS.slice(2)) : LEFT_CATS.slice(0, 1);
     var cells = strip.map(function (c) {
-      return '<button type="button" data-cat="' + c[0] + '" class="' + (c[2] || c[0]) + (S.catFilter === c[0] ? " on" : "") + '" aria-pressed="' + (S.catFilter === c[0]) + '"><span>' + (isCards() ? sentence(c[1]) : c[1]) + '</span><b class="num">' + n[c[0]] + "</b></button>";
+      return '<button type="button" data-cat="' + c[0] + '" class="' + (c[2] || c[0]) + (S.catFilter === c[0] ? " on" : "") + '" aria-pressed="' + (S.catFilter === c[0]) + '"><span>' + c[1] + '</span><b class="num">' + n[c[0]] + "</b></button>";
     }).join("");
     var pick = "";
     if (can("yard")) {
