@@ -322,3 +322,11 @@ html.cards .shiftrow.on{border-color:var(--brand);box-shadow:0 0 0 1px var(--bra
 html.cards.dark .shiftrow.on{background:#15233b;}
 html.cards .shiftrow .sr-when{font:700 16px/1.2 var(--sans);}
 html.cards .shiftrow .sr-tag{font:700 10.5px/1.2 var(--cond);letter-spacing:.09em;color:var(--ink-3);text-transform:uppercase;}
+
+/* ── DROPS / PICKS toggle (Cards look) ── */
+html.cards .kindseg:not(.hidden){display:flex;gap:0;margin:0 0 2px;padding:10px 12px 4px;background:var(--head);}
+html.cards .kindseg button{flex:1;padding:12px 0;border:0;background:var(--head-tile);color:var(--head-2);font:700 15px/1 var(--cond);letter-spacing:.08em;}
+html.cards .kindseg button:first-child{border-radius:10px 0 0 10px;}
+html.cards .kindseg button:last-child{border-radius:0 10px 10px 0;}
+html.cards .kindseg button[aria-pressed="true"]{background:#fff;color:var(--chrome);}
+html.cards.dark .kindseg button[aria-pressed="true"]{background:#22314a;color:#fff;}

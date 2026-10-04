@@ -549,6 +549,11 @@
     show("sheetPick", !S.platform && !cardsLook);
     show("shiftBtn", !S.platform && cardsLook);
     if (cardsLook) $("shiftBtn").innerHTML = shiftBtnHtml(sh);
+    show("kindSeg", cardsLook && board && !!sh);
+    if (cardsLook && sh) {
+      $("kindSeg").querySelector('[data-kind="drops"]').setAttribute("aria-pressed", sh.kind === "drops");
+      $("kindSeg").querySelector('[data-kind="picks"]').setAttribute("aria-pressed", sh.kind === "picks");
+    }
     show("logBtn", !S.platform && (can("summary") || can("log")));
     show("flBtn", !S.platform && can("flights") && !picks);
     show("rtBtn", !S.platform && can("picksinfo") && picks);
@@ -604,6 +609,19 @@
     if (past.length) h += '<label>EARLIER</label><div class="shiftlist">' + past.slice(0, 20).map(item).join("") + "</div>";
     $("shiftBody").innerHTML = h + '<div class="pbtns"><button type="button" data-closeshift>Close</button></div>';
     if (!$("shiftPick").open) $("shiftPick").showModal();
+  }
+  // DROPS/PICKS toggle (Cards look): open the other kind's sheet, keeping the
+  // day where there is one, else the current shift's, else the latest.
+  function switchKind(kind) {
+    var sh = sheet();
+    if (sh && sh.kind === kind) return;
+    var same = sh && S.sheets.filter(function (s) { return s.kind === kind && s.day === sh.day; })[0];
+    var now = currentShiftKey();
+    var cur = S.sheets.filter(function (s) { return s.kind === kind && s.day === now; })[0];
+    var latest = S.sheets.filter(function (s) { return s.kind === kind; }).sort(function (a, b) { return a.day > b.day ? -1 : 1; })[0];
+    var pick = same || cur || latest;
+    if (pick) chooseShift(pick.id);
+    else toast("No " + kind.toUpperCase() + " sheet yet.");
   }
   function chooseShift(id) {
     $("shiftPick").close();
@@ -3854,6 +3872,7 @@
     if (t.dataset.view) return go(t.dataset.view);
     if (t.id === "menuBtn") return openMenu();
     if (t.id === "shiftBtn") return openShiftPick();
+    if (t.dataset.kind) return switchKind(t.dataset.kind);
     if (t.dataset.pickshift) return chooseShift(t.dataset.pickshift);
     if (t.dataset.closeshift !== undefined) return $("shiftPick").close();
     if (t.dataset.bn) { if (S.view !== "board" && t.dataset.bn !== "menuBtn") go("board"); return $(t.dataset.bn).click(); }
