@@ -1,0 +1,65 @@
+/* "Premium UI" (Clients → Edit → LOOK), for companies whose brand has
+   theme: "premium". It is the Cards look (cards.css: card per car, big buttons,
+   bottom bar, light and dark) with its own top: a neutral-dark title bar
+   ("{Company} operations", who is on, "Updated HH:MM"), DROPS/PICKS as
+   underline tabs, a white "which shift" row, and the day's numbers on a white
+   panel. The brand colour is the accent (mark, active tab, bottom bar), so
+   every client wears it in their own colour. app.js puts html.cards AND
+   html.premium on the page; everything here sits under html.premium. */
+
+/* ── header ── */
+html.premium .bar{gap:10px;padding:12px 14px 11px;align-items:center;}
+html.premium .tobrand,html.premium #sheetPick,html.premium .when,html.premium .who{display:none;}
+
+/* mark · "{Company} operations" / who · role .......... ● Updated HH:MM  ↻ */
+html.premium .chead:not(.hidden){display:flex;flex:1;min-width:0;align-items:center;gap:10px;background:none;border:0;padding:0;text-align:left;}
+html.premium .ch-mark{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:34px;height:34px;border-radius:9px;background:var(--brand);color:var(--brand-ink);font:700 18px/1 var(--sans);}
+html.premium .ch-txt{display:flex;flex-direction:column;gap:2px;min-width:0;}
+html.premium .ch-txt b{font:700 16px/1.1 var(--sans);color:var(--head-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+html.premium .ch-txt small{font:500 12px/1.1 var(--sans);color:var(--head-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+html.premium .ch-upd{margin-left:auto;display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;font:500 12px/1 var(--sans);color:var(--head-2);white-space:nowrap;}
+html.premium .ch-upd i{width:7px;height:7px;border-radius:50%;background:#34D399;box-shadow:0 0 0 3px rgb(52 211 153 / .18);}
+html.premium .rf{background:none;border:1px solid var(--head-line);flex:0 0 auto;}
+html.premium .rf:active{background:var(--head-tile);filter:none;}
+@media(max-width:340px){html.premium .ch-upd{font-size:0;gap:0;}html.premium .ch-upd i{box-shadow:none;}}
+
+/* ── DROPS / PICKS: underline tabs on the dark header, brand accent ── */
+html.premium .kindseg:not(.hidden){gap:4px;margin:0;padding:2px 14px 0;}
+html.premium .kindseg button{padding:12px 0 13px;border-bottom:2.5px solid transparent;border-radius:0!important;background:none;font-size:14px;letter-spacing:.1em;}
+html.premium .kindseg button[aria-pressed="true"],html.premium.dark .kindseg button[aria-pressed="true"]{background:none;color:#fff;border-bottom-color:var(--brand);}
+
+/* ── the white board head ── */
+html.premium #boardHead{background:var(--card);border-bottom:1px solid var(--line);}
+
+/* the "which shift" row under DROPS/PICKS */
+html.premium .cshift:not(.hidden){display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:12px 14px;background:var(--card);border:0;border-bottom:1px solid var(--line-soft);width:100%;text-align:left;}
+html.premium .cshift .cs-l{font:500 13.5px/1.2 var(--sans);color:var(--ink-3);}
+html.premium .cshift .cs-r{font:600 13.5px/1.2 var(--sans);color:var(--ink);white-space:nowrap;}
+html.premium .cshift .cs-r::after{content:" \25be";color:var(--ink-3);font-weight:500;}
+
+/* the day's numbers: a white panel, dark figures, thin dividers */
+html.premium .tally,html.premium .tally.cats{padding:0 14px;background:var(--card);}
+html.premium .tally{padding-top:12px;}
+html.premium body:not(.picks) .tally{padding-bottom:12px;}
+html.premium .tally.cats{padding-top:4px;padding-bottom:14px;}
+html.premium .tally button,html.premium .shortpick{gap:4px;padding:5px 11px;background:none;border:0;border-right:1px solid var(--line-soft);border-radius:0;}
+html.premium .tally button:last-child,html.premium .shortpick:last-child{border-right:0;}
+html.premium body.picks .tally.cats button,html.premium body.picks .tally.cats .shortpick{border-top:0;}
+html.premium .tally span,html.premium .shortpick span{letter-spacing:.07em;color:var(--ink-3);}
+html.premium .tally b{color:var(--ink);}
+html.premium .tally button.on{background:var(--brand-soft,var(--seg));border-radius:10px;}
+html.premium .tally button.on span{color:var(--ink-2);}
+html.premium .tally button.on b{color:var(--brand-text,var(--ink));}
+html.premium .tally button.warn:not(.on){background:var(--amb-bg);border-radius:10px;}
+html.premium .tally button.warn:not(.on) b,html.premium .tally button.warn:not(.on) span{color:var(--amb-tx);}
+html.premium .tally.cats button.short b,html.premium .tally.cats button.on.short b{color:#16794A;}
+html.premium .tally.cats button.long b,html.premium .tally.cats button.on.long b{color:#B86100;}
+html.premium.dark .tally.cats button.short b{color:#5BD69A;}
+html.premium.dark .tally.cats button.long b{color:#F5B83D;}
+html.premium .shortpick.unset{background:none;}
+html.premium .shortpick b,html.premium .shortpick select{color:var(--ink);font:700 16px/1 var(--sans);}
+html.premium .shortpick.unset span,html.premium .shortpick.unset b,html.premium .shortpick.unset select{color:var(--amb-tx);}
+
+/* To do / All and the search, on the white head */
+html.premium .tabs{margin:12px 0 12px 12px;}
+html.premium .qwrap{margin:12px 12px 12px 0;}

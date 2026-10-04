@@ -323,7 +323,7 @@ await scenario(async () => {
     noTimeCol: !document.querySelector('.row[data-id="b1"] .rt'),
     word: document.querySelector('.row[data-id="b3"] [data-act="sent"] .w').textContent, nav: getComputedStyle(document.getElementById("bnav")).display, tabs: document.getElementById("tabTodo").textContent }));
   check("Cards: the reg is the hero, the name reads as written, buttons have words, no time column", card.reg === "EK14JPV" && /Senior Miss/.test(card.name) && card.noTimeCol && card.word === "Sent", card);
-  check("Cards: the tab reads 'TO DO (N)'", /^TO DO \(\d+\)$/.test(card.tabs), card.tabs);
+  check("Cards: the tab reads 'N Waiting for action'", /^\d+ Waiting for action$/.test(card.tabs), card.tabs);
   check("Cards: the bottom bar is there", card.nav === "flex", card);
   await page.click('#bnav [data-bn="menuBtn"]'); await page.waitForSelector('[data-mode="dark"]');
   await page.click('[data-mode="dark"]'); await sleep(200);
@@ -332,13 +332,35 @@ await scenario(async () => {
   await page.click('[data-mode="light"]'); await sleep(200);
   check("Cards: Light turns it back", !(await page.evaluate(() => document.documentElement.classList.contains("dark"))));
   await page.keyboard.press("Escape"); await sleep(300);
-  check("Cards: the white shift row replaces the day dropdown", await page.isVisible("#cShift") && !(await page.isVisible("#sheetPick")) && /change sheet/.test(await page.locator("#cShift").innerText()) && /(Drops|Picks) ·/.test(await page.locator("#cShift").innerText()));
-  await page.click("#cShift"); await page.waitForSelector("[data-pickshift]");
+  check("Cards: the shift header replaces the day dropdown", await page.isVisible("#shiftBtn") && !(await page.isVisible("#sheetPick")) && /CURRENT NIGHT SHIFT|TODAY/.test(await page.locator("#shiftBtn").innerText()));
+  await page.click("#shiftBtn"); await page.waitForSelector("[data-pickshift]");
   check("Cards: Choose shift lists the sheets", /Choose shift/i.test(await page.locator("#shiftBody").innerText()) && (await page.locator("[data-pickshift]").count()) >= 2);
   const other = await page.locator("[data-pickshift]").nth(1).getAttribute("data-pickshift");
   await page.click('[data-pickshift="' + other + '"]'); await sleep(500);
   check("Cards: picking a shift opens it and closes the sheet", !(await page.isVisible("#shiftPick")) && (await page.locator("#sheetPick").inputValue()) === other);
   check("Cards: no errors", page.__errors.length === 0, page.__errors);
+});
+
+// Premium UI: the Cards look with a title bar, underline DROPS/PICKS, a white shift row and white tiles.
+await scenario(async () => {
+  const page = await phone(browser, apbDb("premium"), { width: 360 });
+  await open(page); await sleep(300);
+  const look = await page.evaluate(() => ({ cards: document.documentElement.classList.contains("cards"), premium: document.documentElement.classList.contains("premium"),
+    pro: document.documentElement.classList.contains("pro"), head: document.getElementById("cHead").innerText, shiftBtn: !document.getElementById("shiftBtn").classList.contains("hidden"),
+    tile: getComputedStyle(document.querySelector("#tally button")).backgroundColor, num: getComputedStyle(document.querySelector("#tally b")).color,
+    underline: getComputedStyle(document.querySelector('#kindSeg [aria-pressed="true"]')).borderBottomColor, tabs: document.getElementById("tabTodo").textContent }));
+  check("Premium: switched on by the brand, wearing the Cards base too", look.cards && look.premium && !look.pro, look);
+  check("Premium: the title bar names the company, who is on and when it updated", /Parking Bay operations/.test(look.head) && /RAKESH · Owner/.test(look.head) && /Updated \d\d:\d\d/.test(look.head), look.head);
+  check("Premium: white tiles with dark figures, brand-blue active tab underline", look.tile === "rgba(0, 0, 0, 0)" && look.num === "rgb(17, 24, 39)" && look.underline === "rgb(21, 96, 189)", look);
+  check("Premium: the tab reads 'TO DO (N)' and the navy shift button is gone", /^TO DO \(\d+\)$/.test(look.tabs) && !look.shiftBtn, look);
+  check("Premium: no sideways scrolling on a 360 px phone", await noSideScroll(page));
+  check("Premium: the white shift row replaces the day dropdown", await page.isVisible("#cShift") && !(await page.isVisible("#sheetPick")) && /(Drops|Picks) · [\s\S]*change sheet/.test(await page.locator("#cShift").innerText()));
+  await page.click("#cShift"); await page.waitForSelector("[data-pickshift]");
+  check("Premium: the shift row opens Choose shift", /Choose shift/i.test(await page.locator("#shiftBody").innerText()));
+  await page.click("[data-closeshift]"); await sleep(200);
+  await page.click("#cHead"); await sleep(300);
+  check("Premium: tapping the title opens the menu", await page.isVisible("#menu"));
+  check("Premium: no errors", page.__errors.length === 0, page.__errors);
 });
 
 // 2. DROPS board
@@ -673,7 +695,10 @@ await scenario(async () => {
   await page.click("#panelBody [data-close]");
   check("Parking Ops: each client card says which look it has", /Standard/.test(await text(page, ".client")));
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
-  check("Parking Ops: the client editor offers the three looks", (await page.locator("#clLook option").allInnerTexts()).join("|") === "Standard|Airport Parking Bay UI|Cards (light and dark)");
+  check("Parking Ops: the client editor offers the four looks", (await page.locator("#clLook option").allInnerTexts()).join("|") === "Standard|Airport Parking Bay UI|Cards (light and dark)|Premium UI");
+  await page.selectOption("#clLook", "premium"); await page.click("#clGo"); await sleep(400);
+  check("Parking Ops: choosing Premium UI saves theme premium", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "premium"), db.clientSaves);
+  await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
   await page.selectOption("#clLook", "pro"); await page.click("#clGo"); await sleep(400);
   check("Parking Ops: choosing Airport Parking Bay UI saves theme pro", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "pro"), db.clientSaves);
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");

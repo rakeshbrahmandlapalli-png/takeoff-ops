@@ -547,13 +547,15 @@
     var cardsLook = isCards();
     $("sheetPick").innerHTML = S.sheets.length || S.archiveSheet ? pickerHtml(shift) : "<option>No sheets yet</option>";
     show("sheetPick", !S.platform && !cardsLook);
-    // Cards look: a title bar (company + who + updated), a DROPS/PICKS toggle,
-    // then a white "which shift" row. The old navy shift button is retired.
-    show("cHead", !S.platform && cardsLook);
-    if (cardsLook) $("cHead").innerHTML = cHeadHtml();
-    show("shiftBtn", false);
-    show("cShift", cardsLook && board && !!sh);
-    if (cardsLook && sh) $("cShift").innerHTML = cShiftHtml(sh);
+    // Cards: the navy shift button in the bar. Premium: a title bar (company +
+    // who + updated) and, under DROPS/PICKS, a white "which shift" row.
+    var premium = isPremium();
+    show("shiftBtn", !S.platform && cardsLook && !premium);
+    if (cardsLook && !premium) $("shiftBtn").innerHTML = shiftBtnHtml(sh);
+    show("cHead", !S.platform && premium);
+    if (premium) $("cHead").innerHTML = cHeadHtml();
+    show("cShift", premium && board && !!sh);
+    if (premium && sh) $("cShift").innerHTML = cShiftHtml(sh);
     show("kindSeg", cardsLook && board && !!sh);
     if (cardsLook && sh) {
       $("kindSeg").querySelector('[data-kind="drops"]').setAttribute("aria-pressed", sh.kind === "drops");
@@ -593,7 +595,7 @@
     if (s.day === addDaysKey(now, 1)) return "NEXT SHIFT";
     return s.day > now ? "COMING UP" : "PAST SHIFT";
   }
-  // Cards look header: the brand mark, "{Company} operations", who is on and
+  // Premium look header: the brand mark, "{Company} operations", who is on and
   // their role, and the live "Updated HH:MM". Same mark/colour as every brand.
   function niceRole(role) {
     return { owner: "Owner", manager: "Manager", office: "Office", driver: "Driver" }[role] || "Team";
@@ -610,7 +612,7 @@
   function shiftTagShort(s) {
     return { "TODAY": "Today", "CURRENT NIGHT SHIFT": "Tonight", "NEXT SHIFT": "Next", "COMING UP": "Upcoming", "PAST SHIFT": "Earlier" }[shiftTag(s)] || "";
   }
-  // The white "which shift" row under the DROPS/PICKS toggle (Cards look).
+  // The white "which shift" row under the DROPS/PICKS toggle (Premium look).
   function cShiftHtml(sh) {
     if (!sh || !sh.day) return '<span class="cs-l">No sheets yet</span><span class="cs-r">change sheet</span>';
     var kindWord = sh.kind === "picks" ? "Picks" : "Drops";
@@ -784,8 +786,9 @@
       return '<button type="button" data-tally="' + esc(x[1]) + '" class="' + (S.yardFilter === x[1] ? "on" : "") + (x[1] === "-" ? " warn" : "") + '" aria-pressed="' + (S.yardFilter === x[1]) + '"><span>' + esc(label) + '</span><b class="num">' + x[2] + "</b></button>";
     }).join("");
     renderCatStrip(picks);
-    $("tabTodo").textContent = "TO DO (" + S.rows.filter(waiting).length + ")";
-    $("tabAll").textContent = "ALL (" + S.rows.length + ")";
+    var cardsWords = pro && !isPremium();
+    $("tabTodo").textContent = cardsWords ? S.rows.filter(waiting).length + " Waiting for action" : "TO DO (" + S.rows.filter(waiting).length + ")";
+    $("tabAll").textContent = cardsWords ? "All " + S.rows.length : "ALL (" + S.rows.length + ")";
     $("tabTodo").classList.toggle("on", S.filter === "todo");
     $("tabAll").classList.toggle("on", S.filter === "all");
     $("tabTodo").setAttribute("aria-pressed", S.filter === "todo");
@@ -919,6 +922,7 @@
   // The Cards look's buttons are big enough for words, not codes.
   var PRO_WORDS = { COLL: "Collected", "NO SHOW": "No show", SENT: "Sent", CALLED: "Called", CLEAR: "Clear", OVERSTAY: "Overstay", COMPLAINT: "Complaint" };
   function isCards() { return document.documentElement.classList.contains("cards"); }
+  function isPremium() { return document.documentElement.classList.contains("premium"); }
   // Booking sites send names in capitals; the Cards look shows them as written ("Senior Miss").
   function niceMake(m) { return m.length <= 3 ? m : nice(m); }
   function sentence(t) { t = String(t || ""); return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase(); }
@@ -2970,9 +2974,11 @@
 
     // The look is the company's choice, in its brand (Clients → Edit → LOOK):
     // theme "pro" wears pro.css, theme "cards" wears cards.css, none is Standard.
-    var cards = b.theme === "cards", pro = b.theme === "pro" || cards;
+    // Premium is the Cards look with its own top (premium.css over cards.css).
+    var premium = b.theme === "premium", cards = b.theme === "cards" || premium, pro = b.theme === "pro" || cards;
     document.documentElement.classList.toggle("pro", b.theme === "pro");
     document.documentElement.classList.toggle("cards", cards);
+    document.documentElement.classList.toggle("premium", premium);
     var mark = String(b.mark || short.charAt(0) || "P").slice(0, 2);
     // Only the wordmark and the board button. NOT ".brand" on its own: the
     Array.prototype.forEach.call(document.querySelectorAll("span.brand, .tobrand"), function (el) {
@@ -3238,7 +3244,7 @@
   // ── Clients (product owner only, database part 19) ──
   // Counts only: this page never sees a client's customers.
   // The looks a client's app can wear (brand.theme): "pro" is pro.css, "cards" is cards.css.
-  var LOOKS = [["", "Standard"], ["pro", "Airport Parking Bay UI"], ["cards", "Cards (light and dark)"]];
+  var LOOKS = [["", "Standard"], ["pro", "Airport Parking Bay UI"], ["cards", "Cards (light and dark)"], ["premium", "Premium UI"]];
   function lookName(b) { var l = LOOKS.filter(function (x) { return x[0] === ((b && b.theme) || ""); })[0]; return l ? l[1] : "Standard"; }
   function renderClients() {
     if (S.clients === undefined) { S.clients = null; loadClients(); }
