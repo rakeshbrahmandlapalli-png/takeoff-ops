@@ -110,3 +110,31 @@ export function matchFlights(rows, pdfRows, field) {
   });
   return matched;
 }
+
+// ── day grouping, identical to the browser import (app.js) ──
+export function addDaysKey(key, n) { const d = new Date(key + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+export function shiftKey(dt, cutoff) {
+  if (!dt) return "";
+  if (!dt.time || cutoff === "00:00" || dt.time > cutoff) return dt.key;
+  return addDaysKey(dt.key, -1);
+}
+function local(dt) { return dt ? dt.key + " " + (dt.time || "00:00") : ""; }
+
+// Group parsed rows into day-sheets and shape each row exactly as the browser
+// sends to import_sheet. kind: "drops" groups by return day (cutoff = the
+// company's drops_day_end, e.g. "06:00"); "picks" groups by meet day (cutoff
+// "00:00"). Returns [{ day, rows:[...] }] sorted by day.
+export function groupForImport(rows, kind, cutoff) {
+  const field = kind === "drops" ? "ret" : "meet";
+  const byDay = {};
+  rows.forEach(function (r) {
+    const key = shiftKey(r[field], kind === "drops" ? cutoff : "00:00");
+    if (!key) return;
+    (byDay[key] = byDay[key] || []).push({
+      ref: r.ref, reg: r.reg, name: r.name, phone: r.phone, make: r.make,
+      drop_local: local(r.meet), return_local: local(r.ret),
+      flight: kind === "drops" ? (r.flightIn || "") : "", note: r.note || ""
+    });
+  });
+  return Object.keys(byDay).sort().map(function (day) { return { day: day, rows: byDay[day] }; });
+}

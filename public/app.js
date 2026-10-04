@@ -2883,10 +2883,59 @@
     if (!dt.time || cutoff === "00:00" || dt.time > cutoff) return dt.key;
     return addDaysKey(dt.key, -1);
   }
+  // Automatic bookings (TakeOff / Swift): shown only for a company that has it
+  // set up on the platform (config.base). The office turns the 10-minute import
+  // on or off, and "Get bookings now" imports straight away either way.
+  function autoImportSection() {
+    if (S.autoImport === undefined) { S.autoImport = null; loadAutoImport(); return ""; }
+    var a = S.autoImport;
+    if (!a || !a.available || !can("import")) return "";
+    var on = !!a.enabled, run = a.running;
+    var when = a.last_ok ? "Last update " + dayShort(a.last_ok) + " " + hhmm(a.last_ok) : "Not run yet";
+    var status = a.last_error ? '<span class="bad">Last try failed: ' + esc(String(a.last_error).slice(0, 120)) + "</span>"
+      : (on ? "Connected · " + esc(when) : "Off · press Get bookings now whenever you like");
+    return '<div class="section-label">Automatic bookings</div><div class="box" style="padding:12px">' +
+      '<div class="rowline" style="border:0;padding:0 0 10px"><div class="grow"><strong>Bookings from the booking site</strong>' +
+      '<div class="note">' + status + "</div></div>" +
+      '<button type="button" class="btn ' + (on ? "ghost" : "brand") + ' small" data-autotoggle>' + (on ? "Turn off" : "Turn on") + "</button></div>" +
+      '<button type="button" class="btn brand" style="width:100%" data-autorun' + (run ? " disabled" : "") + ">" + (run ? "Getting bookings…" : "Get bookings now") + "</button>" +
+      '<p class="hint">It never changes anything on the booking site; it only reads. Cancelled bookings are flagged for you, not removed.</p></div>';
+  }
+  async function loadAutoImport() {
+    var r = await sb.rpc("auto_import_status");
+    var d = r && !r.error ? (r.data || {}) : {};
+    var cfg = d.config || {};
+    S.autoImport = { available: !!cfg.base, enabled: !!d.enabled, last_ok: d.last_ok, last_error: d.last_error };
+    if (S.view === "import") render();
+  }
+  async function toggleAutoImport() {
+    var a = S.autoImport || {};
+    var r = await sb.rpc("set_auto_import", { p_enabled: !a.enabled });
+    if (r.error) return toast(r.error.message, true);
+    a.enabled = !a.enabled; toast(a.enabled ? "Automatic bookings on" : "Automatic bookings off"); render();
+  }
+  async function runAutoImport(btn) {
+    if (S.autoImport) S.autoImport.running = true; render();
+    toast("Getting bookings… this can take a moment.");
+    var r;
+    try { r = await sb.functions.invoke("takeoff-bookings", { body: { action: "run" } }); }
+    catch (e) { r = { error: e }; }
+    if (S.autoImport) S.autoImport.running = false;
+    var out = r && r.data;
+    if (r && r.error) { toast("Couldn't get the bookings. Try again in a minute.", true); render(); return loadAutoImport(); }
+    if (out && out.ok === false) { toast(out.error || "The booking site didn't answer. Try again shortly.", true); render(); return loadAutoImport(); }
+    var days = (out && out.summary && out.summary.days) || [];
+    var added = days.reduce(function (n, d) { return n + (d.added || 0); }, 0);
+    var updated = days.reduce(function (n, d) { return n + (d.updated || 0); }, 0);
+    await loadSheets(); await loadRows();
+    toast("✓ Bookings in: " + added + " added, " + updated + " updated across " + days.length + " sheet(s).");
+    S.recentImports = null; loadAutoImport();
+  }
   function renderImport() {
     var I = S.imp || (S.imp = newImport("drops"));
     var h = '<h2 class="title">Import bookings</h2><div class="toolbar"><div class="seg" role="group" aria-label="Sheet type">' +
       '<button type="button" data-impkind="drops" aria-pressed="' + (I.kind === "drops") + '">Drops</button><button type="button" data-impkind="picks" aria-pressed="' + (I.kind === "picks") + '">Picks</button></div></div>';
+    h += autoImportSection();
     if (I.stage !== "preview") {
       if (!S.recentImports) loadRecentImports();
       var undoable = (S.recentImports || []).filter(function (x) { return !x.undone && x.latest; });
@@ -3759,6 +3808,8 @@
     if (t.dataset.archretry !== undefined) { S.arch.days = null; render(); return; }
     if (t.dataset.impkind) { S.imp = newImport(t.dataset.impkind); render(); return; }
     if (t.dataset.undoimport && !t.closest("#panel")) return undoImport(t.dataset.undoimport, t);
+    if (t.dataset.autotoggle !== undefined) return toggleAutoImport();
+    if (t.dataset.autorun !== undefined) return runAutoImport(t);
     if (t.dataset.read !== undefined) return readImport();
     if (t.dataset.restart !== undefined) { S.imp = newImport(S.imp.kind); render(); return; }
     if (t.dataset.create !== undefined) return createSheet();

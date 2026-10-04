@@ -47,5 +47,20 @@ ok("flights matched onto bookings by reference", n === 2 && ex.rows[0].flightIn 
 ok("31-09 is rejected (no such day)", parseDateTime("31-09-2026 10:00") === null);
 ok("a real date passes", parseDateTime("05-10-2026 15:00").key === "2026-10-05");
 
-console.log(failed ? ("\n" + failed + " FAILED") : "\nAll reader checks passed.");
-process.exit(failed ? 1 : 0);
+
+// ── day grouping matches the browser import ──
+import { groupForImport, shiftKey } from "../supabase/functions/takeoff-bookings/reader.mjs";
+let gf = 0;
+const gok = (n, c, d) => { console.log((c ? "PASS " : "FAIL ") + n + (c || d === undefined ? "" : "  -> " + JSON.stringify(d))); if (!c) gf++; };
+// A 01:00 return belongs to the previous DROPS day (before the 06:00 end); 15:00 to its own day.
+gok("DROPS: 01:00 return falls on the previous day (06:00 cutoff)", shiftKey({ key: "2026-10-07", time: "01:00" }, "06:00") === "2026-10-06");
+gok("DROPS: 15:00 return stays on its own day", shiftKey({ key: "2026-10-07", time: "15:00" }, "06:00") === "2026-10-07");
+const drops = [
+  { ref: "A", reg: "AA11AAA", name: "X", make: "", ret: { key: "2026-10-07", time: "19:00" }, meet: null, flightIn: "U22312" },
+  { ref: "B", reg: "BB11BBB", name: "Y", make: "", ret: { key: "2026-10-08", time: "01:00" }, meet: null, flightIn: "" },
+];
+const g = groupForImport(drops, "drops", "06:00");
+gok("01:00 on the 8th joins the 7th's sheet; flight carried", g.length === 1 && g[0].day === "2026-10-07" && g[0].rows.length === 2 && g[0].rows[0].flight === "U22312", g.map(x => x.day + ":" + x.rows.length));
+gok("row shaped for import_sheet", g[0].rows[0].return_local === "2026-10-07 19:00" && g[0].rows[0].ref === "A");
+console.log((failed+gf) ? ("\n" + (failed+gf) + " FAILED") : "\nAll reader + grouping checks passed.");
+process.exit((failed+gf) ? 1 : 0);

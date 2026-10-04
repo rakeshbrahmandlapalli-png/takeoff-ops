@@ -102,6 +102,8 @@ function rpc(db, fn, a) {
     case "import_sheet": { const sh = db.sheets.find((x) => x.kind === a.p_kind && x.day === a.p_day); (db.imports = db.imports || []).push({ id: 70 + db.imports.length, kind: a.p_kind, day: a.p_day, at: now(), by: "RAKESH", added: a.p_rows.length, changed: 0, undone: false, latest: true }); return { sheet_id: sh ? sh.id : "p0", added: a.p_rows.length, updated: 0, early: 0, moved: 0, new_marked: 0, undo_id: 70 + db.imports.length - 1 }; }
     case "admin_save_client": (db.clientSaves = db.clientSaves || []).push(a.p); return { id: a.p.id, name: a.p.name, brand: a.p.brand };
     case "recent_imports": return db.imports || [];
+    case "auto_import_status": return db.autoImport || { enabled: false };
+    case "set_auto_import": { db.autoImport = Object.assign(db.autoImport || {}, { enabled: a.p_enabled }); return { enabled: a.p_enabled }; }
     case "pt_copy_report": (db.reports = db.reports || []).push(a); return null;
     case "undo_import": { const i = (db.imports || []).find((x) => x.id === a.p_id); if (i) i.undone = true; return { removed: 2, kept: 0, restored: 0, sheet_id: "p0", sheet_gone: false }; }
     case "pt_unsaved": return db.ptUnsaved || [];
@@ -158,6 +160,10 @@ async function backend(ctx, db) {
       // Opening a client: from now on the phone is that client's owner.
       if (a.action === "client_open") { db.company = db.clientCompany; db.me = { ...db.me, company_id: db.company.id, name: "RAKESH (PARKING OPS)" }; return reply(200, { token_hash: "th", name: db.company.name }); }
       return reply(400, { error: "not in the test" });
+    }
+    if (p.startsWith("/functions/v1/takeoff-bookings")) {
+      (db.autoRuns = db.autoRuns || []).push(JSON.parse(req.postData() || "{}"));
+      return reply(200, { ok: true, summary: { days: [{ kind: "drops", day: TONIGHT, added: 2, updated: 1 }, { kind: "picks", day: TONIGHT, added: 3, updated: 0 }], drops_rows: 3, picks_rows: 3 } });
     }
     if (p.startsWith("/functions/v1/pt-r2")) {
       const a = JSON.parse(req.postData() || "{}");
@@ -887,6 +893,33 @@ await scenario(async () => {
     && x1.drop_local === TONIGHT + " 13:20" && /01:00$/.test(x1.return_local) && x1.reg === "AB12CDE", x1);
   const gone = await page.locator("#panelBody").innerText().catch(() => "");
   check("import: cars missing from the file are listed, with the moved-day warning", /no longer lists them/.test(gone) && /Only remove cars you know are cancelled/.test(gone));
+});
+
+// 18b. Automatic bookings: the office's on/off switch and "Get bookings now".
+await scenario(async () => {
+  const db = makeDb();
+  db.autoImport = { config: { base: "https://example.test/admin/" }, enabled: false, last_ok: null, last_error: null };
+  const page = await phone(browser, db, { width: 1000 });
+  await open(page);
+  await page.click("#menuBtn"); await sleep(300); await page.click('#menu [data-view="import"]'); await sleep(400);
+  await page.waitForSelector("[data-autotoggle]", { timeout: 6000 });
+  check("auto-import: the Automatic bookings section shows when it's set up", /Automatic bookings/i.test(await page.locator("#main").innerText()));
+  check("auto-import: starts off, offering Turn on and Get bookings now", await page.locator("[data-autotoggle]").innerText() === "Turn on" && await page.locator("[data-autorun]").count() === 1);
+  await page.click("[data-autotoggle]"); await sleep(400);
+  check("auto-import: Turn on reaches the server and flips to Turn off", db.calls.some((c) => c.fn === "set_auto_import" && c.args.p_enabled === true) && await page.locator("[data-autotoggle]").innerText() === "Turn off");
+  await page.click("[data-autorun]"); await sleep(900);
+  check("auto-import: Get bookings now calls the import function", (db.autoRuns || []).some((x) => x.action === "run"));
+  check("auto-import: the result is shown (added / updated)", /Bookings in: 5 added, 1 updated/.test(await toast(page)), await toast(page));
+  check("auto-import: no errors", page.__errors.length === 0, page.__errors);
+});
+
+// 18c. Without it set up (the usual company), the section stays hidden.
+await scenario(async () => {
+  const db = makeDb();
+  const page = await phone(browser, db, { width: 1000 });
+  await open(page);
+  await page.click("#menuBtn"); await sleep(300); await page.click('#menu [data-view="import"]'); await sleep(400);
+  check("auto-import: hidden for a company without it set up", !/Automatic bookings/i.test(await page.locator("#main").innerText()));
 });
 
 // 18a. DROPS file with the date and the time in separate columns (BookingList .xls):
