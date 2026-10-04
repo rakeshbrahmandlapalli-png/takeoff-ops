@@ -73,60 +73,66 @@ html.cards .btn.ghost{background:var(--card);color:var(--ink);border-color:var(-
 html.cards .btn:active:not(:disabled){filter:brightness(.94);}
 html.cards .link{color:var(--ink-2);}
 
-/* ── header: navy, with the day's numbers as tiles ── */
+/* ── header: a neutral-dark title bar; the brand colour is the accent ── */
 html.cards .top{background:var(--bg);border-bottom:0;}
-html.cards .bar{gap:8px;padding:12px 14px 10px;background:var(--head);}
-html.cards #sheetPick{flex:1;height:38px;padding:0 10px;color:var(--head-ink);background-color:var(--head-tile);border:1px solid var(--head-line);border-radius:10px;font:600 15.5px/1 var(--sans);}
+html.cards .bar{gap:10px;padding:12px 14px 11px;background:var(--head);align-items:center;}
+html.cards .tobrand,html.cards #sheetPick,html.cards .when,html.cards .who{display:none;}
 html.cards #sheetPick option{color:#111827;background:#fff;}
-html.cards .who{display:none;}
-html.cards .when{color:var(--head-2);font:500 12.5px/1 var(--sans);}
-html.cards .rf{width:38px;height:38px;background:var(--head-tile);border:0;border-radius:10px;color:var(--head-ink);}
+
+/* mark · "{Company} operations" / who · role .......... ● Updated HH:MM  ↻ */
+html.cards .chead:not(.hidden){display:flex;flex:1;min-width:0;align-items:center;gap:10px;background:none;border:0;padding:0;text-align:left;}
+html.cards .ch-mark{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:34px;height:34px;border-radius:9px;background:var(--brand);color:var(--brand-ink);font:700 18px/1 var(--sans);}
+html.cards .ch-txt{display:flex;flex-direction:column;gap:2px;min-width:0;}
+html.cards .ch-txt b{font:700 16px/1.1 var(--sans);color:var(--head-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+html.cards .ch-txt small{font:500 12px/1.1 var(--sans);color:var(--head-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+html.cards .ch-upd{margin-left:auto;display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;font:500 12px/1 var(--sans);color:var(--head-2);white-space:nowrap;}
+html.cards .ch-upd i{width:7px;height:7px;border-radius:50%;background:#34D399;box-shadow:0 0 0 3px rgb(52 211 153 / .18);}
+html.cards .rf{width:38px;height:38px;background:none;border:1px solid var(--head-line);border-radius:10px;color:var(--head-ink);flex:0 0 auto;}
 html.cards .rf svg{width:18px;height:18px;stroke-width:1.9;}
-html.cards .rf:active{filter:brightness(1.3);}
+html.cards .rf:active{background:var(--head-tile);}
 html.cards #logBtn,html.cards #rtBtn,html.cards #psBtn,html.cards #flBtn{display:none!important;}
 html.cards .pend{font:600 11px/1 var(--sans);padding:6px 9px;border-radius:7px;background:#FFD666;color:#4D3800;}
 html.cards .pend.stuck{background:#FFB4AB;color:#5C0F0A;}
 html.cards .homebtn{background:var(--head-tile);border:0;border-radius:10px;color:var(--head-ink);font:600 12px/1 var(--sans);padding:12px 10px;}
-@media(max-width:430px){html.cards .tobrand{font-size:0;gap:0;}}
+@media(max-width:340px){html.cards .ch-upd{font-size:0;gap:0;}html.cards .ch-upd i{box-shadow:none;}}
 
-html.cards #boardHead{display:grid;grid-template-columns:auto 1fr;gap:0 10px;align-items:center;}
+html.cards #boardHead{display:grid;grid-template-columns:auto 1fr;gap:0 10px;align-items:center;background:var(--card);border-bottom:1px solid var(--line);}
 html.cards #boardHead > *{grid-column:1/-1;}
 html.cards #boardHead > .tabs{grid-column:1;}
 html.cards #boardHead > .qwrap{grid-column:2;}
-/* The day's numbers as one joined panel of cells on the navy band (Cards look). */
-html.cards .tally,html.cards .tally.cats{display:flex;gap:0;margin:0;padding:0 12px;background:var(--head);border:0;border-radius:0;}
-html.cards .tally{padding-top:6px;}
-html.cards body:not(.picks) .tally{padding-bottom:14px;}
-html.cards .tally.cats{padding-bottom:14px;}
-html.cards .tally button,html.cards .shortpick{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;align-items:flex-start;padding:10px 11px 11px;background:var(--head-tile);border:0;border-right:1px solid var(--head-line);border-radius:0;text-align:left;}
+
+/* The white "which shift" row under the DROPS/PICKS toggle. */
+html.cards .cshift:not(.hidden){display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:12px 14px;background:var(--card);border:0;border-bottom:1px solid var(--line-soft);width:100%;text-align:left;}
+html.cards .cshift .cs-l{font:500 13.5px/1.2 var(--sans);color:var(--ink-3);}
+html.cards .cshift .cs-r{font:600 13.5px/1.2 var(--sans);color:var(--ink);white-space:nowrap;}
+html.cards .cshift .cs-r::after{content:" \25be";color:var(--ink-3);font-weight:500;}
+
+/* The day's numbers as a white panel of cells with dark figures. */
+html.cards .tally,html.cards .tally.cats{display:flex;gap:0;margin:0;padding:0 14px;background:var(--card);border:0;border-radius:0;}
+html.cards .tally{padding-top:12px;}
+html.cards body:not(.picks) .tally{padding-bottom:12px;}
+html.cards .tally.cats{padding-top:4px;padding-bottom:14px;}
+html.cards .tally button,html.cards .shortpick{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;align-items:flex-start;padding:5px 11px;background:none;border:0;border-right:1px solid var(--line-soft);border-radius:0;text-align:left;}
 html.cards .tally button:last-child,html.cards .shortpick:last-child{border-right:0;}
-html.cards .tally button:first-child{border-top-left-radius:12px;}
-html.cards .tally button:last-child{border-top-right-radius:12px;}
-html.cards body:not(.picks) .tally button:first-child{border-bottom-left-radius:12px;}
-html.cards body:not(.picks) .tally button:last-child{border-bottom-right-radius:12px;}
-html.cards body.picks .tally.cats button,html.cards body.picks .tally.cats .shortpick{border-top:1px solid var(--head-line);}
-html.cards .tally.cats button:first-child{border-bottom-left-radius:12px;}
-html.cards .tally.cats .shortpick:last-child{border-bottom-right-radius:12px;}
-html.cards .tally span,html.cards .shortpick span{order:0;font:600 10px/1.1 var(--cond);letter-spacing:.08em;color:var(--head-2);text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
-html.cards .tally b{order:1;margin:0;font:700 24px/1 var(--sans);font-variant-numeric:tabular-nums;color:#fff;}
-html.cards .tally button.on{background:#fff;}
-html.cards .tally button.on span{color:#4B5563;}
-html.cards .tally button.on b{color:#0E3F7E;}
-html.cards .tally button.warn:not(.on){background:rgb(245 184 61 / .16);box-shadow:none;}
-html.cards .tally button.warn:not(.on) b,html.cards .tally button.warn:not(.on) span{color:#FFCF5A;}
-html.cards .tally.cats button.short b{color:#7EE2A8;}
-html.cards .tally.cats button.long b{color:#FFC27A;}
-html.cards .tally.cats button.on.short b{color:#17603A;}
-html.cards .tally.cats button.on.long b{color:#87490A;}
-html.cards .shortpick select{margin:0;border:0;background:none;color:#FFCF5A;font:700 16px/1 var(--sans);padding:0;}
-html.cards .shortpick.unset{background:rgb(245 184 61 / .16);}
-html.cards .shortpick.unset span,html.cards .shortpick b{color:#FFCF5A;}
+html.cards .tally span,html.cards .shortpick span{order:0;font:600 10px/1.1 var(--cond);letter-spacing:.07em;color:var(--ink-3);text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+html.cards .tally b{order:1;margin:0;font:700 24px/1 var(--sans);font-variant-numeric:tabular-nums;color:var(--ink);}
+html.cards .tally button.on{background:var(--brand-soft,var(--seg));border-radius:10px;}
+html.cards .tally button.on span{color:var(--ink-2);}
+html.cards .tally button.on b{color:var(--brand-text,var(--ink));}
+html.cards .tally button.warn:not(.on){background:var(--amb-bg);border-radius:10px;}
+html.cards .tally button.warn:not(.on) b,html.cards .tally button.warn:not(.on) span{color:var(--amb-tx);}
+html.cards .tally.cats button.short b{color:#16794A;}
+html.cards .tally.cats button.long b{color:#B86100;}
+html.cards.dark .tally.cats button.short b{color:#5BD69A;}
+html.cards.dark .tally.cats button.long b{color:#F5B83D;}
+html.cards .shortpick b,html.cards .shortpick select{margin:0;border:0;background:none;color:var(--ink);font:700 16px/1 var(--sans);padding:0;}
+html.cards .shortpick.unset span,html.cards .shortpick.unset b,html.cards .shortpick.unset select{color:var(--amb-tx);}
 
 /* To do / All as a segmented control, the search beside it */
-html.cards .tabs{grid-column:1;display:flex;margin:12px 0 4px 12px;padding:3px;background:var(--seg);border:0;border-radius:11px;}
+html.cards .tabs{grid-column:1;display:flex;margin:12px 0 12px 12px;padding:3px;background:var(--seg);border:0;border-radius:11px;}
 html.cards .tabs button{flex:none;padding:8px 13px;background:none;border:0;border-radius:9px;color:var(--ink-3);font:600 14px/1 var(--sans);letter-spacing:0;white-space:nowrap;}
 html.cards .tabs button.on{background:var(--seg-on);color:var(--ink);box-shadow:0 1px 2px rgb(0 0 0 / .1);}
-html.cards .qwrap{grid-column:2;margin:12px 12px 4px 0;}
+html.cards .qwrap{grid-column:2;margin:12px 12px 12px 0;}
 html.cards #q{height:40px;padding:0 40px 0 36px;border:1px solid var(--line);border-radius:11px;background:var(--field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238A93A1' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m16 16 4.5 4.5'/%3E%3C/svg%3E") no-repeat 11px 50%/16px;font:500 15px var(--sans);color:var(--ink);}
 html.cards #q::placeholder{color:var(--ink-3);}
 html.cards #q:focus{border-color:var(--brand);background-color:var(--field);}
@@ -326,10 +332,7 @@ html.cards.dark .shiftrow.on{background:#15233b;}
 html.cards .shiftrow .sr-when{font:700 16px/1.2 var(--sans);}
 html.cards .shiftrow .sr-tag{font:700 10.5px/1.2 var(--cond);letter-spacing:.09em;color:var(--ink-3);text-transform:uppercase;}
 
-/* ── DROPS / PICKS toggle (Cards look) ── */
-html.cards .kindseg:not(.hidden){display:flex;gap:0;margin:0 0 2px;padding:10px 12px 4px;background:var(--head);}
-html.cards .kindseg button{flex:1;padding:12px 0;border:0;background:var(--head-tile);color:var(--head-2);font:700 15px/1 var(--cond);letter-spacing:.08em;}
-html.cards .kindseg button:first-child{border-radius:10px 0 0 10px;}
-html.cards .kindseg button:last-child{border-radius:0 10px 10px 0;}
-html.cards .kindseg button[aria-pressed="true"]{background:#fff;color:var(--chrome);}
-html.cards.dark .kindseg button[aria-pressed="true"]{background:#22314a;color:#fff;}
+/* ── DROPS / PICKS toggle: underline tabs on the dark header, brand accent ── */
+html.cards .kindseg:not(.hidden){display:flex;gap:4px;margin:0;padding:2px 14px 0;background:var(--head);}
+html.cards .kindseg button{flex:1;padding:12px 0 13px;border:0;border-bottom:2.5px solid transparent;background:none;color:var(--head-2);font:700 14px/1 var(--cond);letter-spacing:.1em;}
+html.cards .kindseg button[aria-pressed="true"]{color:#fff;border-bottom-color:var(--brand);}

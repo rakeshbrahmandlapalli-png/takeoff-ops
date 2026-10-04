@@ -547,8 +547,13 @@
     var cardsLook = isCards();
     $("sheetPick").innerHTML = S.sheets.length || S.archiveSheet ? pickerHtml(shift) : "<option>No sheets yet</option>";
     show("sheetPick", !S.platform && !cardsLook);
-    show("shiftBtn", !S.platform && cardsLook);
-    if (cardsLook) $("shiftBtn").innerHTML = shiftBtnHtml(sh);
+    // Cards look: a title bar (company + who + updated), a DROPS/PICKS toggle,
+    // then a white "which shift" row. The old navy shift button is retired.
+    show("cHead", !S.platform && cardsLook);
+    if (cardsLook) $("cHead").innerHTML = cHeadHtml();
+    show("shiftBtn", false);
+    show("cShift", cardsLook && board && !!sh);
+    if (cardsLook && sh) $("cShift").innerHTML = cShiftHtml(sh);
     show("kindSeg", cardsLook && board && !!sh);
     if (cardsLook && sh) {
       $("kindSeg").querySelector('[data-kind="drops"]').setAttribute("aria-pressed", sh.kind === "drops");
@@ -587,6 +592,30 @@
     if (s.day === now) return s.kind === "drops" ? "CURRENT NIGHT SHIFT" : "TODAY";
     if (s.day === addDaysKey(now, 1)) return "NEXT SHIFT";
     return s.day > now ? "COMING UP" : "PAST SHIFT";
+  }
+  // Cards look header: the brand mark, "{Company} operations", who is on and
+  // their role, and the live "Updated HH:MM". Same mark/colour as every brand.
+  function niceRole(role) {
+    return { owner: "Owner", manager: "Manager", office: "Office", driver: "Driver" }[role] || "Team";
+  }
+  function cHeadHtml() {
+    var short = String((S.company && (S.company.brand || {}).short) || (S.company && S.company.name) || PRODUCT).trim();
+    var mark = String((S.company && (S.company.brand || {}).mark) || short.charAt(0) || "P").slice(0, 2);
+    return '<span class="ch-mark" aria-hidden="true">' + esc(mark) + '</span>' +
+      '<span class="ch-txt"><b>' + esc(short) + ' operations</b>' +
+      '<small>' + esc(S.me.name) + ' · ' + esc(niceRole(S.me.role)) + '</small></span>' +
+      '<span class="ch-upd"><i aria-hidden="true"></i>Updated ' + esc(londonParts(new Date()).time) + '</span>';
+  }
+  function dayShortLabel(key) { return key ? new Date(key + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }) : ""; }
+  function shiftTagShort(s) {
+    return { "TODAY": "Today", "CURRENT NIGHT SHIFT": "Tonight", "NEXT SHIFT": "Next", "COMING UP": "Upcoming", "PAST SHIFT": "Earlier" }[shiftTag(s)] || "";
+  }
+  // The white "which shift" row under the DROPS/PICKS toggle (Cards look).
+  function cShiftHtml(sh) {
+    if (!sh || !sh.day) return '<span class="cs-l">No sheets yet</span><span class="cs-r">change sheet</span>';
+    var kindWord = sh.kind === "picks" ? "Picks" : "Drops";
+    return '<span class="cs-l">' + esc(kindWord + " · " + dayShortLabel(sh.day)) + '</span>' +
+      '<span class="cs-r">' + esc(shiftTagShort(sh)) + ' · change sheet</span>';
   }
   function shiftBtnHtml(sh) {
     if (!sh) return '<span class="st-tag">No sheets yet</span>';
@@ -755,8 +784,8 @@
       return '<button type="button" data-tally="' + esc(x[1]) + '" class="' + (S.yardFilter === x[1] ? "on" : "") + (x[1] === "-" ? " warn" : "") + '" aria-pressed="' + (S.yardFilter === x[1]) + '"><span>' + esc(label) + '</span><b class="num">' + x[2] + "</b></button>";
     }).join("");
     renderCatStrip(picks);
-    $("tabTodo").textContent = pro ? S.rows.filter(waiting).length + " Waiting for action" : "TO DO (" + S.rows.filter(waiting).length + ")";
-    $("tabAll").textContent = pro ? "All " + S.rows.length : "ALL (" + S.rows.length + ")";
+    $("tabTodo").textContent = "TO DO (" + S.rows.filter(waiting).length + ")";
+    $("tabAll").textContent = "ALL (" + S.rows.length + ")";
     $("tabTodo").classList.toggle("on", S.filter === "todo");
     $("tabAll").classList.toggle("on", S.filter === "all");
     $("tabTodo").setAttribute("aria-pressed", S.filter === "todo");
@@ -3870,8 +3899,8 @@
     if (t.dataset.backup !== undefined) return downloadBackup(t);
     if (t.dataset.saverate !== undefined) return saveOverstayRate(t);
     if (t.dataset.view) return go(t.dataset.view);
-    if (t.id === "menuBtn") return openMenu();
-    if (t.id === "shiftBtn") return openShiftPick();
+    if (t.id === "menuBtn" || t.closest("#cHead")) return openMenu();
+    if (t.id === "shiftBtn" || t.closest("#cShift")) return openShiftPick();
     if (t.dataset.kind) return switchKind(t.dataset.kind);
     if (t.dataset.pickshift) return chooseShift(t.dataset.pickshift);
     if (t.dataset.closeshift !== undefined) return $("shiftPick").close();

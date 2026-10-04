@@ -323,7 +323,7 @@ await scenario(async () => {
     noTimeCol: !document.querySelector('.row[data-id="b1"] .rt'),
     word: document.querySelector('.row[data-id="b3"] [data-act="sent"] .w').textContent, nav: getComputedStyle(document.getElementById("bnav")).display, tabs: document.getElementById("tabTodo").textContent }));
   check("Cards: the reg is the hero, the name reads as written, buttons have words, no time column", card.reg === "EK14JPV" && /Senior Miss/.test(card.name) && card.noTimeCol && card.word === "Sent", card);
-  check("Cards: the tab reads 'N Waiting for action'", /^\d+ Waiting for action$/.test(card.tabs), card.tabs);
+  check("Cards: the tab reads 'TO DO (N)'", /^TO DO \(\d+\)$/.test(card.tabs), card.tabs);
   check("Cards: the bottom bar is there", card.nav === "flex", card);
   await page.click('#bnav [data-bn="menuBtn"]'); await page.waitForSelector('[data-mode="dark"]');
   await page.click('[data-mode="dark"]'); await sleep(200);
@@ -332,8 +332,8 @@ await scenario(async () => {
   await page.click('[data-mode="light"]'); await sleep(200);
   check("Cards: Light turns it back", !(await page.evaluate(() => document.documentElement.classList.contains("dark"))));
   await page.keyboard.press("Escape"); await sleep(300);
-  check("Cards: the shift header replaces the day dropdown", await page.isVisible("#shiftBtn") && !(await page.isVisible("#sheetPick")) && /CURRENT NIGHT SHIFT|TODAY/.test(await page.locator("#shiftBtn").innerText()));
-  await page.click("#shiftBtn"); await page.waitForSelector("[data-pickshift]");
+  check("Cards: the white shift row replaces the day dropdown", await page.isVisible("#cShift") && !(await page.isVisible("#sheetPick")) && /change sheet/.test(await page.locator("#cShift").innerText()) && /(Drops|Picks) ·/.test(await page.locator("#cShift").innerText()));
+  await page.click("#cShift"); await page.waitForSelector("[data-pickshift]");
   check("Cards: Choose shift lists the sheets", /Choose shift/i.test(await page.locator("#shiftBody").innerText()) && (await page.locator("[data-pickshift]").count()) >= 2);
   const other = await page.locator("[data-pickshift]").nth(1).getAttribute("data-pickshift");
   await page.click('[data-pickshift="' + other + '"]'); await sleep(500);
