@@ -544,8 +544,23 @@
     show("homeBtn", !S.platform && !!homeSaved());
     $("clock").textContent = londonParts(new Date()).time;
     var shift = currentShiftKey();
+    var cardsLook = isCards();
     $("sheetPick").innerHTML = S.sheets.length || S.archiveSheet ? pickerHtml(shift) : "<option>No sheets yet</option>";
-    show("sheetPick", !S.platform);
+    show("sheetPick", !S.platform && !cardsLook);
+    // Cards: the navy shift button in the bar. Premium: a title bar (company +
+    // who + updated) and, under DROPS/PICKS, a white "which shift" row.
+    var premium = isPremium();
+    show("shiftBtn", !S.platform && cardsLook && !premium);
+    if (cardsLook && !premium) $("shiftBtn").innerHTML = shiftBtnHtml(sh);
+    show("cHead", !S.platform && premium);
+    if (premium) $("cHead").innerHTML = cHeadHtml();
+    show("cShift", premium && board && !!sh);
+    if (premium && sh) $("cShift").innerHTML = cShiftHtml(sh);
+    show("kindSeg", cardsLook && board && !!sh);
+    if (cardsLook && sh) {
+      $("kindSeg").querySelector('[data-kind="drops"]').setAttribute("aria-pressed", sh.kind === "drops");
+      $("kindSeg").querySelector('[data-kind="picks"]').setAttribute("aria-pressed", sh.kind === "picks");
+    }
     show("logBtn", !S.platform && (can("summary") || can("log")));
     show("flBtn", !S.platform && can("flights") && !picks);
     show("rtBtn", !S.platform && can("picksinfo") && picks);
@@ -565,6 +580,87 @@
 
   // Today and anything ahead first, then a group per month, so 90 days of
   // DROPS and PICKS stay quick to scroll on a phone.
+  // The Cards look shows the open sheet as a shift, and a "Choose shift" sheet.
+  // A DROPS day is the night that ends at drops_day_end (06:00), so it reads as
+  // two dates: "Sat 3 Oct → Sun 4 Oct". PICKS is the single day.
+  function longDay(key) { return new Date(key + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }); }
+  function shiftWhen(s) {
+    if (!s || !s.day) return "";
+    return s.kind === "drops" ? longDay(s.day) + " → " + longDay(addDaysKey(s.day, 1)) : longDay(s.day);
+  }
+  function shiftTag(s) {
+    if (!s || !s.day) return "";
+    var now = currentShiftKey();
+    if (s.day === now) return s.kind === "drops" ? "CURRENT NIGHT SHIFT" : "TODAY";
+    if (s.day === addDaysKey(now, 1)) return "NEXT SHIFT";
+    return s.day > now ? "COMING UP" : "PAST SHIFT";
+  }
+  // Premium look header: the brand mark, "{Company} operations", who is on and
+  // their role, and the live "Updated HH:MM". Same mark/colour as every brand.
+  function niceRole(role) {
+    return { owner: "Owner", manager: "Manager", office: "Office", driver: "Driver" }[role] || "Team";
+  }
+  function cHeadHtml() {
+    var short = String((S.company && (S.company.brand || {}).short) || (S.company && S.company.name) || PRODUCT).trim();
+    var mark = String((S.company && (S.company.brand || {}).mark) || short.charAt(0) || "P").slice(0, 2);
+    return '<span class="ch-mark" aria-hidden="true">' + esc(mark) + '</span>' +
+      '<span class="ch-txt"><b>' + esc(short) + ' operations</b>' +
+      '<small>' + esc(S.me.name) + ' · ' + esc(niceRole(S.me.role)) + '</small></span>' +
+      '<span class="ch-upd"><i aria-hidden="true"></i>Updated ' + esc(londonParts(new Date()).time) + '</span>';
+  }
+  function dayShortLabel(key) { return key ? new Date(key + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }) : ""; }
+  function shiftTagShort(s) {
+    return { "TODAY": "Today", "CURRENT NIGHT SHIFT": "Tonight", "NEXT SHIFT": "Next", "COMING UP": "Upcoming", "PAST SHIFT": "Earlier" }[shiftTag(s)] || "";
+  }
+  // The white "which shift" row under the DROPS/PICKS toggle (Premium look).
+  function cShiftHtml(sh) {
+    if (!sh || !sh.day) return '<span class="cs-l">No sheets yet</span><span class="cs-r">change sheet</span>';
+    var kindWord = sh.kind === "picks" ? "Picks" : "Drops";
+    return '<span class="cs-l">' + esc(kindWord + " · " + dayShortLabel(sh.day)) + '</span>' +
+      '<span class="cs-r">' + esc(shiftTagShort(sh)) + ' · change sheet</span>';
+  }
+  function shiftBtnHtml(sh) {
+    if (!sh) return '<span class="st-tag">No sheets yet</span>';
+    var end = (S.company && S.company.drops_day_end || "06:00:00").slice(0, 5);
+    var sub = sh.kind === "drops" ? "Ends at " + end + " · London" : "Pick-ups · London";
+    return '<span class="st-tag">' + esc(sh.kind.toUpperCase() + " · " + shiftTag(sh)) + "</span>" +
+      '<span class="st-when">' + esc(shiftWhen(sh)) + '</span><span class="st-sub">' + esc(sub) + "</span>";
+  }
+  function openShiftPick() {
+    var shift = currentShiftKey();
+    var order = S.sheets.slice().sort(function (a, b) { return a.day > b.day ? -1 : a.day < b.day ? 1 : a.kind < b.kind ? -1 : 1; });
+    var ahead = order.filter(function (s) { return s.day >= shift; }).reverse();
+    var past = order.filter(function (s) { return s.day < shift; });
+    var item = function (s) {
+      return '<button type="button" class="shiftrow' + (s.id === S.sheetId ? " on" : "") + '" data-pickshift="' + s.id + '">' +
+        '<span class="sr-when">' + esc(shiftWhen(s)) + '</span><span class="sr-tag">' + esc(s.kind.toUpperCase() + " · " + shiftTag(s)) + "</span></button>";
+    };
+    var h = '<h2>Choose shift</h2>';
+    if (ahead.length) h += '<div class="shiftlist">' + ahead.map(item).join("") + "</div>";
+    if (past.length) h += '<label>EARLIER</label><div class="shiftlist">' + past.slice(0, 20).map(item).join("") + "</div>";
+    $("shiftBody").innerHTML = h + '<div class="pbtns"><button type="button" data-closeshift>Close</button></div>';
+    if (!$("shiftPick").open) $("shiftPick").showModal();
+  }
+  // DROPS/PICKS toggle (Cards look): open the other kind's sheet, keeping the
+  // day where there is one, else the current shift's, else the latest.
+  function switchKind(kind) {
+    var sh = sheet();
+    if (sh && sh.kind === kind) return;
+    var same = sh && S.sheets.filter(function (s) { return s.kind === kind && s.day === sh.day; })[0];
+    var now = currentShiftKey();
+    var cur = S.sheets.filter(function (s) { return s.kind === kind && s.day === now; })[0];
+    var latest = S.sheets.filter(function (s) { return s.kind === kind; }).sort(function (a, b) { return a.day > b.day ? -1 : 1; })[0];
+    var pick = same || cur || latest;
+    if (pick) chooseShift(pick.id);
+    else toast("No " + kind.toUpperCase() + " sheet yet.");
+  }
+  function chooseShift(id) {
+    $("shiftPick").close();
+    if (id === S.sheetId) return;
+    S.sheetId = id; S.q = ""; S.other = null; S.yardFilter = ""; S.catFilter = ""; S.view = "board"; S.runs = null;
+    try { sessionStorage.setItem(openSheetKey(), id); } catch (e) {}
+    loadRows().then(render).then(function () { window.scrollTo(0, 0); });
+  }
   function pickerHtml(shift) {
     function opt(s) { return '<option value="' + s.id + '"' + (s.id === S.sheetId ? " selected" : "") + ">" + esc(sheetLabel(s)) + (s.day === shift ? " · today" : "") + "</option>"; }
     var ahead = S.sheets.filter(function (s) { return s.day >= shift; }).sort(function (a, b) { return a.day < b.day ? -1 : a.day > b.day ? 1 : a.kind < b.kind ? -1 : 1; });
@@ -686,12 +782,13 @@
     }
     var pro = isCards();
     $("tally").innerHTML = cells.map(function (x) {
-      var label = pro && x[0].length > 3 ? sentence(x[0]).replace(/^Coll$/, "Collected") : x[0];
+      var label = x[0];
       return '<button type="button" data-tally="' + esc(x[1]) + '" class="' + (S.yardFilter === x[1] ? "on" : "") + (x[1] === "-" ? " warn" : "") + '" aria-pressed="' + (S.yardFilter === x[1]) + '"><span>' + esc(label) + '</span><b class="num">' + x[2] + "</b></button>";
     }).join("");
     renderCatStrip(picks);
-    $("tabTodo").textContent = pro ? "To do · " + S.rows.filter(waiting).length : "TO DO (" + S.rows.filter(waiting).length + ")";
-    $("tabAll").textContent = pro ? "All · " + S.rows.length : "ALL (" + S.rows.length + ")";
+    var cardsWords = pro && !isPremium();
+    $("tabTodo").textContent = cardsWords ? S.rows.filter(waiting).length + " Waiting for action" : "TO DO (" + S.rows.filter(waiting).length + ")";
+    $("tabAll").textContent = cardsWords ? "All " + S.rows.length : "ALL (" + S.rows.length + ")";
     $("tabTodo").classList.toggle("on", S.filter === "todo");
     $("tabAll").classList.toggle("on", S.filter === "all");
     $("tabTodo").setAttribute("aria-pressed", S.filter === "todo");
@@ -711,7 +808,7 @@
     // Board strip: SHORT LEFT, LONG LEFT, SHORT, LONG (SAME DAY and NEXT DAY stay in the stats panel).
     var strip = set ? LEFT_CATS.concat(CATS.slice(2)) : LEFT_CATS.slice(0, 1);
     var cells = strip.map(function (c) {
-      return '<button type="button" data-cat="' + c[0] + '" class="' + (c[2] || c[0]) + (S.catFilter === c[0] ? " on" : "") + '" aria-pressed="' + (S.catFilter === c[0]) + '"><span>' + (isCards() ? sentence(c[1]) : c[1]) + '</span><b class="num">' + n[c[0]] + "</b></button>";
+      return '<button type="button" data-cat="' + c[0] + '" class="' + (c[2] || c[0]) + (S.catFilter === c[0] ? " on" : "") + '" aria-pressed="' + (S.catFilter === c[0]) + '"><span>' + c[1] + '</span><b class="num">' + n[c[0]] + "</b></button>";
     }).join("");
     var pick = "";
     if (can("yard")) {
@@ -787,8 +884,22 @@
     if (!S.rows.length) return '<div class="msg">No cars on this sheet.</div>';
     if (!rows.length) return '<div class="msg">' + (S.filter === "todo" && !S.q && !S.yardFilter ? "Nothing outstanding." : S.q ? (S.other && S.other.length ? "Not on this sheet. Found on another day below." : searchWords().tight.length >= 3 && S.other ? "Not found on any sheet." : "Not on this sheet.") : "Nothing matches.") + "</div>";
     var draw = sh.kind === "picks" ? pickRow : dropRow;
+    var cardsLook = isCards();
     return groups.map(function (g) {
-      return (g.title ? '<div class="sec' + g.cls + '">' + g.title + ' <b class="num">' + g.rows.length + "</b>" + (g.note ? "<span>" + g.note + "</span>" : "") + "</div>" : "") + g.rows.map(draw).join("");
+      var head = "";
+      if (g.title) {
+        var note = g.note;
+        if (cardsLook && g.title === "COMING UP") {
+          var prog = g.rows.filter(function (r) { return r.sent_at && !r.cleared_at; }).length;
+          note = g.rows.length + (g.rows.length === 1 ? " car" : " cars") + (prog ? ", including " + prog + " in progress" : "");
+          head = '<div class="sec' + g.cls + '">' + g.title + ' <span>' + note + "</span></div>";
+        } else if (cardsLook) {
+          head = '<div class="sec' + g.cls + '">' + g.title + ' · ' + g.rows.length + (note ? ' <span>' + note + "</span>" : "") + "</div>";
+        } else {
+          head = '<div class="sec' + g.cls + '">' + g.title + ' <b class="num">' + g.rows.length + "</b>" + (note ? "<span>" + note + "</span>" : "") + "</div>";
+        }
+      }
+      return head + g.rows.map(draw).join("");
     }).join("");
   }
 
@@ -810,7 +921,9 @@
   // A pressed button shows the time and the first name of whoever pressed it.
   // The Cards look's buttons are big enough for words, not codes.
   var PRO_WORDS = { COLL: "Collected", "NO SHOW": "No show", SENT: "Sent", CALLED: "Called", CLEAR: "Clear", OVERSTAY: "Overstay", COMPLAINT: "Complaint" };
-  function isCards() { return document.documentElement.classList.contains("cards"); }
+  // A card per car (Cards or Premium look); isPremium tells the two apart.
+  function isCards() { var c = document.documentElement.classList; return c.contains("cards") || c.contains("premium"); }
+  function isPremium() { return document.documentElement.classList.contains("premium"); }
   // Booking sites send names in capitals; the Cards look shows them as written ("Senior Miss").
   function niceMake(m) { return m.length <= 3 ? m : nice(m); }
   function sentence(t) { t = String(t || ""); return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase(); }
@@ -928,6 +1041,38 @@
     tags = tags.filter(Boolean);
     return tags.length ? '<div class="l2 l2t" data-open>' + tags.join(" ") + "</div>" : "";
   }
+  // The DROPS card for the Cards look: the reg is the hero, the make/flight and
+  // booked → landing time read on one line, the flight status on its own, then
+  // the three full-width buttons. Same data and taps as the standard row.
+  function flightLine(r) {
+    if (r.flight_status === "landed") return '<div class="fst land">Landed</div>';
+    if (r.flight_status === "cancelled") return '<div class="fst stop">Flight cancelled</div>';
+    if (r.est_time === "DELAY") return '<div class="fst stop">Delayed</div>';
+    if (r.flight_status === "expected" && r.est_time) return '<div class="fst due">Expected ' + esc(r.est_time) + "</div>";
+    return "";
+  }
+  function dropCard(r, cls, overWord, cmpl, canc, over) {
+    var booked = r.early ? r.sched_time : (r.sched_time || hhmm(r.return_at) || "—");
+    var eta = canc ? "" : r.est_time;
+    var mk = makeOnly(r.make) ? esc(niceMake(makeOnly(r.make))) : "";
+    var flt = r.flight ? esc(r.flight) : can("flights") ? '<button type="button" class="addflight" data-addflight>+ FLIGHT</button>' : "";
+    var mid = [mk, flt].filter(Boolean).join(" · ");
+    var times = booked ? '<span class="bk">booked ' + esc(booked) + (eta && eta !== "DELAY" && eta !== booked ? ' &rarr; <b>' + esc(eta) + "</b>" : "") + "</span>" : "";
+    return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' +
+      '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" + yardChip(r) +
+      catTag(r) + wasTag(r) + '<span class="pin">' + (r.num ? "#" + r.num + " · " : "") + esc(nice(r.name)) + "</span></div>" +
+      '<div class="l2" data-open>' + mid + (mid && times ? " · " : "") + times + "</div>" +
+      flightLine(r) +
+      rowTags(r, [flightToCheck(r) ? '<span class="tag ck">' + (/^Not in the timetable/.test(r.flight_note) ? "CHECK MANUALLY"
+        : /over 6 h from the booked time/.test(r.flight_note) && r.return_at ? "CHECK FLIGHT · BOOKED " + esc(hhmm(r.return_at)) : "CHECK FLIGHT NO.") + "</span>" : "",
+        over ? '<span class="tag ov">OVERSTAY</span>' : "", cmpl ? '<span class="tag cm">COMPLAINT</span>' : "", chargeTag(r).replace(/^ · /, "")]) +
+      earlyLine(r) + noteLine(r) + "</div>" +
+      '<div class="acts">' +
+      actBtn(r, 'data-act="sent"', "s", "SENT", !!r.sent_at, r.sent_at, can("sent"), r.sent_by) +
+      actBtn(r, 'data-act="called"', "c" + (overWord ? " ov" : ""), overWord ? "OVERSTAY" : "CALLED", !!r.called_at, r.called_at, can("called"), r.called_by) +
+      actBtn(r, 'data-act="clear"', "x" + (cmpl ? " cm" : ""), cmpl ? "COMPLAINT" : "CLEAR", !!r.cleared_at, r.cleared_at, can("clear"), r.cleared_by) +
+      "</div></div>";
+  }
   function dropRow(r) {
     var cmpl = r.clear_word === "COMPLAINT", bang = /^!/.test(r.note), overWord = r.called_word === "Overstay";
     var canc = r.flight_status === "cancelled", over = r.overstay || overWord;
@@ -936,6 +1081,7 @@
     else if (r.cleared_at) cls = " done";
     else if (over) cls = " ovst";
     else if (r.called_at) { var w = minsSince(r.called_at); cls = w > LATE_MINS ? " late" : w > WARN_MINS ? " warn" : " called"; }
+    if (isCards()) return dropCard(r, cls, overWord, cmpl, canc, over);
     // An early return shows no booked time here (it was for another day): the EARLY tag says when.
     var booked = r.early ? r.sched_time : (r.sched_time || hhmm(r.return_at) || "—");
     var eta = canc ? "" : r.est_time;
@@ -2828,10 +2974,13 @@
     if (t) t.setAttribute("content", short);
 
     // The look is the company's choice, in its brand (Clients → Edit → LOOK):
-    // theme "pro" wears pro.css, theme "cards" wears cards.css, none is Standard.
-    var cards = b.theme === "cards", pro = b.theme === "pro" || cards;
+    // theme "pro" wears pro.css, "cards" cards.css, "premium" premium.css, none is Standard.
+    // Cards and Premium share the card-per-car layout (isCards) but each wears
+    // only its own stylesheet: html.cards → cards.css, html.premium → premium.css.
+    var premium = b.theme === "premium", cards = b.theme === "cards", pro = b.theme === "pro" || cards || premium;
     document.documentElement.classList.toggle("pro", b.theme === "pro");
     document.documentElement.classList.toggle("cards", cards);
+    document.documentElement.classList.toggle("premium", premium);
     var mark = String(b.mark || short.charAt(0) || "P").slice(0, 2);
     // Only the wordmark and the board button. NOT ".brand" on its own: the
     Array.prototype.forEach.call(document.querySelectorAll("span.brand, .tobrand"), function (el) {
@@ -2883,10 +3032,59 @@
     if (!dt.time || cutoff === "00:00" || dt.time > cutoff) return dt.key;
     return addDaysKey(dt.key, -1);
   }
+  // Automatic bookings (TakeOff / Swift): shown only for a company that has it
+  // set up on the platform (config.base). The office turns the 10-minute import
+  // on or off, and "Get bookings now" imports straight away either way.
+  function autoImportSection() {
+    if (S.autoImport === undefined) { S.autoImport = null; loadAutoImport(); return ""; }
+    var a = S.autoImport;
+    if (!a || !a.available || !can("import")) return "";
+    var on = !!a.enabled, run = a.running;
+    var when = a.last_ok ? "Last update " + dayShort(a.last_ok) + " " + hhmm(a.last_ok) : "Not run yet";
+    var status = a.last_error ? '<span class="bad">Last try failed: ' + esc(String(a.last_error).slice(0, 120)) + "</span>"
+      : (on ? "Connected · " + esc(when) : "Off · press Get bookings now whenever you like");
+    return '<div class="section-label">Automatic bookings</div><div class="box" style="padding:12px">' +
+      '<div class="rowline" style="border:0;padding:0 0 10px"><div class="grow"><strong>Bookings from the booking site</strong>' +
+      '<div class="note">' + status + "</div></div>" +
+      '<button type="button" class="btn ' + (on ? "ghost" : "brand") + ' small" data-autotoggle>' + (on ? "Turn off" : "Turn on") + "</button></div>" +
+      '<button type="button" class="btn brand" style="width:100%" data-autorun' + (run ? " disabled" : "") + ">" + (run ? "Getting bookings…" : "Get bookings now") + "</button>" +
+      '<p class="hint">It never changes anything on the booking site; it only reads. Cancelled bookings are flagged for you, not removed.</p></div>';
+  }
+  async function loadAutoImport() {
+    var r = await sb.rpc("auto_import_status");
+    var d = r && !r.error ? (r.data || {}) : {};
+    var cfg = d.config || {};
+    S.autoImport = { available: !!cfg.base, enabled: !!d.enabled, last_ok: d.last_ok, last_error: d.last_error };
+    if (S.view === "import") render();
+  }
+  async function toggleAutoImport() {
+    var a = S.autoImport || {};
+    var r = await sb.rpc("set_auto_import", { p_enabled: !a.enabled });
+    if (r.error) return toast(r.error.message, true);
+    a.enabled = !a.enabled; toast(a.enabled ? "Automatic bookings on" : "Automatic bookings off"); render();
+  }
+  async function runAutoImport(btn) {
+    if (S.autoImport) S.autoImport.running = true; render();
+    toast("Getting bookings… this can take a moment.");
+    var r;
+    try { r = await sb.functions.invoke("takeoff-bookings", { body: { action: "run" } }); }
+    catch (e) { r = { error: e }; }
+    if (S.autoImport) S.autoImport.running = false;
+    var out = r && r.data;
+    if (r && r.error) { toast("Couldn't get the bookings. Try again in a minute.", true); render(); return loadAutoImport(); }
+    if (out && out.ok === false) { toast(out.error || "The booking site didn't answer. Try again shortly.", true); render(); return loadAutoImport(); }
+    var days = (out && out.summary && out.summary.days) || [];
+    var added = days.reduce(function (n, d) { return n + (d.added || 0); }, 0);
+    var updated = days.reduce(function (n, d) { return n + (d.updated || 0); }, 0);
+    await loadSheets(); await loadRows();
+    toast("✓ Bookings in: " + added + " added, " + updated + " updated across " + days.length + " sheet(s).");
+    S.recentImports = null; loadAutoImport();
+  }
   function renderImport() {
     var I = S.imp || (S.imp = newImport("drops"));
     var h = '<h2 class="title">Import bookings</h2><div class="toolbar"><div class="seg" role="group" aria-label="Sheet type">' +
       '<button type="button" data-impkind="drops" aria-pressed="' + (I.kind === "drops") + '">Drops</button><button type="button" data-impkind="picks" aria-pressed="' + (I.kind === "picks") + '">Picks</button></div></div>';
+    h += autoImportSection();
     if (I.stage !== "preview") {
       if (!S.recentImports) loadRecentImports();
       var undoable = (S.recentImports || []).filter(function (x) { return !x.undone && x.latest; });
@@ -3047,8 +3245,8 @@
   }
   // ── Clients (product owner only, database part 19) ──
   // Counts only: this page never sees a client's customers.
-  // The looks a client's app can wear (brand.theme): "pro" is pro.css, "cards" is cards.css.
-  var LOOKS = [["", "Standard"], ["pro", "Airport Parking Bay UI"], ["cards", "Cards (light and dark)"]];
+  // The looks a client's app can wear (brand.theme): "pro" is pro.css, "cards" is cards.css, "premium" is premium.css (three separate stylesheets).
+  var LOOKS = [["", "Standard"], ["pro", "Airport Parking Bay UI"], ["cards", "Cards (light and dark)"], ["premium", "Premium UI"]];
   function lookName(b) { var l = LOOKS.filter(function (x) { return x[0] === ((b && b.theme) || ""); })[0]; return l ? l[1] : "Standard"; }
   function renderClients() {
     if (S.clients === undefined) { S.clients = null; loadClients(); }
@@ -3709,7 +3907,11 @@
     if (t.dataset.backup !== undefined) return downloadBackup(t);
     if (t.dataset.saverate !== undefined) return saveOverstayRate(t);
     if (t.dataset.view) return go(t.dataset.view);
-    if (t.id === "menuBtn") return openMenu();
+    if (t.id === "menuBtn" || t.closest("#cHead")) return openMenu();
+    if (t.id === "shiftBtn" || t.closest("#cShift")) return openShiftPick();
+    if (t.dataset.kind) return switchKind(t.dataset.kind);
+    if (t.dataset.pickshift) return chooseShift(t.dataset.pickshift);
+    if (t.dataset.closeshift !== undefined) return $("shiftPick").close();
     if (t.dataset.bn) { if (S.view !== "board" && t.dataset.bn !== "menuBtn") go("board"); return $(t.dataset.bn).click(); }
     if (t.dataset.mode) { setMode(t.dataset.mode); return openMenu(); }
     if (t.id === "logBtn") return go("summary");
@@ -3759,6 +3961,8 @@
     if (t.dataset.archretry !== undefined) { S.arch.days = null; render(); return; }
     if (t.dataset.impkind) { S.imp = newImport(t.dataset.impkind); render(); return; }
     if (t.dataset.undoimport && !t.closest("#panel")) return undoImport(t.dataset.undoimport, t);
+    if (t.dataset.autotoggle !== undefined) return toggleAutoImport();
+    if (t.dataset.autorun !== undefined) return runAutoImport(t);
     if (t.dataset.read !== undefined) return readImport();
     if (t.dataset.restart !== undefined) { S.imp = newImport(S.imp.kind); render(); return; }
     if (t.dataset.create !== undefined) return createSheet();
@@ -3862,6 +4066,7 @@
     if (!$("menu").open) $("menu").showModal();
   }
   $("menu").addEventListener("click", function (e) { if (outside("menu", e) || e.target.closest("[data-closemenu]")) $("menu").close(); });
+  $("shiftPick").addEventListener("click", function (e) { if (outside("shiftPick", e)) $("shiftPick").close(); });
   // The clock, and the CALLED colours that change with waiting time.
   setInterval(function () {
     if (!S.me) return;

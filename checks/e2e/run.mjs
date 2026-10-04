@@ -102,6 +102,8 @@ function rpc(db, fn, a) {
     case "import_sheet": { const sh = db.sheets.find((x) => x.kind === a.p_kind && x.day === a.p_day); (db.imports = db.imports || []).push({ id: 70 + db.imports.length, kind: a.p_kind, day: a.p_day, at: now(), by: "RAKESH", added: a.p_rows.length, changed: 0, undone: false, latest: true }); return { sheet_id: sh ? sh.id : "p0", added: a.p_rows.length, updated: 0, early: 0, moved: 0, new_marked: 0, undo_id: 70 + db.imports.length - 1 }; }
     case "admin_save_client": (db.clientSaves = db.clientSaves || []).push(a.p); return { id: a.p.id, name: a.p.name, brand: a.p.brand };
     case "recent_imports": return db.imports || [];
+    case "auto_import_status": return db.autoImport || { enabled: false };
+    case "set_auto_import": { db.autoImport = Object.assign(db.autoImport || {}, { enabled: a.p_enabled }); return { enabled: a.p_enabled }; }
     case "pt_copy_report": (db.reports = db.reports || []).push(a); return null;
     case "undo_import": { const i = (db.imports || []).find((x) => x.id === a.p_id); if (i) i.undone = true; return { removed: 2, kept: 0, restored: 0, sheet_id: "p0", sheet_gone: false }; }
     case "pt_unsaved": return db.ptUnsaved || [];
@@ -158,6 +160,10 @@ async function backend(ctx, db) {
       // Opening a client: from now on the phone is that client's owner.
       if (a.action === "client_open") { db.company = db.clientCompany; db.me = { ...db.me, company_id: db.company.id, name: "RAKESH (PARKING OPS)" }; return reply(200, { token_hash: "th", name: db.company.name }); }
       return reply(400, { error: "not in the test" });
+    }
+    if (p.startsWith("/functions/v1/takeoff-bookings")) {
+      (db.autoRuns = db.autoRuns || []).push(JSON.parse(req.postData() || "{}"));
+      return reply(200, { ok: true, summary: { days: [{ kind: "drops", day: TONIGHT, added: 2, updated: 1 }, { kind: "picks", day: TONIGHT, added: 3, updated: 0 }], drops_rows: 3, picks_rows: 3 } });
     }
     if (p.startsWith("/functions/v1/pt-r2")) {
       const a = JSON.parse(req.postData() || "{}");
@@ -290,11 +296,11 @@ await scenario(async () => {
   const look = await page.evaluate(async () => {
     await document.fonts.ready;
     const reg = getComputedStyle(document.querySelector(".row .reg")), bar = getComputedStyle(document.querySelector(".top"));
-    return { pro: document.documentElement.classList.contains("pro"), cards: document.documentElement.classList.contains("cards"), plate: reg.backgroundColor, bar: bar.backgroundColor, mark: document.querySelector(".tobrand").dataset.mark,
+    return { pro: document.documentElement.classList.contains("pro"), cards: document.documentElement.classList.contains("cards"), premium: document.documentElement.classList.contains("premium"), plate: reg.backgroundColor, bar: bar.backgroundColor, mark: document.querySelector(".tobrand").dataset.mark,
       font: document.fonts.check("700 16px 'Barlow Semi Condensed'"), theme: document.querySelector('meta[name="theme-color"]').content,
       rt: getComputedStyle(document.querySelector(".row .rt")).display, nav: getComputedStyle(document.getElementById("bnav")).display, word: document.querySelector('.row [data-act="sent"]').textContent };
   });
-  check("Airport Parking Bay UI: switched on by the company's brand, and only that look", look.pro && !look.cards, look);
+  check("Airport Parking Bay UI: switched on by the company's brand, and only that look", look.pro && !look.cards && !look.premium, look);
   check("Airport Parking Bay UI: regs are yellow number plates", look.plate === "rgb(247, 209, 23)", look.plate);
   check("Airport Parking Bay UI: the bar wears the brand's dark colour", look.bar === "rgb(14, 63, 126)" && look.theme === "#0E3F7E", look);
   check("Airport Parking Bay UI: the mark letter and the Barlow fonts load (CSP allows them)", look.mark === "P" && look.font, look);
@@ -307,15 +313,17 @@ await scenario(async () => {
   await open(page); await sleep(300);
   const look = await page.evaluate(async () => {
     await document.fonts.ready;
-    return { pro: document.documentElement.classList.contains("pro"), cards: document.documentElement.classList.contains("cards"), plate: getComputedStyle(document.querySelector(".row .reg")).backgroundColor,
+    return { pro: document.documentElement.classList.contains("pro"), cards: document.documentElement.classList.contains("cards"), premium: document.documentElement.classList.contains("premium"), plate: getComputedStyle(document.querySelector(".row .reg")).backgroundColor,
       bar: getComputedStyle(document.querySelector(".bar")).backgroundColor, font: document.fonts.check("700 16px 'Barlow Semi Condensed'") };
   });
-  check("Cards: switched on by the company's brand, and only that look", look.cards && !look.pro, look);
+  check("Cards: switched on by the company's brand, and only that look", look.cards && !look.pro && !look.premium, look);
   check("Cards: yellow plates, the brand's dark bar, Barlow loads", look.plate === "rgb(255, 212, 59)" && look.bar === "rgb(14, 63, 126)" && look.font, look);
   check("Cards: no sideways scrolling on a 360 px phone", await noSideScroll(page));
-  const card = await page.evaluate(() => ({ time: (document.querySelector('.row[data-id="b1"] .rt b') || {}).textContent, name: document.querySelector('.row[data-id="b1"] .pin').textContent,
+  const card = await page.evaluate(() => ({ reg: document.querySelector('.row[data-id="b1"] .reg').textContent, name: document.querySelector('.row[data-id="b1"] .pin').textContent,
+    noTimeCol: !document.querySelector('.row[data-id="b1"] .rt'),
     word: document.querySelector('.row[data-id="b3"] [data-act="sent"] .w').textContent, nav: getComputedStyle(document.getElementById("bnav")).display, tabs: document.getElementById("tabTodo").textContent }));
-  check("Cards: each car is a card with its time, the name as written, and words on the buttons", card.time === "22:45" && card.name === "Senior Miss" && card.word === "Sent" && /^To do · \d+$/.test(card.tabs), card);
+  check("Cards: the reg is the hero, the name reads as written, buttons have words, no time column", card.reg === "EK14JPV" && /Senior Miss/.test(card.name) && card.noTimeCol && card.word === "Sent", card);
+  check("Cards: the tab reads 'N Waiting for action'", /^\d+ Waiting for action$/.test(card.tabs), card.tabs);
   check("Cards: the bottom bar is there", card.nav === "flex", card);
   await page.click('#bnav [data-bn="menuBtn"]'); await page.waitForSelector('[data-mode="dark"]');
   await page.click('[data-mode="dark"]'); await sleep(200);
@@ -323,7 +331,36 @@ await scenario(async () => {
   check("Cards: Dark in the menu turns the app dark and is remembered on the phone", dark.on && dark.bg === "rgb(10, 17, 29)" && dark.kept === "dark", dark);
   await page.click('[data-mode="light"]'); await sleep(200);
   check("Cards: Light turns it back", !(await page.evaluate(() => document.documentElement.classList.contains("dark"))));
+  await page.keyboard.press("Escape"); await sleep(300);
+  check("Cards: the shift header replaces the day dropdown", await page.isVisible("#shiftBtn") && !(await page.isVisible("#sheetPick")) && /CURRENT NIGHT SHIFT|TODAY/.test(await page.locator("#shiftBtn").innerText()));
+  await page.click("#shiftBtn"); await page.waitForSelector("[data-pickshift]");
+  check("Cards: Choose shift lists the sheets", /Choose shift/i.test(await page.locator("#shiftBody").innerText()) && (await page.locator("[data-pickshift]").count()) >= 2);
+  const other = await page.locator("[data-pickshift]").nth(1).getAttribute("data-pickshift");
+  await page.click('[data-pickshift="' + other + '"]'); await sleep(500);
+  check("Cards: picking a shift opens it and closes the sheet", !(await page.isVisible("#shiftPick")) && (await page.locator("#sheetPick").inputValue()) === other);
   check("Cards: no errors", page.__errors.length === 0, page.__errors);
+});
+
+// Premium UI: the Cards look with a title bar, underline DROPS/PICKS, a white shift row and white tiles.
+await scenario(async () => {
+  const page = await phone(browser, apbDb("premium"), { width: 360 });
+  await open(page); await sleep(300);
+  const look = await page.evaluate(() => ({ cards: document.documentElement.classList.contains("cards"), premium: document.documentElement.classList.contains("premium"),
+    pro: document.documentElement.classList.contains("pro"), head: document.getElementById("cHead").innerText, shiftBtn: !document.getElementById("shiftBtn").classList.contains("hidden"),
+    tile: getComputedStyle(document.querySelector("#tally button")).backgroundColor, num: getComputedStyle(document.querySelector("#tally b")).color,
+    underline: getComputedStyle(document.querySelector('#kindSeg [aria-pressed="true"]')).borderBottomColor, tabs: document.getElementById("tabTodo").textContent }));
+  check("Premium: switched on by the brand, its own look only (not Cards, not Airport Parking Bay UI)", look.premium && !look.cards && !look.pro, look);
+  check("Premium: the title bar names the company, who is on and when it updated", /Parking Bay operations/.test(look.head) && /RAKESH · Owner/.test(look.head) && /Updated \d\d:\d\d/.test(look.head), look.head);
+  check("Premium: white tiles with dark figures, brand-blue active tab underline", look.tile === "rgba(0, 0, 0, 0)" && look.num === "rgb(17, 24, 39)" && look.underline === "rgb(21, 96, 189)", look);
+  check("Premium: the tab reads 'TO DO (N)' and the navy shift button is gone", /^TO DO \(\d+\)$/.test(look.tabs) && !look.shiftBtn, look);
+  check("Premium: no sideways scrolling on a 360 px phone", await noSideScroll(page));
+  check("Premium: the white shift row replaces the day dropdown", await page.isVisible("#cShift") && !(await page.isVisible("#sheetPick")) && /(Drops|Picks) · [\s\S]*change sheet/.test(await page.locator("#cShift").innerText()));
+  await page.click("#cShift"); await page.waitForSelector("[data-pickshift]");
+  check("Premium: the shift row opens Choose shift", /Choose shift/i.test(await page.locator("#shiftBody").innerText()));
+  await page.click("[data-closeshift]"); await sleep(200);
+  await page.click("#cHead"); await sleep(300);
+  check("Premium: tapping the title opens the menu", await page.isVisible("#menu"));
+  check("Premium: no errors", page.__errors.length === 0, page.__errors);
 });
 
 // 2. DROPS board
@@ -658,7 +695,10 @@ await scenario(async () => {
   await page.click("#panelBody [data-close]");
   check("Parking Ops: each client card says which look it has", /Standard/.test(await text(page, ".client")));
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
-  check("Parking Ops: the client editor offers the three looks", (await page.locator("#clLook option").allInnerTexts()).join("|") === "Standard|Airport Parking Bay UI|Cards (light and dark)");
+  check("Parking Ops: the client editor offers the four looks", (await page.locator("#clLook option").allInnerTexts()).join("|") === "Standard|Airport Parking Bay UI|Cards (light and dark)|Premium UI");
+  await page.selectOption("#clLook", "premium"); await page.click("#clGo"); await sleep(400);
+  check("Parking Ops: choosing Premium UI saves theme premium", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "premium"), db.clientSaves);
+  await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
   await page.selectOption("#clLook", "pro"); await page.click("#clGo"); await sleep(400);
   check("Parking Ops: choosing Airport Parking Bay UI saves theme pro", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "pro"), db.clientSaves);
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
@@ -887,6 +927,33 @@ await scenario(async () => {
     && x1.drop_local === TONIGHT + " 13:20" && /01:00$/.test(x1.return_local) && x1.reg === "AB12CDE", x1);
   const gone = await page.locator("#panelBody").innerText().catch(() => "");
   check("import: cars missing from the file are listed, with the moved-day warning", /no longer lists them/.test(gone) && /Only remove cars you know are cancelled/.test(gone));
+});
+
+// 18b. Automatic bookings: the office's on/off switch and "Get bookings now".
+await scenario(async () => {
+  const db = makeDb();
+  db.autoImport = { config: { base: "https://example.test/admin/" }, enabled: false, last_ok: null, last_error: null };
+  const page = await phone(browser, db, { width: 1000 });
+  await open(page);
+  await page.click("#menuBtn"); await sleep(300); await page.click('#menu [data-view="import"]'); await sleep(400);
+  await page.waitForSelector("[data-autotoggle]", { timeout: 6000 });
+  check("auto-import: the Automatic bookings section shows when it's set up", /Automatic bookings/i.test(await page.locator("#main").innerText()));
+  check("auto-import: starts off, offering Turn on and Get bookings now", await page.locator("[data-autotoggle]").innerText() === "Turn on" && await page.locator("[data-autorun]").count() === 1);
+  await page.click("[data-autotoggle]"); await sleep(400);
+  check("auto-import: Turn on reaches the server and flips to Turn off", db.calls.some((c) => c.fn === "set_auto_import" && c.args.p_enabled === true) && await page.locator("[data-autotoggle]").innerText() === "Turn off");
+  await page.click("[data-autorun]"); await sleep(900);
+  check("auto-import: Get bookings now calls the import function", (db.autoRuns || []).some((x) => x.action === "run"));
+  check("auto-import: the result is shown (added / updated)", /Bookings in: 5 added, 1 updated/.test(await toast(page)), await toast(page));
+  check("auto-import: no errors", page.__errors.length === 0, page.__errors);
+});
+
+// 18c. Without it set up (the usual company), the section stays hidden.
+await scenario(async () => {
+  const db = makeDb();
+  const page = await phone(browser, db, { width: 1000 });
+  await open(page);
+  await page.click("#menuBtn"); await sleep(300); await page.click('#menu [data-view="import"]'); await sleep(400);
+  check("auto-import: hidden for a company without it set up", !/Automatic bookings/i.test(await page.locator("#main").innerText()));
 });
 
 // 18a. DROPS file with the date and the time in separate columns (BookingList .xls):

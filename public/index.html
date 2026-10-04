@@ -18,6 +18,7 @@
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/pro.css">
 <link rel="stylesheet" href="/cards.css">
+<link rel="stylesheet" href="/premium.css">
 </head>
 <body>
 <div class="boot" id="boot">Loading…</div>
@@ -67,7 +68,9 @@
     <div class="bar">
       <button type="button" class="homebtn hidden" id="homeBtn" title="Back to Parking Ops">‹ PARKING OPS</button>
       <button type="button" class="tobrand" id="menuBtn" title="Menu" aria-label="Parking menu" aria-haspopup="dialog">Parking Ops</button>
+      <button type="button" class="chead hidden" id="cHead" title="Menu" aria-label="Menu" aria-haspopup="dialog"></button>
       <select id="sheetPick" aria-label="Day sheet"></select>
+      <button type="button" class="shiftbtn hidden" id="shiftBtn" aria-haspopup="dialog"></button>
       <span class="pend" id="sync" aria-live="polite"></span>
       <span class="who" id="who"></span>
       <span class="when num" id="clock"></span>
@@ -78,6 +81,10 @@
       <button type="button" class="rf" id="refreshBtn" title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></svg></button>
     </div>
     <div id="boardHead">
+      <div class="kindseg hidden" id="kindSeg" role="group" aria-label="Drops or picks">
+        <button type="button" data-kind="drops">DROPS</button><button type="button" data-kind="picks">PICKS</button>
+      </div>
+      <button type="button" class="cshift hidden" id="cShift" aria-haspopup="dialog"></button>
       <div class="tally" id="tally"></div>
       <div class="tally cats hidden" id="catTally"></div>
       <div class="tabs" role="group" aria-label="Show">
@@ -105,6 +112,7 @@
 
 <dialog id="panel" class="sheet" aria-labelledby="panelTitle"><div id="panelBody"></div></dialog>
 <dialog id="menu" class="sheet" aria-label="Menu"><div id="menuBody"></div></dialog>
+<dialog id="shiftPick" class="sheet" aria-label="Choose shift"><div id="shiftBody"></div></dialog>
 
 <script src="/vendor/supabase-2.117.2.js"></script>
 <script src="/reader.js"></script>
