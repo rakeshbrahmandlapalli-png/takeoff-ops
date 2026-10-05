@@ -2948,7 +2948,7 @@
           '</strong>' + progressBar(cin, p.length) + '</div><div class="stat"><span>No shows</span><strong class="num">' + p.filter(function (r) { return r.intake === "No Show"; }).length +
           '</strong></div><div class="stat"><span>RTC</span><strong class="num">' + p.filter(function (r) { return r.intake === "RTC"; }).length +
           '</strong></div><div class="stat"><span>Still to come</span><strong class="num">' + p.filter(function (r) { return !r.intake; }).length + "</strong></div></div>" +
-          '<div class="section-label">Cars in by hour</div><div class="box">' + (Object.keys(hours).sort().map(function (k) { return '<div class="rowline"><span class="num grow">' + k + ':00</span><strong class="num">' + hours[k] + "</strong></div>"; }).join("") || '<div class="empty">None yet.</div>') + "</div>";
+          '<div class="section-label">Cars in by hour</div>' + (isPremium() ? hourBars(hours) : '<div class="box">' + (Object.keys(hours).sort().map(function (k) { return '<div class="rowline"><span class="num grow">' + k + ':00</span><strong class="num">' + hours[k] + "</strong></div>"; }).join("") || '<div class="empty">None yet.</div>') + "</div>");
       }
     }
     if (can("log")) {
@@ -2961,6 +2961,33 @@
       }).join("") + '</div><div class="row-actions"><button type="button" class="btn ghost small" data-reloadlog>Refresh</button></div>' : '<div class="empty">Nothing yet.</div>';
     }
     return h || '<div class="empty">Nothing to show for your role.</div>';
+  }
+  // Premium: cars in by hour as bars, every hour from the first to the last
+  // (quiet hours show as gaps), the busiest hour in the brand colour.
+  function hourBars(hours) {
+    var keys = Object.keys(hours).sort();
+    if (!keys.length) return '<div class="box"><div class="empty">None yet.</div></div>';
+    var max = Math.max.apply(null, keys.map(function (k) { return hours[k]; })), out = [];
+    for (var hr = +keys[0]; hr <= +keys[keys.length - 1]; hr++) out.push(("0" + hr).slice(-2));
+    return '<div class="box hbars">' + out.map(function (k) {
+      var n = hours[k] || 0;
+      return '<div class="hbar' + (n === max ? " top" : "") + (n ? "" : " zero") + '"><span class="num hh">' + k + ':00</span><span class="track"><i style="width:' + (n ? Math.max(4, Math.round(n / max * 100)) : 0) + '%"></i></span><b class="num">' + n + "</b></div>";
+    }).join("") + "</div>";
+  }
+  // Premium: a coloured dot on each activity line, the board's button colours.
+  function actDot(a) {
+    var v = String(a.value || "").toUpperCase();
+    switch (a.action) {
+      case "SENT": return /CLEARED|OFF/.test(v) ? "x" : "s";
+      case "CALLED": return /CLEARED|OFF/.test(v) ? "x" : /OVERSTAY/.test(v) ? "o" : "c";
+      case "CLEAR": return /COMPLAINT/.test(v) ? "r" : /CLEARED|OFF/.test(v) ? "x" : "s";
+      case "INTAKE": return /RTC/.test(v) ? "r" : /NO SHOW/.test(v) ? "o" : /COLLECTED/.test(v) ? "s" : "x";
+      case "PT": case "PT PHOTOS": case "PT COPY": return "p";
+      case "NOTE": case "CHARGE": case "OVERSTAYS": case "EARLY RETURN": return "o";
+      case "REMOVED": case "CANCELLED": case "SHEET DELETED": return "r";
+      case "FLIGHT": case "RETURN CHANGED": case "COLLECTION TIME": case "SCHEDULED": return "c";
+      default: return "x";
+    }
   }
   function progressBar(done, all) {
     if (!isPremium() || !all) return "";
@@ -3000,7 +3027,7 @@
         h += '<div class="actday">' + (key === today ? "Today" : key === addDaysKey(today, -1) ? "Yesterday" : esc(longDay(key))) + '</div><div class="box actbox">';
         last = key;
       }
-      h += '<div class="actrow k-' + actKind(a) + '"><span class="num at">' + esc(hhmm(a.at)) + '</span><div class="grow"><strong>' + esc(a.reg ? a.reg + " · " : "") + esc(nice(a.action).replace(/\bPt\b/g, "PT")) + "</strong>" +
+      h += '<div class="actrow k-' + actKind(a) + '"><span class="num at">' + esc(hhmm(a.at)) + '</span><i class="adot d-' + actDot(a) + '" aria-hidden="true"></i><div class="grow"><strong>' + esc(a.reg ? a.reg + " · " : "") + esc(nice(a.action).replace(/\bPt\b/g, "PT")) + "</strong>" +
         '<div class="note">' + esc(a.staff_name || "System") + (a.value ? " · " + esc(a.value) : "") + "</div></div></div>";
     });
     return h + "</div>";

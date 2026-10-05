@@ -404,12 +404,17 @@ await scenario(async () => {
   const sum = await page.evaluate(() => ({ bar: document.querySelector(".stat.big .pbar i").style.width, pc: document.querySelector(".pbar-pc").textContent, days: [...document.querySelectorAll(".actday")].map((d) => d.textContent), rows: document.querySelectorAll(".actrow").length }));
   check("Premium summary: Cars back with a progress bar", sum.bar === "33%" && /33% done/.test(sum.pc), sum);
   check("Premium activity: grouped by day", sum.days.length === 2 && sum.rows === 3, sum);
+  check("Premium activity: a coloured dot per line (Sent green, Intake Collected green, Staff grey)", await page.evaluate(() => [...document.querySelectorAll(".actrow .adot")].map((d) => d.className.replace("adot ", "")).join(",") === "d-s,d-s,d-x"));
   await page.click('[data-actf="picks"]'); await sleep(200);
   check("Premium activity: the Picks chip shows only picks work", await page.evaluate(() => document.querySelectorAll(".actrow").length === 1 && /HJ12PGK/.test(document.getElementById("actList").textContent)));
   await page.click('[data-actf="all"]'); await sleep(200);
   await page.fill("#actQ", "dv59"); await sleep(200);
   check("Premium activity: search finds by reg and keeps the keyboard up", await page.evaluate(() => document.querySelectorAll(".actrow").length === 1 && document.activeElement && document.activeElement.id === "actQ"));
-  check("Premium menu and summary: no sideways scrolling, no errors", (await noSideScroll(page)) && page.__errors.length === 0, page.__errors);
+  await page.click('[data-view="board"]').catch(() => {}); await page.click("#kindSeg [data-kind=picks]"); await page.waitForSelector('.row[data-id="p1"]');
+  await page.click('#bnav [data-bn="logBtn"]'); await page.waitForSelector(".hbars");
+  const hb = await page.evaluate(() => [...document.querySelectorAll(".hbar")].map((h) => ({ hh: h.querySelector(".hh").textContent, n: h.querySelector("b").textContent, top: h.classList.contains("top") })));
+  check("Premium picks summary: cars in by hour as bars, the busiest hour marked", hb.length >= 1 && hb.some((h) => h.top && h.n === "1"), hb);
+    check("Premium menu and summary: no sideways scrolling, no errors", (await noSideScroll(page)) && page.__errors.length === 0, page.__errors);
 });
 
 // Premium Board: Premium with two-line rows like the old board.
