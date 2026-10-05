@@ -393,3 +393,24 @@ html.premium .actrow strong{font:600 14.5px/1.3 var(--sans);color:var(--ink);}
 html.premium .actrow .note{margin-top:2px;font:500 13px/1.3 var(--sans);color:var(--ink-3);}
 html.premium .pseg.mode button.on{background:var(--pchrome);border-color:var(--pchrome);color:#fff;}
 html.premium.dark .pseg.mode button.on{background:#22314A;border-color:#22314A;}
+
+/* ── activity: a dot in the board's button colours ── */
+html.premium .actrow .adot{flex:none;width:9px;height:9px;margin-top:5px;border-radius:50%;background:var(--x-bg);}
+html.premium .actrow .adot.d-s{background:#1F9D5B;}
+html.premium .actrow .adot.d-c{background:#2F6FD6;}
+html.premium .actrow .adot.d-r{background:#D2463B;}
+html.premium .actrow .adot.d-o{background:#E39A1C;}
+html.premium .actrow .adot.d-p{background:#5B6F94;}
+html.premium .actrow .adot.d-x{background:#A3ADBB;}
+html.premium.dark .actrow .adot.d-x{background:#4B5970;}
+
+/* ── picks summary: cars in by hour as bars ── */
+html.premium .hbars{padding:10px 14px;}
+html.premium .hbar{display:grid;grid-template-columns:44px 1fr 28px;align-items:center;gap:10px;padding:5px 0;}
+html.premium .hbar .hh{font:600 13px/1 var(--sans);color:var(--ink-3);}
+html.premium .hbar .track{height:14px;border-radius:5px;background:var(--line-soft);overflow:hidden;}
+html.premium .hbar .track i{display:block;height:100%;border-radius:5px;background:var(--pchrome);opacity:.55;}
+html.premium.dark .hbar .track i{background:#7D8AA0;}
+html.premium .hbar.top .track i{background:var(--brand);opacity:1;}
+html.premium .hbar b{font:700 14px/1 var(--sans);text-align:right;color:var(--ink);}
+html.premium .hbar.zero b,html.premium .hbar.zero .hh{color:var(--ink-3);font-weight:500;}
