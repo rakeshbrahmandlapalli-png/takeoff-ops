@@ -1,57 +1,83 @@
 /* "Premium Board" (Clients → Edit → LOOK), for companies whose brand has
    theme: "board". It is Premium (premium.css: title bar, DROPS/PICKS tabs,
-   white shift row and numbers, the fold) with the jobs laid out like the old
-   board: flat full-width rows with a line between them, the reg in big bold
-   letters, the yard, number and name on line 1, the car, flight and time on
-   line 2, and SENT / CALLED / CLEAR (COLL / NO SHOW / RTC / PT) on the right.
-   app.js puts html.premium AND html.pboard on the page and builds the two
-   lines (isBoard). Everything here sits under html.pboard, so Premium itself
-   never changes when these rows do. */
+   white shift row and numbers, the fold) with the jobs exactly like the
+   Standard board: flat rows, the reg in bold, the yard, number and name on
+   line 1, the car, flight and time on line 2, small SENT / CALLED / CLEAR
+   (COLL / NO SHOW / RTC / PT) buttons on the right, Standard's row and
+   button colours. app.js puts html.premium AND html.pboard on the page and
+   builds the two lines (isBoard); names stay as imported. Everything here
+   sits under html.pboard, so Premium itself never changes when these rows do.
+   Light mode uses Standard's own colours; dark mode keeps Premium's tints. */
 
 /* ── the list: flat rows, no cards ── */
 html.pboard body.on-board main{padding:0 0 96px;}
-@media(min-width:900px){html.pboard body.on-board main{display:block;padding:0 0 96px;}}
-html.pboard .row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"left acts";gap:0 10px;align-items:center;margin:0;padding:9px 8px 9px 12px;border-radius:0;background:var(--card);border-bottom:1px solid var(--line);box-shadow:none;contain-intrinsic-size:auto 66px;}
-@media(min-width:900px){html.pboard body.on-board main > .row{margin:0;}}
-html.pboard .row.called{background:var(--call-bg);box-shadow:inset 4px 0 0 var(--c-bg);}
-html.pboard .row.warn,html.pboard .row.ovst{background:var(--amb-bg);box-shadow:inset 4px 0 0 #E0A43A;}
-html.pboard .row.late,html.pboard .row.cmpl{background:var(--bad-bg);box-shadow:inset 4px 0 0 #C9473B;}
+@media(min-width:900px){html.pboard body.on-board main{display:block;padding:0 0 96px;}html.pboard body.on-board main > .row{margin:0;}}
+html.pboard .row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"left acts";gap:0 6px;align-items:center;margin:0;padding:5px 10px;border-radius:0;background:var(--card);border-bottom:1px solid var(--line);box-shadow:none;opacity:1;font-size:14px;line-height:1.35;contain-intrinsic-size:auto 56px;}
 html.pboard .row.flash{box-shadow:inset 4px 0 0 #E0A43A;}
 html.pboard .left{min-width:0;}
 
+/* row colours: Standard's in light mode, Premium's tints in dark */
+html.pboard:not(.dark) .row.called{background:#eaf3fa;}
+html.pboard:not(.dark) .row.warn{background:#fce8b2;}
+html.pboard:not(.dark) .row.late{background:#f4c7c3;}
+html.pboard:not(.dark) .row.done{background:#f3f3f3;}
+html.pboard:not(.dark) .row.cmpl{background:#fce8e6;}
+html.pboard:not(.dark) .row.ovst{background:#fdf0e6;}
+html.pboard:not(.dark) .row.coll{background:#f1f8ee;}
+html.pboard:not(.dark) .row.nosh{background:#f3f3f3;}
+html.pboard:not(.dark) .row.rtc{background:#fdeceb;}
+html.pboard.dark .row.called{background:var(--call-bg);}
+html.pboard.dark .row.warn,html.pboard.dark .row.ovst{background:var(--amb-bg);}
+html.pboard.dark .row.late,html.pboard.dark .row.cmpl,html.pboard.dark .row.rtc{background:var(--bad-bg);}
+html.pboard.dark .row.coll{background:var(--ok-bg);}
+html.pboard.dark .row.done,html.pboard.dark .row.nosh{background:var(--seg);}
+html.pboard .row.done .reg,html.pboard .row.done .l2{text-decoration:line-through;color:var(--ink-3);}
+
 /* line 1: reg · yard · #number ........ name */
-html.pboard .l1{flex-wrap:nowrap;align-items:center;gap:7px;min-width:0;}
+html.pboard .l1{display:flex;flex-wrap:nowrap;align-items:center;gap:6px;min-width:0;}
 html.pboard .l1 > *:not(.pin){flex:none;}
-html.pboard .reg{padding:0;border-radius:0;background:none;color:var(--ink);font:700 18px/1.1 var(--cond);letter-spacing:.04em;}
-html.pboard .row.done .reg{background:none;color:var(--ink-3);}
-html.pboard .row .cat,html.pboard .row .code{padding:2px 6px;font-size:10.5px;}
-html.pboard .row .dn{font:500 13px/1 var(--sans);color:var(--ink-3);}
-html.pboard .pin{flex:1 1 auto;order:0;min-width:0;margin:0;padding:0;text-align:right;font:500 13.5px/1.25 var(--sans);color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+html.pboard .reg{padding:0;border:0;border-radius:0;background:none;color:var(--ink);font:700 16px/1.25 var(--sans);letter-spacing:.4px;}
+html.pboard .row.done .reg{background:none;}
+html.pboard .row .cat,html.pboard .row .code{padding:1px 5px;font-size:10px;}
+html.pboard select.code.pick{height:20px;padding:0 5px;font-size:10px;}
+html.pboard .row .dn{font:400 11px/1 var(--sans);color:var(--ink-2);}
+html.pboard .pin{flex:1 1 auto;order:0;min-width:0;margin:0 0 0 auto;padding-left:4px;text-align:right;font:400 10px/1.3 var(--sans);color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
 /* line 2: car · flight ........ time */
-html.pboard .cl2{display:flex;align-items:baseline;gap:8px;margin-top:5px;font-size:13.5px;line-height:1.3;}
-html.pboard .cl2 .l2a{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-2);}
-html.pboard .cl2 .l2a .mk{color:var(--ink);font-weight:600;}
-html.pboard .cl2 .l2b{flex:none;white-space:nowrap;color:var(--ink-2);}
+html.pboard .cl2{display:flex;align-items:baseline;gap:6px;margin-top:1px;font-size:12px;line-height:1.35;color:var(--ink-2);}
+html.pboard .cl2 .l2a{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+html.pboard .cl2 .l2a .mk{color:var(--ink);font-weight:700;}
+html.pboard .cl2 .l2b{flex:none;white-space:nowrap;}
 html.pboard .cl2 .l2b b{color:var(--ink);}
-html.pboard .cl2 .cat,html.pboard .cl2 .tag{vertical-align:1px;}
-html.pboard .cl2 i.fst{margin:0 0 0 3px;font:700 12.5px/1 var(--sans);font-style:normal;}
-html.pboard .fst{margin-top:3px;font-size:12.5px;}
-html.pboard .l2t{margin-top:5px;}
-html.pboard .l3{margin-top:5px;padding:3px 7px;font-size:12px;}
+html.pboard .cl2 i.fst{margin:0 0 0 3px;font:700 10px/1 var(--sans);font-style:normal;text-transform:uppercase;}
+/* "Called 04:17" as blue words, like Standard (not a chip) */
+html.pboard .cl2 .tag{padding:0;border-radius:0;background:none;color:#1558d6;font:700 12px/1 var(--sans);letter-spacing:0;}
+html.pboard.dark .cl2 .tag{color:#7DB3FF;}
+html.pboard .cl2 .tag.nb{padding:0 5px;border-radius:4px;background:#f9cb9c;color:#7a3e00;}
+html.pboard .cl2 .tag.due{padding:0 5px;border-radius:4px;background:#b42318;color:#fff;}
+html.pboard .fst{margin-top:1px;font-size:11px;}
+html.pboard .l2t{margin-top:2px;}
+html.pboard .l3{margin-top:3px;padding:2px 6px;font-size:11px;}
 
-/* the buttons on the right, in capitals like the old board */
-html.pboard .acts{grid-area:acts;align-self:stretch;grid-auto-columns:52px;gap:4px;margin:0;}
-html.pboard body.picks .acts{grid-auto-columns:46px;gap:4px;}
-html.pboard .acts button{min-height:46px;height:100%;padding:3px 1px;border-radius:9px;font:600 12px/1.1 var(--sans);letter-spacing:.03em;text-transform:uppercase;flex-direction:column;flex-wrap:nowrap;row-gap:1px;}
-html.pboard .acts button.lng{font-size:10.5px;letter-spacing:0;}
-html.pboard .acts button .w{flex-basis:auto;}
-html.pboard .acts button small,html.pboard .acts button em.by{display:block;margin:0;font-size:10px;line-height:1.15;letter-spacing:0;text-transform:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* the buttons on the right, Standard's size and words */
+html.pboard .acts{grid-area:acts;display:grid;align-self:stretch;grid-auto-flow:column;grid-auto-columns:44px;gap:4px;margin:0;}
+html.pboard .acts button{display:flex;flex-direction:column;flex-wrap:nowrap;align-items:center;justify-content:center;row-gap:0;min-width:0;min-height:44px;height:auto;padding:2px 0;border:1px solid var(--btn-line);border-radius:5px;background:var(--btn);color:var(--btn-ink);font:700 9px/1.15 var(--sans);letter-spacing:.4px;text-transform:uppercase;text-align:center;}
+html.pboard .acts button.lng{font-size:8px;letter-spacing:.1px;}
+html.pboard .acts button small{display:block;margin:1px 0 0;font:600 11px/1.1 var(--sans);letter-spacing:0;opacity:1;}
+html.pboard .acts button em.by{display:block;max-width:100%;padding:0 2px;font:600 9px/1.1 var(--sans);font-style:normal;letter-spacing:0;opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 html.pboard .acts button small + em.by::before{content:none;}
+html.pboard:not(.dark) .acts button{border-color:#c4c7cc;background:#fff;color:#5f6368;}
+html.pboard:not(.dark) .acts button.on.s,html.pboard:not(.dark) .acts button.on.k{background:#b6d7a8;border-color:#8fbc7a;color:#274e13;}
+html.pboard:not(.dark) .acts button.on.c{background:#9fc5e8;border-color:#7aa9d4;color:#0b3d78;}
+html.pboard:not(.dark) .acts button.on.x,html.pboard:not(.dark) .acts button.on.n{background:#d9d9d9;border-color:#b7b7b7;color:#3c4043;}
+html.pboard:not(.dark) .acts button.on.r{background:#f4c7c3;border-color:#e09b95;color:#8c1d18;}
+html.pboard:not(.dark) .acts button.on.p{background:#c9daf8;border-color:#9fb9e8;color:#0b3d78;}
+html.pboard:not(.dark) .acts button.on.c.ov{background:#f9cb9c;border-color:#e0aa73;color:#7a3e00;}
+html.pboard:not(.dark) .acts button.on.x.cm{background:#f4c7c3;border-color:#e09b95;color:#8c1d18;}
 
 /* sections as grey bands across the list ("COMING UP  152") */
-html.pboard .sec{margin:0;padding:11px 12px;background:var(--seg);border-bottom:1px solid var(--line);font:700 13px/1 var(--cond);letter-spacing:.09em;color:var(--ink-2);}
+html.pboard .sec{display:flex;align-items:center;margin:0;padding:10px 12px;background:var(--seg);border-bottom:1px solid var(--line);font:700 13px/1 var(--sans);letter-spacing:.09em;color:var(--ink-2);}
 html.pboard .sec b{margin-left:8px;color:inherit;font:inherit;}
-html.pboard .sec span{margin-left:auto;color:var(--ink-3);font:500 12.5px/1 var(--sans);letter-spacing:0;}
+html.pboard .sec span{margin-left:auto;color:var(--ink-3);font:500 12px/1 var(--sans);letter-spacing:0;}
 html.pboard .sec.hot{background:var(--call-bg);color:var(--call-tx);}
 html.pboard .sec.old{background:var(--amb-bg);color:var(--amb-tx);}
