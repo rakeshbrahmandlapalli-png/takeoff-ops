@@ -947,6 +947,8 @@
   // A card per car (Cards or Premium look); isPremium tells the two apart.
   function isCards() { var c = document.documentElement.classList; return c.contains("cards") || c.contains("premium"); }
   function isPremium() { return document.documentElement.classList.contains("premium"); }
+  // Premium Board: Premium with two-line rows (board.css).
+  function isBoard() { return document.documentElement.classList.contains("pboard"); }
   // Booking sites send names in capitals; the Cards look shows them as written ("Senior Miss").
   function niceMake(m) { return m.length <= 3 ? m : nice(m); }
   function sentence(t) { t = String(t || ""); return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase(); }
@@ -1076,6 +1078,13 @@
     if (r.flight_status === "expected" && r.est_time) return '<div class="fst due">Expected ' + esc(r.est_time) + "</div>";
     return "";
   }
+  // Premium Board's drop row: the flight's state as a word beside the times.
+  function flightWord(r) {
+    if (r.flight_status === "landed") return ' <i class="fst land">Landed</i>';
+    if (r.flight_status === "cancelled") return ' <i class="fst stop">Cancelled</i>';
+    if (r.est_time === "DELAY") return ' <i class="fst stop">Delayed</i>';
+    return "";
+  }
   function dropCard(r, cls, overWord, cmpl, canc, over) {
     var booked = r.early ? r.sched_time : (r.sched_time || hhmm(r.return_at) || "—");
     var eta = canc ? "" : r.est_time;
@@ -1085,9 +1094,12 @@
     var times = booked ? '<span class="bk">booked ' + esc(booked) + (eta && eta !== "DELAY" && eta !== booked ? ' &rarr; <b>' + esc(eta) + "</b>" : "") + "</span>" : "";
     return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' +
       '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" + yardChip(r) +
-      catTag(r) + wasTag(r) + '<span class="pin">' + (r.num ? "#" + r.num + " · " : "") + esc(nice(r.name)) + "</span></div>" +
-      '<div class="l2" data-open>' + mid + (mid && times ? " · " : "") + times + "</div>" +
-      flightLine(r) +
+      catTag(r) + wasTag(r) + '<span class="pin">' + (r.num && !isBoard() ? "#" + r.num + " · " : "") + esc(nice(r.name)) + "</span></div>" +
+      // Premium Board: two lines like the old rows, the times on the right of line 2.
+      (isBoard()
+        ? '<div class="l2 cl2" data-open><span class="l2a">' + (r.num ? '<span class="dn">#' + r.num + "</span> " : "") + (mid || "&nbsp;") + '</span><span class="l2b">' + esc(booked || "") +
+          (eta && eta !== "DELAY" && eta !== booked ? ' &rarr; <b>' + esc(eta) + "</b>" : "") + flightWord(r) + "</span></div>"
+        : '<div class="l2" data-open>' + mid + (mid && times ? " · " : "") + times + "</div>" + flightLine(r)) +
       rowTags(r, [flightToCheck(r) ? '<span class="tag ck">' + (/^Not in the timetable/.test(r.flight_note) ? "CHECK MANUALLY"
         : /over 6 h from the booked time/.test(r.flight_note) && r.return_at ? "CHECK FLIGHT · BOOKED " + esc(hhmm(r.return_at)) : "CHECK FLIGHT NO.") + "</span>" : "",
         over ? '<span class="tag ov">OVERSTAY</span>' : "", cmpl ? '<span class="tag cm">COMPLAINT</span>' : "", chargeTag(r).replace(/^ · /, "")]) +
@@ -1156,13 +1168,25 @@
     function b(v, c, label, perm) { return actBtn(r, 'data-pick="' + v + '"', c, label, r.intake === v, r.intake_at, can("intake") && (!perm || can(perm)), r.intake_by); }
     return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' +
       '<div class="rt" data-open><b class="num">' + esc(hhmm(r.drop_at) || "—") + "</b><small>Drop-off</small></div>" +
+      (isBoard() ? pickLinesBoard(r) :
       '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" +
       (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + catTag(r) + '<span class="pin">' + esc(nice(r.name)) + "</span></div>" +
       // Just the make on the row; the full car and booking ref are in the car's panel.
       '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(niceMake(makeOnly(r.make))) + "</span>" : "") + '<span class="dp">' + (makeOnly(r.make) ? " · " : "") + "drop " + esc(hhmm(r.drop_at) || "—") + "</span>" + (S.ptUnsaved[r.id] && r.pt_at ? ' · <span class="tag due">PT NOT SAVED</span>' : "") + (r.pick_called ? ' · <span class="tag' + (r.pick_called === "New Booking" ? ' nb">NEW BOOKING' : '">' + esc(r.pick_called)) + "</span> " + esc(hhmm(r.pick_called_at)) : "") + "</span></div>" +
-      noteLine(r) + "</div>" +
+      noteLine(r) + "</div>") +
       '<div class="acts">' + b("Collected", "k", "COLL") + b("No Show", "n", "NO SHOW") + b("RTC", "r", "RTC", "rtc") +
       actBtn(r, "data-pt", "p", "PT", !!r.pt_at, r.pt_at, can("intake"), r.pt_by) + "</div></div>";
+  }
+
+  // Premium Board's two-line pick row: plate and name, then number, tag, car and drop time.
+  function pickLinesBoard(r) {
+    var mk = makeOnly(r.make) ? '<span class="mk">' + esc(niceMake(makeOnly(r.make))) + "</span>" : "";
+    var extra = (S.ptUnsaved[r.id] && r.pt_at ? ' <span class="tag due">PT NOT SAVED</span>' : "") +
+      (r.pick_called ? ' <span class="tag' + (r.pick_called === "New Booking" ? ' nb">NEW BOOKING' : '">' + esc(r.pick_called)) + "</span>" : "");
+    return '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" +
+      '<span class="pin">' + esc(nice(r.name)) + "</span></div>" +
+      '<div class="l2 cl2 num" data-open><span class="l2a">' + (r.num ? '<span class="dn">#' + r.num + "</span> " : "") + catTag(r) + (mk ? " " + mk : "") + extra +
+      '</span><span class="l2b">drop ' + esc(hhmm(r.drop_at) || "—") + "</span></div>" + noteLine(r) + "</div>";
   }
 
   function rowOf(el) { var c = el.closest("[data-id]"); return c ? S.rows.filter(function (r) { return r.id === c.dataset.id; })[0] : null; }
@@ -2999,13 +3023,15 @@
     if (t) t.setAttribute("content", short);
 
     // The look is the company's choice, in its brand (Clients → Edit → LOOK):
-    // theme "pro" wears pro.css, "cards" cards.css, "premium" premium.css, none is Standard.
+    // theme "pro" wears pro.css, "cards" cards.css, "premium" premium.css, "board" premium.css + board.css, none is Standard.
     // Cards and Premium share the card-per-car layout (isCards) but each wears
     // only its own stylesheet: html.cards → cards.css, html.premium → premium.css.
-    var premium = b.theme === "premium", cards = b.theme === "cards", pro = b.theme === "pro" || cards || premium;
+    // Premium Board is Premium plus board.css (html.premium + html.pboard).
+    var board = b.theme === "board", premium = b.theme === "premium" || board, cards = b.theme === "cards", pro = b.theme === "pro" || cards || premium;
     document.documentElement.classList.toggle("pro", b.theme === "pro");
     document.documentElement.classList.toggle("cards", cards);
     document.documentElement.classList.toggle("premium", premium);
+    document.documentElement.classList.toggle("pboard", board);
     var mark = String(b.mark || short.charAt(0) || "P").slice(0, 2);
     // Only the wordmark and the board button. NOT ".brand" on its own: the
     Array.prototype.forEach.call(document.querySelectorAll("span.brand, .tobrand"), function (el) {
@@ -3272,8 +3298,8 @@
   }
   // ── Clients (product owner only, database part 19) ──
   // Counts only: this page never sees a client's customers.
-  // The looks a client's app can wear (brand.theme): "pro" is pro.css, "cards" is cards.css, "premium" is premium.css (three separate stylesheets).
-  var LOOKS = [["", "Standard"], ["pro", "Airport Parking Bay UI"], ["cards", "Cards (light and dark)"], ["premium", "Premium UI"]];
+  // The looks a client's app can wear (brand.theme): "pro" is pro.css, "cards" is cards.css, "premium" is premium.css, "board" is premium.css + board.css.
+  var LOOKS = [["", "Standard"], ["pro", "Airport Parking Bay UI"], ["cards", "Cards (light and dark)"], ["premium", "Premium UI"], ["board", "Premium Board"]];
   function lookName(b) { var l = LOOKS.filter(function (x) { return x[0] === ((b && b.theme) || ""); })[0]; return l ? l[1] : "Standard"; }
   function renderClients() {
     if (S.clients === undefined) { S.clients = null; loadClients(); }

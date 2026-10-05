@@ -347,11 +347,11 @@ await scenario(async () => {
 await scenario(async () => {
   const page = await phone(browser, apbDb("premium"), { width: 360 });
   await open(page); await sleep(300);
-  const look = await page.evaluate(() => ({ cards: document.documentElement.classList.contains("cards"), premium: document.documentElement.classList.contains("premium"),
+  const look = await page.evaluate(() => ({ cards: document.documentElement.classList.contains("cards"), premium: document.documentElement.classList.contains("premium"), board: document.documentElement.classList.contains("pboard"),
     pro: document.documentElement.classList.contains("pro"), head: document.getElementById("cHead").innerText, shiftBtn: !document.getElementById("shiftBtn").classList.contains("hidden"),
     tile: getComputedStyle(document.querySelector("#tally button")).backgroundColor, num: getComputedStyle(document.querySelector("#tally b")).color,
     underline: getComputedStyle(document.querySelector('#kindSeg [aria-pressed="true"]')).borderBottomColor, bar: getComputedStyle(document.querySelector(".bar")).backgroundColor, tabs: document.getElementById("tabTodo").textContent }));
-  check("Premium: switched on by the brand, its own look only (not Cards, not Airport Parking Bay UI)", look.premium && !look.cards && !look.pro, look);
+  check("Premium: switched on by the brand, its own look only (not Cards, not Airport Parking Bay UI)", look.premium && !look.cards && !look.pro && !look.board, look);
   check("Premium: the title bar names the company, who is on and when it updated", /Parking Bay/.test(look.head) && /RAKESH · Owner/.test(look.head) && !/Operations/i.test(look.head) && /Updated \d\d:\d\d/.test(look.head), look.head);
   check("Premium: a navy title bar whatever the brand's text colour", look.bar === "rgb(14, 63, 126)", look.bar);
   check("Premium: white tiles with dark figures, brand-blue active tab underline", look.tile === "rgba(0, 0, 0, 0)" && look.num === "rgb(17, 24, 39)" && look.underline === "rgb(21, 96, 189)", look);
@@ -379,6 +379,24 @@ await scenario(async () => {
   await page.click("#tallyFold"); await sleep(300);
   check("Premium: tapping the summary brings the numbers back", await page.isVisible("#tally") && await page.evaluate(() => localStorage.getItem("takeoff_tally_folded") === null));
   check("Premium: no errors", page.__errors.length === 0, page.__errors);
+});
+
+// Premium Board: Premium with two-line rows like the old board.
+await scenario(async () => {
+  const page = await phone(browser, apbDb("board"), { width: 360 });
+  await open(page); await sleep(300);
+  const look = await page.evaluate(() => { const c = document.documentElement.classList, row = document.querySelector('.row[data-id="b1"]');
+    const l = row.querySelector(".left").getBoundingClientRect(), a = row.querySelector(".acts").getBoundingClientRect();
+    return { premium: c.contains("premium"), board: c.contains("pboard"), cards: c.contains("cards"), pro: c.contains("pro"), head: !!document.querySelector("#cHead:not(.hidden)"),
+      h: Math.round(row.getBoundingClientRect().height), beside: a.left >= l.right - 1, name: row.querySelector(".pin").textContent, l2: row.querySelector(".l2").textContent }; });
+  check("Premium Board: Premium's look plus the board rows, nothing else", look.premium && look.board && !look.cards && !look.pro && look.head, look);
+  check("Premium Board: two-line rows like the old board, buttons beside the car", look.beside && look.h <= 80, look);
+  check("Premium Board: the name beside the plate, the number and car on line 2", /Senior Miss/.test(look.name) && !/#1/.test(look.name) && /#1/.test(look.l2) && /U22312/.test(look.l2), look);
+  check("Premium Board: no sideways scrolling on a 360 px phone", await noSideScroll(page));
+  await page.click("#kindSeg [data-kind=picks]"); await page.waitForSelector('.row[data-id="p1"]'); await sleep(200);
+  const pk = await page.evaluate(() => { const row = document.querySelector('.row[data-id="p1"]'); return { h: Math.round(row.getBoundingClientRect().height), name: row.querySelector(".pin").textContent, l2: row.querySelector(".l2").textContent, coll: row.querySelector('[data-pick="Collected"]').textContent }; });
+  check("Premium Board: picks on two lines, drop time on line 2, the short Coll button", pk.h <= 80 && /Atanasov/.test(pk.name) && /#1/.test(pk.l2) && /drop \d\d:\d\d/.test(pk.l2) && pk.coll === "Coll", pk);
+  check("Premium Board: no errors", page.__errors.length === 0, page.__errors);
 });
 
 // 2. DROPS board
@@ -713,9 +731,12 @@ await scenario(async () => {
   await page.click("#panelBody [data-close]");
   check("Parking Ops: each client card says which look it has", /Standard/.test(await text(page, ".client")));
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
-  check("Parking Ops: the client editor offers the four looks", (await page.locator("#clLook option").allInnerTexts()).join("|") === "Standard|Airport Parking Bay UI|Cards (light and dark)|Premium UI");
+  check("Parking Ops: the client editor offers the five looks", (await page.locator("#clLook option").allInnerTexts()).join("|") === "Standard|Airport Parking Bay UI|Cards (light and dark)|Premium UI|Premium Board");
   await page.selectOption("#clLook", "premium"); await page.click("#clGo"); await sleep(400);
   check("Parking Ops: choosing Premium UI saves theme premium", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "premium"), db.clientSaves);
+  await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
+  await page.selectOption("#clLook", "board"); await page.click("#clGo"); await sleep(400);
+  check("Parking Ops: choosing Premium Board saves theme board", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "board"), db.clientSaves);
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
   await page.selectOption("#clLook", "pro"); await page.click("#clGo"); await sleep(400);
   check("Parking Ops: choosing Airport Parking Bay UI saves theme pro", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "pro"), db.clientSaves);
