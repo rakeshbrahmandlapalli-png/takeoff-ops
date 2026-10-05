@@ -1,5 +1,10 @@
 -- Parking Ops — database part 64: "Swipe instead of buttons" (Settings).
 --
+-- NOTE: superseded before release. The app now lets each person choose their
+-- swipe step and whether to hide the buttons on their own phone (Menu →
+-- Display), so companies.swipe_only and set_swipe_only() are not used. Both
+-- are harmless (off by default) and were left in place.
+--
 -- In the Premium looks a bongo driver swipes a drop right to mark it SENT,
 -- the office CALLED, the terminal CLEAR. With this switched on, those three
 -- roles see no SENT / CALLED / CLEAR buttons on drops: they swipe, the row

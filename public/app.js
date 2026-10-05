@@ -3748,7 +3748,7 @@
     }
     var hrs = []; for (var h = 0; h <= 24; h++) hrs.push([h, hourName(h)]);
     var perDay = creditGuess(T);
-    return swipeSettingHtml() + '<div class="box" style="padding:14px;max-width:560px"><strong>Flight checks</strong>' +
+    return '<div class="box" style="padding:14px;max-width:560px"><strong>Flight checks</strong>' +
       sel("enabled", [["true", "On"], ["false", "Off: no automatic checks"]], "Automatic checks") +
       (String(T.enabled) === "false" ? "" :
         '<div class="section-label">Live landing times (FlightRadar24)</div>' +
@@ -3778,27 +3778,6 @@
     S.company.overstay_rate = r.data; toast(r.data ? "Saved: " + money(r.data) + " a day" : "Overstay charges off"); render();
   }
   // Owner only: the company's own data, to keep a copy outside the app.
-  // Settings → swipe instead of buttons (Premium looks).
-  function swipeSettingHtml() {
-    if (!isPremium()) return "";
-    var on = !!(S.company && S.company.swipe_only);
-    return '<div class="box" style="padding:14px;margin-bottom:14px;max-width:560px"><strong>Swipe instead of buttons</strong>' +
-      '<p class="note">On drops, swipe a car right to mark it: bongo drivers SENT, the office CALLED, the terminal CLEAR. ' +
-      "Switch the buttons off and those three see just what's done on each row; tapping the reg still opens the car with the buttons, to undo. Owners and managers keep their buttons, and picks keep theirs.</p>" +
-      '<div class="pseg swipeset">' + [["0", "Buttons and swipe"], ["1", "Swipe only"]].map(function (x) {
-        var sel = (x[0] === "1") === on;
-        return '<button type="button" data-swipeonly="' + x[0] + '" class="' + (sel ? "on" : "") + '" aria-pressed="' + sel + '">' + x[1] + "</button>";
-      }).join("") + "</div></div>";
-  }
-  async function saveSwipeOnly(btn, on) {
-    if (!!(S.company && S.company.swipe_only) === on) return;
-    btn.disabled = true;
-    var r = await sb.rpc("set_swipe_only", { p_on: on });
-    btn.disabled = false;
-    if (r.error) { toast(/set_swipe_only/.test(r.error.message) ? "This needs database part 64 first." : r.error.message, true); return; }
-    S.company.swipe_only = on; render();
-    toast(on ? "Swipe only: drivers, office and terminal swipe drops; buttons are in the car's panel." : "Buttons are back on every row.");
-  }
   function backupHtml() {
     if (!S.me || S.me.role !== "owner") return "";
     return '<div class="box" style="padding:14px;margin-top:14px;max-width:560px"><strong>Backup</strong>' +
@@ -4057,7 +4036,8 @@
     if (t.dataset.savept !== undefined) return savePtNumber(t);
     if (t.dataset.backup !== undefined) return downloadBackup(t);
     if (t.dataset.saverate !== undefined) return saveOverstayRate(t);
-    if (t.dataset.swipeonly) return saveSwipeOnly(t, t.dataset.swipeonly === "1");
+    if (t.dataset.swipestep) { setSwipeChoice(t.dataset.swipestep); render(); return openMenu(); }
+    if (t.dataset.swipeonlyme) { setSwipeOnlyChoice(t.dataset.swipeonlyme === "1"); render(); return openMenu(); }
     if (t.dataset.view) return go(t.dataset.view);
     if (t.id === "menuBtn" || t.closest("#cHead")) return openMenu();
     if (t.id === "shiftBtn" || t.closest("#cShift")) return openShiftPick();
@@ -4250,9 +4230,8 @@
         (sh.archived_at ? '<button type="button" data-unarchive="' + sh.id + '">' + menuIcon("box") + "<span>Bring back to the list</span></button>"
           : '<button type="button" data-archivesheet="' + sh.id + '">' + menuIcon("box") + "<span>Archive this sheet</span></button>") + "</div>";
     }
-    h += modeHtml() + group("YOU", ["me"]);
-    if (sh && can("import")) h += '<div class="menu-danger"><button type="button" class="danger" data-deletesheet="' + sh.id + '">' + menuIcon("bin") + "<span>Delete this sheet</span></button>" +
-      '<p class="hint">Only for a sheet imported by mistake. It asks first, and only works if nobody has tapped, set a yard or typed a note on it.</p></div>';
+    h += modeHtml() + swipeMenuHtml() + group("YOU", ["me"]);
+    if (sh && can("import")) h += '<div class="menu-danger"><button type="button" class="danger" data-deletesheet="' + sh.id + '">' + menuIcon("bin") + "<span>Delete this sheet</span></button></div>";
     return h + '<div class="pbtns"><button type="button" data-closemenu>Close</button></div>';
   }
   // Refresh: the button, and (Premium looks) pulling the board down from the top.
@@ -4263,18 +4242,42 @@
   }
 
   // ── Premium looks: swipe right on a drop, and pull down to refresh ──
-  // A swipe marks the car with the one step this person does: a bongo driver
-  // SENT, the office CALLED, the terminal CLEAR. It only ever marks: a car
-  // already marked is left alone (undo stays a tap on the button). Picks
-  // don't swipe. Other roles (owner, manager, view) tap as before.
-  var SWIPE_ACT = { bongo: ["sent", "Sent", "sent_at"], office: ["called", "Called", "called_at"], terminal: ["clear", "Clear", "cleared_at"] };
+  // A swipe right marks the car with the step this person chooses on their
+  // own phone (Menu → Display → Swipe right on drops): Sent, Called or Clear,
+  // starting from their role (bongo Sent, office Called, terminal Clear;
+  // others Off). It only ever marks: a car already marked is left alone
+  // (undo stays a tap on the button). Picks don't swipe.
+  var SWIPE_STEPS = { sent: ["sent", "Sent", "sent_at"], called: ["called", "Called", "called_at"], clear: ["clear", "Clear", "cleared_at"] };
+  var SWIPE_ROLE = { bongo: "sent", office: "called", terminal: "clear" };
+  var SWIPE_KEY = "takeoff_swipe", SWIPE_ONLY_KEY = "takeoff_swipe_only";
   var SWIPE_AT = 90, PULL_AT = 64, sw = null;
-  // Settings → "Swipe instead of buttons": the roles that swipe see no
-  // SENT / CALLED / CLEAR buttons on drops (Premium looks); the row shows
-  // what is done, and the car's panel keeps the buttons to undo.
+  function swipeChoice() {
+    var v = null; try { v = localStorage.getItem(SWIPE_KEY); } catch (e) {}
+    if (v !== "off" && !SWIPE_STEPS[v]) v = (S.me && SWIPE_ROLE[S.me.role]) || "off";
+    return v !== "off" && !can(v) ? "off" : v;
+  }
+  function setSwipeChoice(v) { try { localStorage.setItem(SWIPE_KEY, v); } catch (e) {} }
+  function swipeOnlyChoice() { try { return localStorage.getItem(SWIPE_ONLY_KEY) === "1"; } catch (e) { return false; } }
+  function setSwipeOnlyChoice(on) { try { if (on) localStorage.setItem(SWIPE_ONLY_KEY, "1"); else localStorage.removeItem(SWIPE_ONLY_KEY); } catch (e) {} }
+  // "Swipe only" (this person's choice): no SENT / CALLED / CLEAR buttons on
+  // drops; the row shows what is done, and the car's panel keeps the buttons.
   function swipeOnly() {
     var sh = sheet();
-    return !!(isPremium() && S.company && S.company.swipe_only && S.me && SWIPE_ACT[S.me.role] && sh && sh.kind === "drops");
+    return !!(isPremium() && S.me && swipeChoice() !== "off" && swipeOnlyChoice() && sh && sh.kind === "drops");
+  }
+  // Menu → Display (Premium looks): this phone's swipe step and buttons.
+  function swipeMenuHtml() {
+    if (!isPremium() || S.platform) return "";
+    var c = swipeChoice(), only = swipeOnlyChoice();
+    var opts = [["off", "Off"]].concat(["sent", "called", "clear"].filter(can).map(function (k) { return [k, SWIPE_STEPS[k][1]]; }));
+    return '<label>SWIPE RIGHT ON DROPS</label><div class="pseg mode swipestep">' + opts.map(function (x) {
+        return '<button type="button" data-swipestep="' + x[0] + '" class="' + (c === x[0] ? "on" : "") + '" aria-pressed="' + (c === x[0]) + '">' + x[1] + "</button>";
+      }).join("") + "</div>" +
+      (c === "off" ? '<p class="hint">Pick the step a swipe right marks on this phone.</p>' :
+        '<label>BUTTONS ON DROPS</label><div class="pseg mode swipebtns">' + [["0", "Show"], ["1", "Hide · swipe only"]].map(function (x) {
+          var sel = (x[0] === "1") === only;
+          return '<button type="button" data-swipeonlyme="' + x[0] + '" class="' + (sel ? "on" : "") + '" aria-pressed="' + sel + '">' + x[1] + "</button>";
+        }).join("") + '</div><p class="hint">Just for you, on this phone. With the buttons hidden, tap the reg to undo.</p>');
   }
   function stepStatus(r) {
     var parts = [["sent_at", "sent_by", "Sent", "s"], ["called_at", "called_by", r.called_word === "Overstay" ? "Overstay" : "Called", "c"], ["cleared_at", "cleared_by", r.clear_word === "COMPLAINT" ? "Complaint" : "Clear", "x"]]
@@ -4285,9 +4288,9 @@
     return '<div class="acts steps" data-open>' + (parts.join("") || '<span class="st none">Swipe ›</span>') + "</div>";
   }
   function swipeAction(row) {
-    var sh = sheet(), a = S.me && SWIPE_ACT[S.me.role];
-    if (!row || !a || !sh || sh.kind !== "drops" || S.view !== "board" || !can(a[0])) return null;
-    return a;
+    var sh = sheet(), c = S.me ? swipeChoice() : "off";
+    if (!row || c === "off" || !sh || sh.kind !== "drops" || S.view !== "board") return null;
+    return SWIPE_STEPS[c];
   }
   function pullBar() {
     var el = $("ptr");
