@@ -1104,12 +1104,14 @@
       rowTags(r, [flightToCheck(r) ? '<span class="tag ck">' + (/^Not in the timetable/.test(r.flight_note) ? "CHECK MANUALLY"
         : /over 6 h from the booked time/.test(r.flight_note) && r.return_at ? "CHECK FLIGHT · BOOKED " + esc(hhmm(r.return_at)) : "CHECK FLIGHT NO.") + "</span>" : "",
         over ? '<span class="tag ov">OVERSTAY</span>' : "", cmpl ? '<span class="tag cm">COMPLAINT</span>' : "", chargeTag(r).replace(/^ · /, "")]) +
-      earlyLine(r) + noteLine(r) + "</div>" +
-      '<div class="acts">' +
+      earlyLine(r) + noteLine(r) + "</div>" + (swipeOnly() ? stepStatus(r) + "</div>" : dropButtons(r, overWord, cmpl) + "</div>");
+  }
+  function dropButtons(r, overWord, cmpl, extra) {
+    return '<div class="acts' + (extra || "") + '"' + (extra ? ' data-id="' + r.id + '"' : "") + ">" +
       actBtn(r, 'data-act="sent"', "s", "SENT", !!r.sent_at, r.sent_at, can("sent"), r.sent_by) +
       actBtn(r, 'data-act="called"', "c" + (overWord ? " ov" : ""), overWord ? "OVERSTAY" : "CALLED", !!r.called_at, r.called_at, can("called"), r.called_by) +
       actBtn(r, 'data-act="clear"', "x" + (cmpl ? " cm" : ""), cmpl ? "COMPLAINT" : "CLEAR", !!r.cleared_at, r.cleared_at, can("clear"), r.cleared_by) +
-      "</div></div>";
+      "</div>";
   }
   function dropRow(r) {
     var cmpl = r.clear_word === "COMPLAINT", bang = /^!/.test(r.note), overWord = r.called_word === "Overstay";
@@ -2288,6 +2290,8 @@
     // A booking can come with no reg: the office can type or correct it, a
     // driver can fill in a missing one when the car comes in.
     var canReg = can("import") || (can("intake") && !r.reg);
+    // Swipe instead of buttons: the buttons live here, to undo or fix a swipe.
+    if (drops && swipeOnly()) h += '<label>STEPS</label>' + dropButtons(r, r.called_word === "Overstay", r.clear_word === "COMPLAINT", " pacts");
     if (canReg) h += '<label for="regText">REG</label><input id="regText" value="' + esc(r.reg) + '" autocomplete="off" autocapitalize="characters" maxlength="12" placeholder="Type the reg">';
     // A customer rang to come back another day: the office changes it here too.
     // The first booked return is kept (WAS tag, charge), and the new day's file
@@ -4032,6 +4036,8 @@
     if (t.dataset.savept !== undefined) return savePtNumber(t);
     if (t.dataset.backup !== undefined) return downloadBackup(t);
     if (t.dataset.saverate !== undefined) return saveOverstayRate(t);
+    if (t.dataset.swipestep) { setSwipeChoice(t.dataset.swipestep); render(); return openMenu(); }
+    if (t.dataset.swipeonlyme) { setSwipeOnlyChoice(t.dataset.swipeonlyme === "1"); render(); return openMenu(); }
     if (t.dataset.view) return go(t.dataset.view);
     if (t.id === "menuBtn" || t.closest("#cHead")) return openMenu();
     if (t.id === "shiftBtn" || t.closest("#cShift")) return openShiftPick();
@@ -4080,7 +4086,7 @@
     if (r && t.dataset.addflight !== undefined) return openQuickFlight(r, S.view === "flights");
     if (t.dataset.fillflights !== undefined) { var m0 = missingFlights()[0]; if (m0) openQuickFlight(m0, true); return; }
     if (r && t.dataset.open !== undefined) return openPanel(r);
-    if (r && t.dataset.act) return tapDrop(r, t.dataset.act);
+    if (r && t.dataset.act) { if (t.closest(".pacts") && $("panel").open) $("panel").close(); return tapDrop(r, t.dataset.act); }
     if (r && t.dataset.pick) return tapPick(r, "intake", t.dataset.pick);
     if (r && t.dataset.pt !== undefined) {
       if (r.pt_at) return tapPick(r, "pt");
@@ -4224,9 +4230,8 @@
         (sh.archived_at ? '<button type="button" data-unarchive="' + sh.id + '">' + menuIcon("box") + "<span>Bring back to the list</span></button>"
           : '<button type="button" data-archivesheet="' + sh.id + '">' + menuIcon("box") + "<span>Archive this sheet</span></button>") + "</div>";
     }
-    h += modeHtml() + group("YOU", ["me"]);
-    if (sh && can("import")) h += '<div class="menu-danger"><button type="button" class="danger" data-deletesheet="' + sh.id + '">' + menuIcon("bin") + "<span>Delete this sheet</span></button>" +
-      '<p class="hint">Only for a sheet imported by mistake. It asks first, and only works if nobody has tapped, set a yard or typed a note on it.</p></div>';
+    h += modeHtml() + swipeMenuHtml() + group("YOU", ["me"]);
+    if (sh && can("import")) h += '<div class="menu-danger"><button type="button" class="danger" data-deletesheet="' + sh.id + '">' + menuIcon("bin") + "<span>Delete this sheet</span></button></div>";
     return h + '<div class="pbtns"><button type="button" data-closemenu>Close</button></div>';
   }
   // Refresh: the button, and (Premium looks) pulling the board down from the top.
@@ -4237,16 +4242,55 @@
   }
 
   // ── Premium looks: swipe right on a drop, and pull down to refresh ──
-  // A swipe marks the car with the one step this person does: a bongo driver
-  // SENT, the office CALLED, the terminal CLEAR. It only ever marks: a car
-  // already marked is left alone (undo stays a tap on the button). Picks
-  // don't swipe. Other roles (owner, manager, view) tap as before.
-  var SWIPE_ACT = { bongo: ["sent", "Sent", "sent_at"], office: ["called", "Called", "called_at"], terminal: ["clear", "Clear", "cleared_at"] };
+  // A swipe right marks the car with the step this person chooses on their
+  // own phone (Menu → Display → Swipe right on drops): Sent, Called or Clear,
+  // starting from their role (bongo Sent, office Called, terminal Clear;
+  // others Off). It only ever marks: a car already marked is left alone
+  // (undo stays a tap on the button). Picks don't swipe.
+  var SWIPE_STEPS = { sent: ["sent", "Sent", "sent_at"], called: ["called", "Called", "called_at"], clear: ["clear", "Clear", "cleared_at"] };
+  var SWIPE_ROLE = { bongo: "sent", office: "called", terminal: "clear" };
+  var SWIPE_KEY = "takeoff_swipe", SWIPE_ONLY_KEY = "takeoff_swipe_only";
   var SWIPE_AT = 90, PULL_AT = 64, sw = null;
+  function swipeChoice() {
+    var v = null; try { v = localStorage.getItem(SWIPE_KEY); } catch (e) {}
+    if (v !== "off" && !SWIPE_STEPS[v]) v = (S.me && SWIPE_ROLE[S.me.role]) || "off";
+    return v !== "off" && !can(v) ? "off" : v;
+  }
+  function setSwipeChoice(v) { try { localStorage.setItem(SWIPE_KEY, v); } catch (e) {} }
+  function swipeOnlyChoice() { try { return localStorage.getItem(SWIPE_ONLY_KEY) === "1"; } catch (e) { return false; } }
+  function setSwipeOnlyChoice(on) { try { if (on) localStorage.setItem(SWIPE_ONLY_KEY, "1"); else localStorage.removeItem(SWIPE_ONLY_KEY); } catch (e) {} }
+  // "Swipe only" (this person's choice): no SENT / CALLED / CLEAR buttons on
+  // drops; the row shows what is done, and the car's panel keeps the buttons.
+  function swipeOnly() {
+    var sh = sheet();
+    return !!(isPremium() && S.me && swipeChoice() !== "off" && swipeOnlyChoice() && sh && sh.kind === "drops");
+  }
+  // Menu → Display (Premium looks): this phone's swipe step and buttons.
+  function swipeMenuHtml() {
+    if (!isPremium() || S.platform) return "";
+    var c = swipeChoice(), only = swipeOnlyChoice();
+    var opts = [["off", "Off"]].concat(["sent", "called", "clear"].filter(can).map(function (k) { return [k, SWIPE_STEPS[k][1]]; }));
+    return '<label>SWIPE RIGHT ON DROPS</label><div class="pseg mode swipestep">' + opts.map(function (x) {
+        return '<button type="button" data-swipestep="' + x[0] + '" class="' + (c === x[0] ? "on" : "") + '" aria-pressed="' + (c === x[0]) + '">' + x[1] + "</button>";
+      }).join("") + "</div>" +
+      (c === "off" ? "" :
+        '<label>BUTTONS ON DROPS</label><div class="pseg mode swipebtns">' + [["0", "Show"], ["1", "Hide · swipe only"]].map(function (x) {
+          var sel = (x[0] === "1") === only;
+          return '<button type="button" data-swipeonlyme="' + x[0] + '" class="' + (sel ? "on" : "") + '" aria-pressed="' + sel + '">' + x[1] + "</button>";
+        }).join("") + "</div>");
+  }
+  function stepStatus(r) {
+    var parts = [["sent_at", "sent_by", "Sent", "s"], ["called_at", "called_by", r.called_word === "Overstay" ? "Overstay" : "Called", "c"], ["cleared_at", "cleared_by", r.clear_word === "COMPLAINT" ? "Complaint" : "Clear", "x"]]
+      .filter(function (p) { return r[p[0]]; }).map(function (p) {
+        var who = nice(staffName(r[p[1]]).trim().split(/\s+/)[0]);
+        return '<span class="st ' + p[3] + '"><b>' + p[2] + '</b><small class="num">' + esc(hhmm(r[p[0]])) + "</small>" + (who ? "<em>" + esc(who) + "</em>" : "") + "</span>";
+      });
+    return '<div class="acts steps" data-open>' + (parts.join("") || '<span class="st none">Swipe ›</span>') + "</div>";
+  }
   function swipeAction(row) {
-    var sh = sheet(), a = S.me && SWIPE_ACT[S.me.role];
-    if (!row || !a || !sh || sh.kind !== "drops" || S.view !== "board" || !can(a[0])) return null;
-    return a;
+    var sh = sheet(), c = S.me ? swipeChoice() : "off";
+    if (!row || c === "off" || !sh || sh.kind !== "drops" || S.view !== "board") return null;
+    return SWIPE_STEPS[c];
   }
   function pullBar() {
     var el = $("ptr");

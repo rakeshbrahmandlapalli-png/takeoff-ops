@@ -391,8 +391,8 @@ html.premium .actrow:first-child{border-top:0;}
 html.premium .actrow .at{flex:none;width:42px;padding-top:1px;font:600 13px/1.3 var(--sans);color:var(--ink-3);}
 html.premium .actrow strong{font:600 14.5px/1.3 var(--sans);color:var(--ink);}
 html.premium .actrow .note{margin-top:2px;font:500 13px/1.3 var(--sans);color:var(--ink-3);}
-html.premium .pseg.mode button.on{background:var(--pchrome);border-color:var(--pchrome);color:#fff;}
-html.premium.dark .pseg.mode button.on{background:#22314A;border-color:#22314A;}
+html.premium .pseg.mode button.on:not(.nb):not(.cm){background:var(--pchrome);border-color:var(--pchrome);color:#fff;}
+html.premium.dark .pseg.mode button.on:not(.nb):not(.cm){background:#22314A;border-color:#22314A;}
 
 /* ── activity: a dot in the board's button colours ── */
 html.premium .actrow .adot{flex:none;width:9px;height:9px;margin-top:5px;border-radius:50%;background:var(--x-bg);}
@@ -474,3 +474,16 @@ html.premium body.on-board{overscroll-behavior-y:contain;}
 #ptr.go{color:var(--brand,#0e3f7e);}
 #ptr.busy::before{content:"";width:14px;height:14px;margin-right:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:ptrspin .8s linear infinite;}
 @keyframes ptrspin{to{transform:rotate(360deg);}}
+
+/* ── swipe only (Menu → Display, per person): what's done instead of buttons ── */
+html.premium .acts.steps{display:flex;flex-wrap:wrap;align-items:center;gap:6px;cursor:pointer;}
+html.premium .acts.steps .st{display:inline-flex;align-items:baseline;gap:5px;padding:6px 10px;border-radius:9px;background:var(--seg);color:var(--ink-2);font:600 13px/1 var(--sans);}
+html.premium .acts.steps .st small{font:600 12px/1 var(--sans);opacity:.9;}
+html.premium .acts.steps .st em{font:500 12px/1 var(--sans);font-style:normal;opacity:.85;}
+html.premium .acts.steps .st.s{background:var(--s-bg);color:var(--s-tx);}
+html.premium .acts.steps .st.c{background:var(--c-bg);color:var(--c-tx);}
+html.premium .acts.steps .st.x{background:var(--x-bg);color:var(--x-tx);}
+html.premium .acts.steps .st.none{background:none;color:var(--ink-3);font-weight:500;}
+html.premium .acts.pacts{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:8px;margin:0 0 4px;}
+html.premium .acts.pacts button{min-height:52px;height:auto;padding:4px 2px;border-radius:11px;font:600 14.5px/1.1 var(--sans);letter-spacing:0;}
+html.premium .acts.pacts button small,html.premium .acts.pacts button em.by{font-size:11.5px;}

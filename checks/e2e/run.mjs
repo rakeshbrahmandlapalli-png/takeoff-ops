@@ -80,6 +80,7 @@ function rpc(db, fn, a) {
   const row = (id) => db.bookings.find((x) => x.id === id);
   switch (fn) {
     case "me": return db.me;
+    case "set_swipe_only": db.company.swipe_only = !!a.p_on; return !!a.p_on;
     case "admin_clients": return [{ id: "c1", name: "TAKEOFF", slug: "takeoff", yards: ["NB", "S"], brand: { colour: "#F59E0B", host: "takeoff-ops.vercel.app" }, staff: 14, has_owner: true, sheets_7d: 18, cars_7d: 2074, last_activity: now() }];
     case "admin_usage": return { db_bytes: 25709715, store_bytes: 0, store_files: 0, clients: [{ id: "c1", name: "TAKEOFF", cars_30d: 2074, sheets_30d: 18, pt_sets_30d: 134, pt_photos_30d: 4277, fr24_calls_30d: 209, fr24_calls_today: 46, timetable_runs_30d: 148, timetable_last_ok: now(), timetable_last_error: "", activity_30d: 5805 }] };
     case "my_permissions": return Object.fromEntries(["sent", "called", "clear", "yard", "summary", "log", "flights", "rtc", "picksinfo", "import", "staff", "settings", "note", "intake"].map((k) => [k, true]));
@@ -467,6 +468,39 @@ await scenario(async () => {
       check("Swipe (" + role + "): no errors", page.__errors.length === 0, page.__errors);
     });
   }
+  // Each person: Menu → Display → their swipe step, and buttons shown or hidden.
+  await scenario(async () => {
+    const db = apbDb("board"); db.me = { ...db.me, role: "owner" };
+    const page = await phone(browser, db); await open(page); const cdp = await page.context().newCDPSession(page);
+    await page.click("#cHead"); await page.waitForSelector("#menu[open]");
+    const m = await page.evaluate(() => ({ steps: [...document.querySelectorAll("[data-swipestep]")].map((b) => b.textContent), on: (document.querySelector("[data-swipestep].on") || {}).textContent, btns: !!document.querySelector("[data-swipeonlyme]") }));
+    check("Swipe choice: the menu offers Off / Sent / Called / Clear, an owner starts Off", m.steps.join("|") === "Off|Sent|Called|Clear" && m.on === "Off" && !m.btns, m);
+    await page.click('[data-swipestep="clear"]'); await sleep(200);
+    check("Swipe choice: once a step is picked, the buttons choice appears", await page.isVisible("[data-swipeonlyme]") && await page.evaluate(() => localStorage.getItem("takeoff_swipe") === "clear"));
+    await page.keyboard.press("Escape"); await sleep(300);
+    await swipeRow(page, cdp, "b1");
+    check("Swipe choice: an owner who picked Clear swipes to mark CLEAR", db.calls.some((c) => c.fn === "tap_drop" && c.args.p_booking === "b1" && c.args.p_action === "clear"), db.calls.filter((c) => c.fn === "tap_drop"));
+    check("Swipe choice: the buttons stay until this person hides them", (await page.locator('.row[data-id="b2"] [data-act="sent"]').count()) === 1);
+    check("Swipe choice (owner): no errors", page.__errors.length === 0, page.__errors);
+  });
+  await scenario(async () => {
+    const db = apbDb("board"); db.me = { ...db.me, role: "bongo" };
+    const page = await phone(browser, db); await open(page); const cdp = await page.context().newCDPSession(page);
+    await page.click("#cHead"); await page.waitForSelector("#menu[open]");
+    check("Swipe choice: a bongo driver starts on Sent", await page.evaluate(() => (document.querySelector("[data-swipestep].on") || {}).textContent === "Sent"));
+    await page.click('[data-swipeonlyme="1"]'); await sleep(200); await page.keyboard.press("Escape"); await sleep(300);
+    const row = await page.evaluate(() => ({ btns: document.querySelectorAll('#main .row [data-act]').length, b3: (document.querySelector('.row[data-id="b3"] .acts.steps') || {}).textContent || "", b1: (document.querySelector('.row[data-id="b1"] .acts.steps') || {}).textContent || "" }));
+    check("Swipe only (own choice): no buttons on drops, just what's done", row.btns === 0 && /Sent/i.test(row.b3) && /Swipe/.test(row.b1), row);
+    await swipeRow(page, cdp, "b1");
+    check("Swipe only: swiping still marks SENT", db.calls.some((c) => c.fn === "tap_drop" && c.args.p_booking === "b1" && c.args.p_action === "sent"));
+    await page.click('.row[data-id="b2"] .reg'); await page.waitForSelector("#panel[open]");
+    check("Swipe only: the car's panel has the buttons, to undo or fix", (await page.locator("#panel .pacts [data-act]").count()) === 3);
+    await page.click('#panel .pacts [data-act="sent"]'); await sleep(400);
+    check("Swipe only: a step tapped in the panel marks it and closes the panel", db.calls.some((c) => c.fn === "tap_drop" && c.args.p_booking === "b2" && c.args.p_action === "sent") && !(await page.isVisible("#panel")));
+    await page.click("#kindSeg [data-kind=picks]"); await page.waitForSelector('.row[data-id="p1"]');
+    check("Swipe only: picks keep their buttons", (await page.locator('.row[data-id="p1"] [data-pick]').count()) >= 3);
+    check("Swipe only (bongo): no errors", page.__errors.length === 0, page.__errors);
+  });
   await scenario(async () => {
     const db = apbDb("board"); db.me = { ...db.me, role: "owner" };
     const page = await phone(browser, db); await open(page); const cdp = await page.context().newCDPSession(page);
