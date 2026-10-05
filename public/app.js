@@ -956,8 +956,8 @@
   function actBtn(r, attrs, cls, label, on, at, allowed, who) {
     var pro = isCards();
     if (pro && PRO_WORDS[label]) label = PRO_WORDS[label];
-    // Premium's compact pick rows have narrow buttons: the short word, as the old rows had.
-    if (label === "Collected" && isPremium()) label = "Coll";
+    // Premium Board's pick rows have narrow buttons: the short word, as the old rows had.
+    if (label === "Collected" && isBoard()) label = "Coll";
     var name = on && at ? nice(staffName(who).trim().split(/\s+/)[0]) : "";
     return '<button type="button" class="' + cls + (on ? " on" : "") + (label.length > 7 ? " lng" : "") + '" ' + attrs + (allowed ? "" : " disabled") + ">" +
       (pro ? '<span class="w">' + label + "</span>" : label) + (on && at ? '<small class="num">' + esc(hhmm(at)) + "</small>" : "") + (name ? '<em class="by">' + esc(name) + "</em>" : "") + "</button>";
