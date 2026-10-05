@@ -1,0 +1,21 @@
+/* "Premium Board" (Clients → Edit → LOOK), for companies whose brand has
+   theme: "board". It is Premium (premium.css: title bar, DROPS/PICKS tabs,
+   white shift row and numbers, the fold) with denser rows: two lines a car,
+   like the old one-line board. Line 1 the plate and name, line 2 the number,
+   tag and car with the times on the right; the buttons beside the car.
+   app.js puts html.premium AND html.pboard on the page and builds the two
+   lines (isBoard). Everything here sits under html.pboard, so Premium itself
+   never changes when these rows do. */
+
+html.pboard .row{padding:7px 7px 7px 10px;margin:0 6px 5px;border-radius:11px;contain-intrinsic-size:auto 64px;}
+html.pboard .l1{flex-wrap:nowrap;gap:6px;}
+html.pboard .pin{flex:1 1 auto;order:0;margin:0;font-size:14.5px;}
+html.pboard .cl2{display:flex;align-items:baseline;gap:8px;margin-top:4px;font-size:13px;}
+html.pboard .cl2 .l2a{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+html.pboard .cl2 .l2b{flex:none;white-space:nowrap;color:var(--ink-2);}
+html.pboard .cl2 .l2b b{color:var(--ink);}
+html.pboard .cl2 .dn{font:600 12px/1 var(--sans);color:var(--ink-3);}
+html.pboard .cl2 .cat,html.pboard .cl2 .tag{vertical-align:1px;}
+html.pboard .cl2 i.fst{margin:0 0 0 3px;font:700 12.5px/1 var(--sans);font-style:normal;}
+html.pboard .acts button{min-height:44px;}
+html.pboard body:not(.picks) .acts{grid-auto-columns:50px;}

@@ -375,18 +375,3 @@ html.premium .acts button .w{flex-basis:auto;}
 html.premium .acts button small,html.premium .acts button em.by{display:block;margin:0;font-size:10px;line-height:1.15;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 html.premium .acts button small + em.by::before{content:none;}
 @media(min-width:900px){html.premium body.on-board main > .row{margin:0 6px 10px;}}
-
-/* ── two-line rows, like the old ones: plate + name, then the car with the
-   times on the right (app.js builds these lines for Premium) ── */
-html.premium .row{padding:7px 7px 7px 10px;margin:0 6px 5px;border-radius:11px;contain-intrinsic-size:auto 64px;}
-html.premium .l1{flex-wrap:nowrap;gap:6px;}
-html.premium .pin{flex:1 1 auto;order:0;margin:0;font-size:14.5px;}
-html.premium .cl2{display:flex;align-items:baseline;gap:8px;margin-top:4px;font-size:13px;}
-html.premium .cl2 .l2a{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-html.premium .cl2 .l2b{flex:none;white-space:nowrap;color:var(--ink-2);}
-html.premium .cl2 .l2b b{color:var(--ink);}
-html.premium .cl2 .dn{font:600 12px/1 var(--sans);color:var(--ink-3);}
-html.premium .cl2 .cat,html.premium .cl2 .tag{vertical-align:1px;}
-html.premium .cl2 i.fst{margin:0 0 0 3px;font:700 12.5px/1 var(--sans);font-style:normal;}
-html.premium .acts button{min-height:44px;}
-html.premium body:not(.picks) .acts{grid-auto-columns:50px;}
