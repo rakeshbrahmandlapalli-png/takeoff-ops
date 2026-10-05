@@ -417,6 +417,26 @@ await scenario(async () => {
     check("Premium menu and summary: no sideways scrolling, no errors", (await noSideScroll(page)) && page.__errors.length === 0, page.__errors);
 });
 
+// Premium: Flights, Staff, Settings and Archive restyled.
+await scenario(async () => {
+  const db = apbDb("premium");
+  Object.assign(db.bookings.find((b) => b.id === "b1"), { flight_status: "landed", est_time: "22:31" });
+  const page = await phone(browser, db, { width: 360 });
+  await open(page); await sleep(300);
+  const go = async (v) => { await page.click("#cHead"); await page.waitForSelector("#menu[open]"); await page.click('#menuBody [data-view="' + v + '"]'); await sleep(500); };
+  await go("flights");
+  const fl = await page.evaluate(() => { const r = document.querySelector('.row.frow[data-id="b1"]'); return r && { h: Math.round(r.getBoundingClientRect().height), chip: r.querySelector(".l2a").textContent, chipBg: getComputedStyle(r.querySelector(".l2a")).backgroundColor, name: r.querySelector(".pin").textContent, time: r.querySelector(".l2b").textContent }; });
+  check("Premium Flights: a tidy row per flight with a status chip and the times", fl && fl.h <= 80 && /Landed/i.test(fl.chip) && fl.chipBg !== "rgba(0, 0, 0, 0)" && /Senior Miss/.test(fl.name) && /^\d\d:\d\d/.test(fl.time.trim()), fl);
+  await go("staff");
+  const st = await page.evaluate(() => { const row = [...document.querySelectorAll(".staffbox .rowline")].find((r) => r.querySelector(".sbtns")); if (!row) return null;
+    const name = row.querySelector(".grow").getBoundingClientRect(), btns = row.querySelector(".sbtns").getBoundingClientRect();
+    return { below: btns.top >= name.bottom - 1, initial: getComputedStyle(row, "::before").content, oneRow: new Set([...row.querySelectorAll(".sbtns .btn")].map((b) => Math.round(b.getBoundingClientRect().top))).size === 1 }; });
+  check("Premium Staff: the buttons sit under the name (never over it), on one row, with the person's initial", st && st.below && st.oneRow && /"S"/.test(st.initial), st);
+  await go("settings");
+  check("Premium Settings: From and Until side by side", await page.evaluate(() => { const p = document.querySelector(".pair"); if (!p) return false; const f = p.querySelectorAll(".field"); return f.length === 2 && Math.abs(f[0].getBoundingClientRect().top - f[1].getBoundingClientRect().top) < 2; }));
+  check("Premium screens: no sideways scrolling, no errors", (await noSideScroll(page)) && page.__errors.length === 0, page.__errors);
+});
+
 // Premium Board: Premium with two-line rows like the old board.
 await scenario(async () => {
   const page = await phone(browser, apbDb("board"), { width: 360 });
