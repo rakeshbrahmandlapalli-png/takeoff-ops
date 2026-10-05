@@ -595,7 +595,7 @@
     if (s.day === addDaysKey(now, 1)) return "NEXT SHIFT";
     return s.day > now ? "COMING UP" : "PAST SHIFT";
   }
-  // Premium look header: the brand mark, the company, "Operations", who is on and
+  // Premium look header: the brand mark, the company, who is on and
   // their role, and the live "Updated HH:MM". Same mark/colour as every brand.
   function niceRole(role) {
     return { owner: "Owner", manager: "Manager", office: "Office", driver: "Driver" }[role] || "Team";
@@ -605,7 +605,7 @@
     var mark = String((S.company && (S.company.brand || {}).mark) || short.charAt(0) || "P").slice(0, 2);
     return '<span class="ch-mark" aria-hidden="true">' + esc(mark) + '</span>' +
       '<span class="ch-txt"><b>' + esc(short) + '</b>' +
-      '<small>Operations · ' + esc(S.me.name) + ' · ' + esc(niceRole(S.me.role)) + '</small></span>' +
+      '<small>' + esc(S.me.name) + ' · ' + esc(niceRole(S.me.role)) + '</small></span>' +
       '<span class="ch-upd"><i aria-hidden="true"></i>Updated ' + esc(londonParts(new Date()).time) + '</span>';
   }
   function dayShortLabel(key) { return key ? new Date(key + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }) : ""; }

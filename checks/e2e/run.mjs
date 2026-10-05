@@ -351,7 +351,7 @@ await scenario(async () => {
     tile: getComputedStyle(document.querySelector("#tally button")).backgroundColor, num: getComputedStyle(document.querySelector("#tally b")).color,
     underline: getComputedStyle(document.querySelector('#kindSeg [aria-pressed="true"]')).borderBottomColor, bar: getComputedStyle(document.querySelector(".bar")).backgroundColor, tabs: document.getElementById("tabTodo").textContent }));
   check("Premium: switched on by the brand, its own look only (not Cards, not Airport Parking Bay UI)", look.premium && !look.cards && !look.pro, look);
-  check("Premium: the title bar names the company, who is on and when it updated", /Parking Bay/.test(look.head) && /Operations · RAKESH · Owner/.test(look.head) && /Updated \d\d:\d\d/.test(look.head), look.head);
+  check("Premium: the title bar names the company, who is on and when it updated", /Parking Bay/.test(look.head) && /RAKESH · Owner/.test(look.head) && !/Operations/i.test(look.head) && /Updated \d\d:\d\d/.test(look.head), look.head);
   check("Premium: a navy title bar whatever the brand's text colour", look.bar === "rgb(14, 63, 126)", look.bar);
   check("Premium: white tiles with dark figures, brand-blue active tab underline", look.tile === "rgba(0, 0, 0, 0)" && look.num === "rgb(17, 24, 39)" && look.underline === "rgb(21, 96, 189)", look);
   check("Premium: the tab reads 'TO DO (N)' and the navy shift button is gone", /^TO DO \(\d+\)$/.test(look.tabs) && !look.shiftBtn, look);
