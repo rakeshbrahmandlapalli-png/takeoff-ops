@@ -326,6 +326,7 @@ await scenario(async () => {
   check("Cards: the tab reads 'N Waiting for action'", /^\d+ Waiting for action$/.test(card.tabs), card.tabs);
   check("Cards: the bottom bar is there", card.nav === "flex", card);
   check("Cards: no fold control (that is Premium only)", !(await page.isVisible("#tallyFold")));
+  check("Cards: the buttons stay under the car (big cards)", await page.evaluate(() => { const row = document.querySelector('.row[data-id="b1"]'); return row.querySelector(".acts").getBoundingClientRect().top >= row.querySelector(".left").getBoundingClientRect().bottom - 1; }));
   await page.click('#bnav [data-bn="menuBtn"]'); await page.waitForSelector('[data-mode="dark"]');
   await page.click('[data-mode="dark"]'); await sleep(200);
   const dark = await page.evaluate(() => ({ on: document.documentElement.classList.contains("dark"), bg: getComputedStyle(document.body).backgroundColor, kept: localStorage.getItem("takeoff_mode") }));
@@ -365,6 +366,9 @@ await scenario(async () => {
   await page.keyboard.press("Escape"); await sleep(300);
   const lay = await page.evaluate(() => ({ tile: getComputedStyle(document.querySelector("#tally button")).alignItems, name: getComputedStyle(document.querySelector('.row[data-id="b1"] .pin')).textAlign }));
   check("Premium: the numbers sit centred and the name reads from the left", lay.tile === "center" && lay.name === "left", lay);
+  const box = await page.evaluate(() => { const row = document.querySelector('.row[data-id="b1"]'), l = row.querySelector(".left").getBoundingClientRect(), a = row.querySelector(".acts").getBoundingClientRect();
+    return { beside: a.left >= l.right - 1, h: Math.round(row.getBoundingClientRect().height) }; });
+  check("Premium: compact cards, buttons beside the car so more fit on screen", box.beside && box.h <= 110, box);
   check("Premium: a Hide numbers control under the tiles", /Hide numbers/.test(await page.locator("#tallyFold").innerText()) && await page.isVisible("#tally"));
   await page.click("#tallyFold"); await sleep(300);
   const fold = await page.evaluate(() => ({ tally: getComputedStyle(document.getElementById("tally")).display, sum: document.getElementById("tallyFold").innerText, kept: localStorage.getItem("takeoff_tally_folded"), exp: document.getElementById("tallyFold").getAttribute("aria-expanded") }));
