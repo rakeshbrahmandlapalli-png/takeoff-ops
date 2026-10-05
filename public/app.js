@@ -907,7 +907,7 @@
     if (!S.rows.length) return '<div class="msg">No cars on this sheet.</div>';
     if (!rows.length) return '<div class="msg">' + (S.filter === "todo" && !S.q && !S.yardFilter ? "Nothing outstanding." : S.q ? (S.other && S.other.length ? "Not on this sheet. Found on another day below." : searchWords().tight.length >= 3 && S.other ? "Not found on any sheet." : "Not on this sheet.") : "Nothing matches.") + "</div>";
     var draw = sh.kind === "picks" ? pickRow : dropRow;
-    var cardsLook = isCards();
+    var cardsLook = isCards() && !isBoard();   // Premium Board heads its sections like the old board
     return groups.map(function (g) {
       var head = "";
       if (g.title) {
@@ -1094,10 +1094,10 @@
     var times = booked ? '<span class="bk">booked ' + esc(booked) + (eta && eta !== "DELAY" && eta !== booked ? ' &rarr; <b>' + esc(eta) + "</b>" : "") + "</span>" : "";
     return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' +
       '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" + yardChip(r) +
-      catTag(r) + wasTag(r) + '<span class="pin">' + (r.num && !isBoard() ? "#" + r.num + " · " : "") + esc(nice(r.name)) + "</span></div>" +
+      catTag(r) + wasTag(r) + (r.num && isBoard() ? '<span class="dn num">#' + r.num + "</span>" : "") + '<span class="pin">' + (r.num && !isBoard() ? "#" + r.num + " · " : "") + esc(nice(r.name)) + "</span></div>" +
       // Premium Board: two lines like the old rows, the times on the right of line 2.
       (isBoard()
-        ? '<div class="l2 cl2" data-open><span class="l2a">' + (r.num ? '<span class="dn">#' + r.num + "</span> " : "") + (mid || "&nbsp;") + '</span><span class="l2b">' + esc(booked || "") +
+        ? '<div class="l2 cl2" data-open><span class="l2a">' + (mid || "&nbsp;") + '</span><span class="l2b">' + esc(booked || "") +
           (eta && eta !== "DELAY" && eta !== booked ? ' &rarr; <b>' + esc(eta) + "</b>" : "") + flightWord(r) + "</span></div>"
         : '<div class="l2" data-open>' + mid + (mid && times ? " · " : "") + times + "</div>" + flightLine(r)) +
       rowTags(r, [flightToCheck(r) ? '<span class="tag ck">' + (/^Not in the timetable/.test(r.flight_note) ? "CHECK MANUALLY"
@@ -1178,15 +1178,14 @@
       actBtn(r, "data-pt", "p", "PT", !!r.pt_at, r.pt_at, can("intake"), r.pt_by) + "</div></div>";
   }
 
-  // Premium Board's two-line pick row: plate and name, then number, tag, car and drop time.
+  // Premium Board's two-line pick row, like the old board: plate, number, tag and name, then car and drop time.
   function pickLinesBoard(r) {
     var mk = makeOnly(r.make) ? '<span class="mk">' + esc(niceMake(makeOnly(r.make))) + "</span>" : "";
     var extra = (S.ptUnsaved[r.id] && r.pt_at ? ' <span class="tag due">PT NOT SAVED</span>' : "") +
       (r.pick_called ? ' <span class="tag' + (r.pick_called === "New Booking" ? ' nb">NEW BOOKING' : '">' + esc(r.pick_called)) + "</span>" : "");
     return '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" +
-      '<span class="pin">' + esc(nice(r.name)) + "</span></div>" +
-      '<div class="l2 cl2 num" data-open><span class="l2a">' + (r.num ? '<span class="dn">#' + r.num + "</span> " : "") + catTag(r) + (mk ? " " + mk : "") + extra +
-      '</span><span class="l2b">drop ' + esc(hhmm(r.drop_at) || "—") + "</span></div>" + noteLine(r) + "</div>";
+      (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + catTag(r) + '<span class="pin">' + esc(nice(r.name)) + "</span></div>" +
+      '<div class="l2 cl2 num" data-open><span class="l2a">' + (mk ? mk + " · " : "") + "drop " + esc(hhmm(r.drop_at) || "—") + extra + "</span></div>" + noteLine(r) + "</div>";
   }
 
   function rowOf(el) { var c = el.closest("[data-id]"); return c ? S.rows.filter(function (r) { return r.id === c.dataset.id; })[0] : null; }

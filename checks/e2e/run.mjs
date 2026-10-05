@@ -444,14 +444,16 @@ await scenario(async () => {
   const look = await page.evaluate(() => { const c = document.documentElement.classList, row = document.querySelector('.row[data-id="b1"]');
     const l = row.querySelector(".left").getBoundingClientRect(), a = row.querySelector(".acts").getBoundingClientRect();
     return { premium: c.contains("premium"), board: c.contains("pboard"), cards: c.contains("cards"), pro: c.contains("pro"), head: !!document.querySelector("#cHead:not(.hidden)"),
-      h: Math.round(row.getBoundingClientRect().height), beside: a.left >= l.right - 1, name: row.querySelector(".pin").textContent, l2: row.querySelector(".l2").textContent }; });
+      h: Math.round(row.getBoundingClientRect().height), beside: a.left >= l.right - 1, name: row.querySelector(".pin").textContent, l1: row.querySelector(".l1").textContent, l2: row.querySelector(".l2").textContent,
+      flat: getComputedStyle(row).borderRadius === "0px" && getComputedStyle(row).marginLeft === "0px", caps: getComputedStyle(row.querySelector('[data-act="sent"]')).textTransform, sec: (document.querySelector(".sec") || {}).textContent || "" }; });
   check("Premium Board: Premium's look plus the board rows, nothing else", look.premium && look.board && !look.cards && !look.pro && look.head, look);
   check("Premium Board: two-line rows like the old board, buttons beside the car", look.beside && look.h <= 80, look);
-  check("Premium Board: the name beside the plate, the number and car on line 2", /Senior Miss/.test(look.name) && !/#1/.test(look.name) && /#1/.test(look.l2) && /U22312/.test(look.l2), look);
+  check("Premium Board: rows like the old board: number and name on line 1, car and flight on line 2", /Senior Miss/.test(look.name) && !/#1/.test(look.name) && /#1/.test(look.l1) && /U22312/.test(look.l2) && !/#1/.test(look.l2), look);
+  check("Premium Board: flat full-width rows, buttons in capitals, sections like COMING UP 3", look.flat && look.caps === "uppercase" && /^COMING UP\s*\d+/.test(look.sec.trim()), look);
   check("Premium Board: no sideways scrolling on a 360 px phone", await noSideScroll(page));
   await page.click("#kindSeg [data-kind=picks]"); await page.waitForSelector('.row[data-id="p1"]'); await sleep(200);
-  const pk = await page.evaluate(() => { const row = document.querySelector('.row[data-id="p1"]'); return { h: Math.round(row.getBoundingClientRect().height), name: row.querySelector(".pin").textContent, l2: row.querySelector(".l2").textContent, coll: row.querySelector('[data-pick="Collected"]').textContent }; });
-  check("Premium Board: picks on two lines, drop time on line 2, the short Coll button", pk.h <= 80 && /Atanasov/.test(pk.name) && /#1/.test(pk.l2) && /drop \d\d:\d\d/.test(pk.l2) && pk.coll === "Coll", pk);
+  const pk = await page.evaluate(() => { const row = document.querySelector('.row[data-id="p1"]'); return { h: Math.round(row.getBoundingClientRect().height), name: row.querySelector(".pin").textContent, l1: row.querySelector(".l1").textContent, l2: row.querySelector(".l2").textContent, coll: row.querySelector('[data-pick="Collected"]').textContent }; });
+  check("Premium Board: picks on two lines, number on line 1, drop time on line 2, the short Coll button", pk.h <= 80 && /Atanasov/.test(pk.name) && /#1/.test(pk.l1) && /drop \d\d:\d\d/.test(pk.l2) && pk.coll === "Coll", pk);
   check("Premium Board: no errors", page.__errors.length === 0, page.__errors);
 });
 
