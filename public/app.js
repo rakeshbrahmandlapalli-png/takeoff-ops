@@ -952,9 +952,10 @@
   // Booking sites send names in capitals; the Cards look shows them as written ("Senior Miss").
   function niceMake(m) { return m.length <= 3 ? m : nice(m); }
   function sentence(t) { t = String(t || ""); return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase(); }
-  function nice(t) { t = String(t || ""); return isCards() ? t.toLowerCase().replace(/(^|[\s\-'(])([a-z])/g, function (m, a, b) { return a + b.toUpperCase(); }) : t; }
+  // Card looks tidy names to "Senior Miss"; Premium Board keeps them as imported, like Standard.
+  function nice(t) { t = String(t || ""); return isCards() && !isBoard() ? t.toLowerCase().replace(/(^|[\s\-'(])([a-z])/g, function (m, a, b) { return a + b.toUpperCase(); }) : t; }
   function actBtn(r, attrs, cls, label, on, at, allowed, who) {
-    var pro = isCards();
+    var pro = isCards() && !isBoard();   // Premium Board's buttons read like Standard's (COLL, NO SHOW)
     if (pro && PRO_WORDS[label]) label = PRO_WORDS[label];
     // Premium Board's pick rows have narrow buttons: the short word, as the old rows had.
     if (label === "Collected" && isBoard()) label = "Coll";
@@ -1182,7 +1183,7 @@
   function pickLinesBoard(r) {
     var mk = makeOnly(r.make) ? '<span class="mk">' + esc(niceMake(makeOnly(r.make))) + "</span>" : "";
     var extra = (S.ptUnsaved[r.id] && r.pt_at ? ' <span class="tag due">PT NOT SAVED</span>' : "") +
-      (r.pick_called ? ' <span class="tag' + (r.pick_called === "New Booking" ? ' nb">NEW BOOKING' : '">' + esc(r.pick_called)) + "</span>" : "");
+      (r.pick_called ? ' · <span class="tag' + (r.pick_called === "New Booking" ? ' nb">NEW BOOKING' : '">' + esc(r.pick_called)) + "</span> " + esc(hhmm(r.pick_called_at)) : "");
     return '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" +
       (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + catTag(r) + '<span class="pin">' + esc(nice(r.name)) + "</span></div>" +
       '<div class="l2 cl2 num" data-open><span class="l2a">' + (mk ? mk + " · " : "") + "drop " + esc(hhmm(r.drop_at) || "—") + extra + "</span></div>" + noteLine(r) + "</div>";
