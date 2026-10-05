@@ -1,44 +1,57 @@
 /* "Premium Board" (Clients → Edit → LOOK), for companies whose brand has
    theme: "board". It is Premium (premium.css: title bar, DROPS/PICKS tabs,
-   white shift row and numbers, the fold) with denser rows: two lines a car,
-   like the old one-line board. Line 1 the plate and name, line 2 the number,
-   tag and car with the times on the right; the buttons beside the car.
+   white shift row and numbers, the fold) with the jobs laid out like the old
+   board: flat full-width rows with a line between them, the reg in big bold
+   letters, the yard, number and name on line 1, the car, flight and time on
+   line 2, and SENT / CALLED / CLEAR (COLL / NO SHOW / RTC / PT) on the right.
    app.js puts html.premium AND html.pboard on the page and builds the two
    lines (isBoard). Everything here sits under html.pboard, so Premium itself
    never changes when these rows do. */
 
-/* ── the buttons sit on the right, like the old one-line rows ── */
-html.pboard .row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"left acts";gap:0 8px;align-items:center;margin:0 6px 6px;padding:9px 8px 9px 11px;border-radius:12px;contain-intrinsic-size:auto 84px;}
+/* ── the list: flat rows, no cards ── */
+html.pboard body.on-board main{padding:0 0 96px;}
+@media(min-width:900px){html.pboard body.on-board main{display:block;padding:0 0 96px;}}
+html.pboard .row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"left acts";gap:0 10px;align-items:center;margin:0;padding:9px 8px 9px 12px;border-radius:0;background:var(--card);border-bottom:1px solid var(--line);box-shadow:none;contain-intrinsic-size:auto 66px;}
+@media(min-width:900px){html.pboard body.on-board main > .row{margin:0;}}
+html.pboard .row.called{background:var(--call-bg);box-shadow:inset 4px 0 0 var(--c-bg);}
+html.pboard .row.warn,html.pboard .row.ovst{background:var(--amb-bg);box-shadow:inset 4px 0 0 #E0A43A;}
+html.pboard .row.late,html.pboard .row.cmpl{background:var(--bad-bg);box-shadow:inset 4px 0 0 #C9473B;}
+html.pboard .row.flash{box-shadow:inset 4px 0 0 #E0A43A;}
 html.pboard .left{min-width:0;}
-html.pboard .l1{flex-wrap:wrap;gap:4px 5px;min-width:0;}
+
+/* line 1: reg · yard · #number ........ name */
+html.pboard .l1{flex-wrap:nowrap;align-items:center;gap:7px;min-width:0;}
 html.pboard .l1 > *:not(.pin){flex:none;}
-html.pboard .reg{padding:4px 6px 3px;font-size:14.5px;}
-html.pboard .row .cat,html.pboard .row .code{padding:2px 5px;font-size:10px;}
-html.pboard .row .dn{font-size:12px;}
-html.pboard .pin{flex:1 1 100%;order:9;min-width:0;margin:1px 0 0;padding:0;text-align:left;font:600 14px/1.25 var(--sans);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-html.pboard .l2{margin-top:2px;font-size:13px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+html.pboard .reg{padding:0;border-radius:0;background:none;color:var(--ink);font:700 18px/1.1 var(--cond);letter-spacing:.04em;}
+html.pboard .row.done .reg{background:none;color:var(--ink-3);}
+html.pboard .row .cat,html.pboard .row .code{padding:2px 6px;font-size:10.5px;}
+html.pboard .row .dn{font:500 13px/1 var(--sans);color:var(--ink-3);}
+html.pboard .pin{flex:1 1 auto;order:0;min-width:0;margin:0;padding:0;text-align:right;font:500 13.5px/1.25 var(--sans);color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+/* line 2: car · flight ........ time */
+html.pboard .cl2{display:flex;align-items:baseline;gap:8px;margin-top:5px;font-size:13.5px;line-height:1.3;}
+html.pboard .cl2 .l2a{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-2);}
+html.pboard .cl2 .l2a .mk{color:var(--ink);font-weight:600;}
+html.pboard .cl2 .l2b{flex:none;white-space:nowrap;color:var(--ink-2);}
+html.pboard .cl2 .l2b b{color:var(--ink);}
+html.pboard .cl2 .cat,html.pboard .cl2 .tag{vertical-align:1px;}
+html.pboard .cl2 i.fst{margin:0 0 0 3px;font:700 12.5px/1 var(--sans);font-style:normal;}
 html.pboard .fst{margin-top:3px;font-size:12.5px;}
 html.pboard .l2t{margin-top:5px;}
 html.pboard .l3{margin-top:5px;padding:3px 7px;font-size:12px;}
-html.pboard .acts{grid-area:acts;align-self:stretch;grid-auto-columns:54px;gap:5px;margin:0;}
-html.pboard body.picks .acts{grid-auto-columns:46px;gap:4px;}
-html.pboard .acts button{min-height:50px;height:100%;padding:3px 1px;border-radius:9px;font-size:12.5px;line-height:1.1;flex-direction:column;flex-wrap:nowrap;row-gap:1px;}
-html.pboard .acts button.lng{font-size:10.5px;}
-html.pboard .acts button .w{flex-basis:auto;}
-html.pboard .acts button small,html.pboard .acts button em.by{display:block;margin:0;font-size:10px;line-height:1.15;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-html.pboard .acts button small + em.by::before{content:none;}
-@media(min-width:900px){html.pboard body.on-board main > .row{margin:0 6px 10px;}}
 
-/* ── two lines a car ── */
-html.pboard .row{padding:7px 7px 7px 10px;margin:0 6px 5px;border-radius:11px;contain-intrinsic-size:auto 64px;}
-html.pboard .l1{flex-wrap:nowrap;gap:6px;}
-html.pboard .pin{flex:1 1 auto;order:0;margin:0;font-size:14.5px;}
-html.pboard .cl2{display:flex;align-items:baseline;gap:8px;margin-top:4px;font-size:13px;}
-html.pboard .cl2 .l2a{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-html.pboard .cl2 .l2b{flex:none;white-space:nowrap;color:var(--ink-2);}
-html.pboard .cl2 .l2b b{color:var(--ink);}
-html.pboard .cl2 .dn{font:600 12px/1 var(--sans);color:var(--ink-3);}
-html.pboard .cl2 .cat,html.pboard .cl2 .tag{vertical-align:1px;}
-html.pboard .cl2 i.fst{margin:0 0 0 3px;font:700 12.5px/1 var(--sans);font-style:normal;}
-html.pboard .acts button{min-height:44px;}
-html.pboard body:not(.picks) .acts{grid-auto-columns:50px;}
+/* the buttons on the right, in capitals like the old board */
+html.pboard .acts{grid-area:acts;align-self:stretch;grid-auto-columns:52px;gap:4px;margin:0;}
+html.pboard body.picks .acts{grid-auto-columns:46px;gap:4px;}
+html.pboard .acts button{min-height:46px;height:100%;padding:3px 1px;border-radius:9px;font:600 12px/1.1 var(--sans);letter-spacing:.03em;text-transform:uppercase;flex-direction:column;flex-wrap:nowrap;row-gap:1px;}
+html.pboard .acts button.lng{font-size:10.5px;letter-spacing:0;}
+html.pboard .acts button .w{flex-basis:auto;}
+html.pboard .acts button small,html.pboard .acts button em.by{display:block;margin:0;font-size:10px;line-height:1.15;letter-spacing:0;text-transform:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+html.pboard .acts button small + em.by::before{content:none;}
+
+/* sections as grey bands across the list ("COMING UP  152") */
+html.pboard .sec{margin:0;padding:11px 12px;background:var(--seg);border-bottom:1px solid var(--line);font:700 13px/1 var(--cond);letter-spacing:.09em;color:var(--ink-2);}
+html.pboard .sec b{margin-left:8px;color:inherit;font:inherit;}
+html.pboard .sec span{margin-left:auto;color:var(--ink-3);font:500 12.5px/1 var(--sans);letter-spacing:0;}
+html.pboard .sec.hot{background:var(--call-bg);color:var(--call-tx);}
+html.pboard .sec.old{background:var(--amb-bg);color:var(--amb-tx);}

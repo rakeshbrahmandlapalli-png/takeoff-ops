@@ -907,7 +907,7 @@
     if (!S.rows.length) return '<div class="msg">No cars on this sheet.</div>';
     if (!rows.length) return '<div class="msg">' + (S.filter === "todo" && !S.q && !S.yardFilter ? "Nothing outstanding." : S.q ? (S.other && S.other.length ? "Not on this sheet. Found on another day below." : searchWords().tight.length >= 3 && S.other ? "Not found on any sheet." : "Not on this sheet.") : "Nothing matches.") + "</div>";
     var draw = sh.kind === "picks" ? pickRow : dropRow;
-    var cardsLook = isCards();
+    var cardsLook = isCards() && !isBoard();   // Premium Board heads its sections like the old board
     return groups.map(function (g) {
       var head = "";
       if (g.title) {
@@ -1094,10 +1094,10 @@
     var times = booked ? '<span class="bk">booked ' + esc(booked) + (eta && eta !== "DELAY" && eta !== booked ? ' &rarr; <b>' + esc(eta) + "</b>" : "") + "</span>" : "";
     return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' +
       '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" + yardChip(r) +
-      catTag(r) + wasTag(r) + '<span class="pin">' + (r.num && !isBoard() ? "#" + r.num + " · " : "") + esc(nice(r.name)) + "</span></div>" +
+      catTag(r) + wasTag(r) + (r.num && isBoard() ? '<span class="dn num">#' + r.num + "</span>" : "") + '<span class="pin">' + (r.num && !isBoard() ? "#" + r.num + " · " : "") + esc(nice(r.name)) + "</span></div>" +
       // Premium Board: two lines like the old rows, the times on the right of line 2.
       (isBoard()
-        ? '<div class="l2 cl2" data-open><span class="l2a">' + (r.num ? '<span class="dn">#' + r.num + "</span> " : "") + (mid || "&nbsp;") + '</span><span class="l2b">' + esc(booked || "") +
+        ? '<div class="l2 cl2" data-open><span class="l2a">' + (mid || "&nbsp;") + '</span><span class="l2b">' + esc(booked || "") +
           (eta && eta !== "DELAY" && eta !== booked ? ' &rarr; <b>' + esc(eta) + "</b>" : "") + flightWord(r) + "</span></div>"
         : '<div class="l2" data-open>' + mid + (mid && times ? " · " : "") + times + "</div>" + flightLine(r)) +
       rowTags(r, [flightToCheck(r) ? '<span class="tag ck">' + (/^Not in the timetable/.test(r.flight_note) ? "CHECK MANUALLY"
@@ -1178,15 +1178,14 @@
       actBtn(r, "data-pt", "p", "PT", !!r.pt_at, r.pt_at, can("intake"), r.pt_by) + "</div></div>";
   }
 
-  // Premium Board's two-line pick row: plate and name, then number, tag, car and drop time.
+  // Premium Board's two-line pick row, like the old board: plate, number, tag and name, then car and drop time.
   function pickLinesBoard(r) {
     var mk = makeOnly(r.make) ? '<span class="mk">' + esc(niceMake(makeOnly(r.make))) + "</span>" : "";
     var extra = (S.ptUnsaved[r.id] && r.pt_at ? ' <span class="tag due">PT NOT SAVED</span>' : "") +
       (r.pick_called ? ' <span class="tag' + (r.pick_called === "New Booking" ? ' nb">NEW BOOKING' : '">' + esc(r.pick_called)) + "</span>" : "");
     return '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" +
-      '<span class="pin">' + esc(nice(r.name)) + "</span></div>" +
-      '<div class="l2 cl2 num" data-open><span class="l2a">' + (r.num ? '<span class="dn">#' + r.num + "</span> " : "") + catTag(r) + (mk ? " " + mk : "") + extra +
-      '</span><span class="l2b">drop ' + esc(hhmm(r.drop_at) || "—") + "</span></div>" + noteLine(r) + "</div>";
+      (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + catTag(r) + '<span class="pin">' + esc(nice(r.name)) + "</span></div>" +
+      '<div class="l2 cl2 num" data-open><span class="l2a">' + (mk ? mk + " · " : "") + "drop " + esc(hhmm(r.drop_at) || "—") + extra + "</span></div>" + noteLine(r) + "</div>";
   }
 
   function rowOf(el) { var c = el.closest("[data-id]"); return c ? S.rows.filter(function (r) { return r.id === c.dataset.id; })[0] : null; }
@@ -2857,8 +2856,8 @@
       (can("flights") ? '<div class="row-actions"><button type="button" class="btn small" data-filltimes>Fill &amp; check scheduled times</button><button type="button" class="btn small" data-checkflights>Check flights now</button></div>' : "") +
       "</div>" + missingHtml() + manualHtml(manual) + (missingFlights().length || manual.length ? '<div class="sec">WITH FLIGHT NUMBERS</div>' : "");
     return h + (rows.length ? rows.map(function (r) {
-      return '<div class="row' + (r.flight_status === "cancelled" || r.flight_status === "delayed" ? " late" : r.flight_status === "landed" ? " done" : "") + '" data-id="' + r.id + '"><div class="left" data-open><div class="l1"><span class="reg">' + esc(r.flight) + '</span><span class="dn">' + esc(r.reg) + '</span><span class="pin">' + esc(r.name) + "</span></div>" +
-        '<div class="l2 num"><span class="l2a">' + esc(FLIGHT_WORD[r.flight_status] || r.flight_status) + (r.flight_note ? " · " + esc(r.flight_note) : "") + '</span><span class="l2b"> · ' + esc(r.sched_time || hhmm(r.return_at)) +
+      return '<div class="row frow' + (r.flight_status === "cancelled" || r.flight_status === "delayed" ? " late" : r.flight_status === "landed" ? " done" : "") + (r.flight_status ? " fs-" + esc(r.flight_status) : "") + '" data-id="' + r.id + '"><div class="left" data-open><div class="l1"><span class="reg">' + esc(r.flight) + '</span><span class="dn">' + esc(r.reg) + '</span><span class="pin">' + esc(nice(r.name)) + "</span></div>" +
+        '<div class="l2 num"><span class="l2a">' + esc(FLIGHT_WORD[r.flight_status] || r.flight_status) + (r.flight_note ? " · " + esc(r.flight_note) : "") + '</span><span class="l2b">' + (isPremium() ? "" : " · ") + esc(r.sched_time || hhmm(r.return_at)) +
         (r.est_time ? ' &rarr; <span class="eta' + (r.est_time === "DELAY" ? " dly" : "") + '">' + esc(r.est_time) + "</span>" : "") + "</span></div></div></div>";
     }).join("") : '<div class="msg">No flight numbers on this sheet.</div>');
   }
@@ -3608,10 +3607,10 @@
       '<label class="field">Name<input id="newName" maxlength="60" autocomplete="off"></label>' +
       '<label class="field">Role<select id="newRole">' + ["bongo", "terminal", "office", "view"].concat(S.me.role === "owner" || S.me.role === "manager" ? ["manager"] : [], S.me.role === "owner" ? ["owner"] : []).map(function (r) { return '<option value="' + r + '">' + ROLE_LABEL[r] + "</option>"; }).join("") + "</select></label>" +
       '<button class="btn brand" id="addGo">Add and get link</button></form>' +
-      '<div class="box">' + people.map(function (p) {
-        return '<div class="rowline' + (p.active ? "" : " off") + '"><div class="grow"><strong>' + esc(p.name) + '</strong><div class="note">' + esc(ROLE_LABEL[p.role] || p.role) + (p.active ? "" : " · switched off") + "</div></div>" +
-          (p.id === S.me.id ? '<span class="note">You</span>' : (canManage(p) ? '<button type="button" class="btn ghost small" data-manage="' + p.id + '">PIN and access</button>' : "") +
-            (canChange(p) ? '<button type="button" class="btn ghost small" data-reset="' + p.id + '">New link</button><button type="button" class="btn ghost small" data-onoff="' + p.id + '">' + (p.active ? "Switch off" : "Switch on") + "</button>" : "")) + "</div>";
+      '<div class="box staffbox">' + people.map(function (p) {
+        return '<div class="rowline' + (p.active ? "" : " off") + '" data-initial="' + esc((p.name || "?").trim().charAt(0).toUpperCase()) + '"><div class="grow"><strong>' + esc(p.name) + '</strong><div class="note">' + esc(ROLE_LABEL[p.role] || p.role) + (p.active ? "" : " · switched off") + "</div></div>" +
+          (p.id === S.me.id ? '<span class="note">You</span>' : '<div class="sbtns">' + (canManage(p) ? '<button type="button" class="btn ghost small" data-manage="' + p.id + '">PIN and access</button>' : "") +
+            (canChange(p) ? '<button type="button" class="btn ghost small" data-reset="' + p.id + '">New link</button><button type="button" class="btn ghost small" data-onoff="' + p.id + '">' + (p.active ? "Switch off" : "Switch on") + "</button>" : "") + "</div>") + "</div>";
       }).join("") + "</div>";
   }
   async function staffAction(body, busyEl) {
@@ -3749,7 +3748,7 @@
       (String(T.enabled) === "false" ? "" :
         '<div class="section-label">Live landing times (FlightRadar24)</div>' +
         sel("live_every_min", [[10, "Every 10 minutes"], [15, "Every 15 minutes"], [20, "Every 20 minutes"], [30, "Every 30 minutes"], [45, "Every 45 minutes"], [60, "Every hour"], [90, "Every 90 minutes"], [120, "Every 2 hours"]], "Check every") +
-        sel("active_from", hrs.slice(0, 24), "From") + sel("active_to", hrs.slice(1), "Until") +
+        '<div class="pair">' + sel("active_from", hrs.slice(0, 24), "From") + sel("active_to", hrs.slice(1), "Until") + "</div>" +
         sel("before_min", [[30, "30 minutes before landing"], [60, "1 hour before"], [90, "90 minutes before"], [120, "2 hours before"], [180, "3 hours before"], [240, "4 hours before"]], "Start watching a flight") +
         sel("after_hours", [[1, "1 hour after its time"], [2, "2 hours after"], [3, "3 hours after"], [4, "4 hours after"], [5, "5 hours after"], [6, "6 hours after"]], "Give up on a flight not seen") +
         '<div class="section-label">Timetable and cancellations (AeroDataBox)</div>' +

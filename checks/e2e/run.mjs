@@ -417,6 +417,26 @@ await scenario(async () => {
     check("Premium menu and summary: no sideways scrolling, no errors", (await noSideScroll(page)) && page.__errors.length === 0, page.__errors);
 });
 
+// Premium: Flights, Staff, Settings and Archive restyled.
+await scenario(async () => {
+  const db = apbDb("premium");
+  Object.assign(db.bookings.find((b) => b.id === "b1"), { flight_status: "landed", est_time: "22:31" });
+  const page = await phone(browser, db, { width: 360 });
+  await open(page); await sleep(300);
+  const go = async (v) => { await page.click("#cHead"); await page.waitForSelector("#menu[open]"); await page.click('#menuBody [data-view="' + v + '"]'); await sleep(500); };
+  await go("flights");
+  const fl = await page.evaluate(() => { const r = document.querySelector('.row.frow[data-id="b1"]'); return r && { h: Math.round(r.getBoundingClientRect().height), chip: r.querySelector(".l2a").textContent, chipBg: getComputedStyle(r.querySelector(".l2a")).backgroundColor, name: r.querySelector(".pin").textContent, time: r.querySelector(".l2b").textContent }; });
+  check("Premium Flights: a tidy row per flight with a status chip and the times", fl && fl.h <= 80 && /Landed/i.test(fl.chip) && fl.chipBg !== "rgba(0, 0, 0, 0)" && /Senior Miss/.test(fl.name) && /^\d\d:\d\d/.test(fl.time.trim()), fl);
+  await go("staff");
+  const st = await page.evaluate(() => { const row = [...document.querySelectorAll(".staffbox .rowline")].find((r) => r.querySelector(".sbtns")); if (!row) return null;
+    const name = row.querySelector(".grow").getBoundingClientRect(), btns = row.querySelector(".sbtns").getBoundingClientRect();
+    return { below: btns.top >= name.bottom - 1, initial: getComputedStyle(row, "::before").content, oneRow: new Set([...row.querySelectorAll(".sbtns .btn")].map((b) => Math.round(b.getBoundingClientRect().top))).size === 1 }; });
+  check("Premium Staff: the buttons sit under the name (never over it), on one row, with the person's initial", st && st.below && st.oneRow && /"S"/.test(st.initial), st);
+  await go("settings");
+  check("Premium Settings: From and Until side by side", await page.evaluate(() => { const p = document.querySelector(".pair"); if (!p) return false; const f = p.querySelectorAll(".field"); return f.length === 2 && Math.abs(f[0].getBoundingClientRect().top - f[1].getBoundingClientRect().top) < 2; }));
+  check("Premium screens: no sideways scrolling, no errors", (await noSideScroll(page)) && page.__errors.length === 0, page.__errors);
+});
+
 // Premium Board: Premium with two-line rows like the old board.
 await scenario(async () => {
   const page = await phone(browser, apbDb("board"), { width: 360 });
@@ -424,14 +444,16 @@ await scenario(async () => {
   const look = await page.evaluate(() => { const c = document.documentElement.classList, row = document.querySelector('.row[data-id="b1"]');
     const l = row.querySelector(".left").getBoundingClientRect(), a = row.querySelector(".acts").getBoundingClientRect();
     return { premium: c.contains("premium"), board: c.contains("pboard"), cards: c.contains("cards"), pro: c.contains("pro"), head: !!document.querySelector("#cHead:not(.hidden)"),
-      h: Math.round(row.getBoundingClientRect().height), beside: a.left >= l.right - 1, name: row.querySelector(".pin").textContent, l2: row.querySelector(".l2").textContent }; });
+      h: Math.round(row.getBoundingClientRect().height), beside: a.left >= l.right - 1, name: row.querySelector(".pin").textContent, l1: row.querySelector(".l1").textContent, l2: row.querySelector(".l2").textContent,
+      flat: getComputedStyle(row).borderRadius === "0px" && getComputedStyle(row).marginLeft === "0px", caps: getComputedStyle(row.querySelector('[data-act="sent"]')).textTransform, sec: (document.querySelector(".sec") || {}).textContent || "" }; });
   check("Premium Board: Premium's look plus the board rows, nothing else", look.premium && look.board && !look.cards && !look.pro && look.head, look);
   check("Premium Board: two-line rows like the old board, buttons beside the car", look.beside && look.h <= 80, look);
-  check("Premium Board: the name beside the plate, the number and car on line 2", /Senior Miss/.test(look.name) && !/#1/.test(look.name) && /#1/.test(look.l2) && /U22312/.test(look.l2), look);
+  check("Premium Board: rows like the old board: number and name on line 1, car and flight on line 2", /Senior Miss/.test(look.name) && !/#1/.test(look.name) && /#1/.test(look.l1) && /U22312/.test(look.l2) && !/#1/.test(look.l2), look);
+  check("Premium Board: flat full-width rows, buttons in capitals, sections like COMING UP 3", look.flat && look.caps === "uppercase" && /^COMING UP\s*\d+/.test(look.sec.trim()), look);
   check("Premium Board: no sideways scrolling on a 360 px phone", await noSideScroll(page));
   await page.click("#kindSeg [data-kind=picks]"); await page.waitForSelector('.row[data-id="p1"]'); await sleep(200);
-  const pk = await page.evaluate(() => { const row = document.querySelector('.row[data-id="p1"]'); return { h: Math.round(row.getBoundingClientRect().height), name: row.querySelector(".pin").textContent, l2: row.querySelector(".l2").textContent, coll: row.querySelector('[data-pick="Collected"]').textContent }; });
-  check("Premium Board: picks on two lines, drop time on line 2, the short Coll button", pk.h <= 80 && /Atanasov/.test(pk.name) && /#1/.test(pk.l2) && /drop \d\d:\d\d/.test(pk.l2) && pk.coll === "Coll", pk);
+  const pk = await page.evaluate(() => { const row = document.querySelector('.row[data-id="p1"]'); return { h: Math.round(row.getBoundingClientRect().height), name: row.querySelector(".pin").textContent, l1: row.querySelector(".l1").textContent, l2: row.querySelector(".l2").textContent, coll: row.querySelector('[data-pick="Collected"]').textContent }; });
+  check("Premium Board: picks on two lines, number on line 1, drop time on line 2, the short Coll button", pk.h <= 80 && /Atanasov/.test(pk.name) && /#1/.test(pk.l1) && /drop \d\d:\d\d/.test(pk.l2) && pk.coll === "Coll", pk);
   check("Premium Board: no errors", page.__errors.length === 0, page.__errors);
 });
 
