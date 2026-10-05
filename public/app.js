@@ -2932,8 +2932,9 @@
       if (sh.kind === "drops") {
         var d = S.rows;
         var due = d.filter(function (r) { return /£/.test(r.note); }), D = dropsStats();
-        h += '<h2 class="title">' + esc(sheetLabel(sh)) + '</h2><div class="stats"><div class="stat"><span>Cars back</span><strong class="num">' + d.filter(function (r) { return r.cleared_at; }).length + " / " + d.length +
-          '</strong></div><div class="stat"><span>On the way</span><strong class="num">' + d.filter(function (r) { return r.sent_at && !r.cleared_at; }).length +
+        var back = d.filter(function (r) { return r.cleared_at; }).length;
+        h += '<h2 class="title">' + esc(sheetLabel(sh)) + '</h2><div class="stats"><div class="stat' + (isPremium() ? " big" : "") + '"><span>Cars back</span><strong class="num">' + back + " / " + d.length +
+          '</strong>' + progressBar(back, d.length) + '</div><div class="stat"><span>On the way</span><strong class="num">' + d.filter(function (r) { return r.sent_at && !r.cleared_at; }).length +
           '</strong></div><div class="stat"><span>Overstays</span><strong class="num">' + d.filter(function (r) { return r.overstay; }).length +
           '</strong></div><div class="stat"><span>Complaints</span><strong class="num">' + d.filter(function (r) { return r.clear_word === "COMPLAINT" || /^!/.test(r.note); }).length +
           '</strong></div><div class="stat"><span>Morning 06:00–17:30</span><strong class="num">' + D.morning.done + " / " + D.morning.due +
@@ -2942,8 +2943,9 @@
       } else {
         var p = S.rows, hours = {};
         p.filter(function (r) { return r.intake === "Collected"; }).forEach(function (r) { var k = hhmm(r.intake_at).slice(0, 2); hours[k] = (hours[k] || 0) + 1; });
-        h += '<h2 class="title">' + esc(sheetLabel(sh)) + '</h2><div class="stats"><div class="stat"><span>Cars in</span><strong class="num">' + p.filter(function (r) { return r.intake === "Collected"; }).length +
-          '</strong></div><div class="stat"><span>No shows</span><strong class="num">' + p.filter(function (r) { return r.intake === "No Show"; }).length +
+        var cin = p.filter(function (r) { return r.intake === "Collected"; }).length;
+        h += '<h2 class="title">' + esc(sheetLabel(sh)) + '</h2><div class="stats"><div class="stat' + (isPremium() ? " big" : "") + '"><span>Cars in</span><strong class="num">' + cin + " / " + p.length +
+          '</strong>' + progressBar(cin, p.length) + '</div><div class="stat"><span>No shows</span><strong class="num">' + p.filter(function (r) { return r.intake === "No Show"; }).length +
           '</strong></div><div class="stat"><span>RTC</span><strong class="num">' + p.filter(function (r) { return r.intake === "RTC"; }).length +
           '</strong></div><div class="stat"><span>Still to come</span><strong class="num">' + p.filter(function (r) { return !r.intake; }).length + "</strong></div></div>" +
           '<div class="section-label">Cars in by hour</div><div class="box">' + (Object.keys(hours).sort().map(function (k) { return '<div class="rowline"><span class="num grow">' + k + ':00</span><strong class="num">' + hours[k] + "</strong></div>"; }).join("") || '<div class="empty">None yet.</div>') + "</div>";
@@ -2952,12 +2954,56 @@
     if (can("log")) {
       h += '<div class="section-label">Activity</div>';
       if (!S.activity) { loadActivity(); h += '<div class="empty">Loading…</div>'; }
+      else if (isPremium()) h += activityPremiumHtml();
       else h += S.activity.length ? '<div class="box">' + S.activity.map(function (a) {
         return '<div class="rowline"><span class="num note">' + esc(dayShort(a.at)) + " " + esc(hhmm(a.at)) + '</span><div class="grow"><strong>' + esc(a.action) + "</strong>" + (a.reg ? " · " + esc(a.reg) : "") +
           '<div class="note">' + esc(a.staff_name || "System") + (a.value ? " · " + esc(a.value) : "") + "</div></div></div>";
       }).join("") + '</div><div class="row-actions"><button type="button" class="btn ghost small" data-reloadlog>Refresh</button></div>' : '<div class="empty">Nothing yet.</div>';
     }
     return h || '<div class="empty">Nothing to show for your role.</div>';
+  }
+  function progressBar(done, all) {
+    if (!isPremium() || !all) return "";
+    var pc = Math.round(done / all * 100);
+    return '<div class="pbar" role="progressbar" aria-valuemin="0" aria-valuemax="' + all + '" aria-valuenow="' + done + '"><i style="width:' + pc + '%"></i></div><small class="pbar-pc">' + pc + "% done</small>";
+  }
+  // Which part of the work an activity line is about, for the filter chips.
+  var PICK_ACTIONS = { INTAKE: 1, PT: 1, "PT PHOTOS": 1, "PT COPY": 1, "SHORT DATES": 1, "COLLECTION TIME": 1 };
+  function actKind(a) {
+    if (a.action === "STAFF") return "staff";
+    if (a.action === "SETTINGS") return "settings";
+    var sh = a.sheet_id && S.sheets.filter(function (x) { return x.id === a.sheet_id; })[0];
+    if (sh) return sh.kind;
+    if (PICK_ACTIONS[a.action]) return "picks";
+    return a.sheet_id || a.booking_id ? "drops" : "other";
+  }
+  var ACT_FILTERS = [["all", "All"], ["drops", "Drops"], ["picks", "Picks"], ["staff", "Staff"], ["settings", "Settings"]];
+  function activityPremiumHtml() {
+    var f = S.actFilter || "all";
+    return '<div class="actbar"><div class="chips" role="group" aria-label="Show">' + ACT_FILTERS.map(function (x) {
+        return '<button type="button" data-actf="' + x[0] + '" class="' + (f === x[0] ? "on" : "") + '" aria-pressed="' + (f === x[0]) + '">' + x[1] + "</button>";
+      }).join("") + '</div><input type="search" id="actQ" placeholder="Search reg or name" autocomplete="off" aria-label="Search activity" value="' + esc(S.actQ || "") + '"></div>' +
+      '<div id="actList">' + activityListHtml() + '</div><div class="row-actions"><button type="button" class="btn ghost small" data-reloadlog>Refresh</button></div>';
+  }
+  function activityListHtml() {
+    var f = S.actFilter || "all", q = (S.actQ || "").trim().toUpperCase().replace(/\s+/g, "");
+    var rows = S.activity.filter(function (a) {
+      if (f !== "all" && actKind(a) !== f) return false;
+      return !q || [a.reg, a.customer, a.staff_name, a.action, a.value].join(" ").toUpperCase().replace(/\s+/g, "").indexOf(q) >= 0;
+    });
+    if (!rows.length) return '<div class="empty">' + (S.activity.length ? "Nothing matches." : "Nothing yet.") + "</div>";
+    var today = londonParts(new Date()).key, h = "", last = "";
+    rows.forEach(function (a) {
+      var key = londonParts(new Date(a.at)).key;
+      if (key !== last) {
+        if (last) h += "</div>";
+        h += '<div class="actday">' + (key === today ? "Today" : key === addDaysKey(today, -1) ? "Yesterday" : esc(longDay(key))) + '</div><div class="box actbox">';
+        last = key;
+      }
+      h += '<div class="actrow k-' + actKind(a) + '"><span class="num at">' + esc(hhmm(a.at)) + '</span><div class="grow"><strong>' + esc(a.reg ? a.reg + " · " : "") + esc(nice(a.action).replace(/\bPt\b/g, "PT")) + "</strong>" +
+        '<div class="note">' + esc(a.staff_name || "System") + (a.value ? " · " + esc(a.value) : "") + "</div></div></div>";
+    });
+    return h + "</div>";
   }
   async function loadActivity() {
     var r = await sb.from("activity").select("*").order("at", { ascending: false }).limit(200);
@@ -4000,6 +4046,7 @@
     if (t.dataset.resetsettings !== undefined) { S.settingsDraft = Object.assign({}, TIMING_DEFAULT); render(); return; }
     if (t.dataset.filter) { S.filter = t.dataset.filter; render(); return; }
     if (t.closest("#tallyFold")) return toggleTallyFold();
+    if (t.dataset.actf) { S.actFilter = t.dataset.actf; return render(); }
     if (t.dataset.cat) { S.catFilter = S.catFilter === t.dataset.cat ? "" : t.dataset.cat; render(); return; }
     if (t.dataset.tally !== undefined) { S.yardFilter = S.yardFilter === t.dataset.tally ? "" : t.dataset.tally; render(); return; }
     var r = rowOf(t);
@@ -4113,14 +4160,55 @@
       '<button type="button" data-removedlist>Removed cars' + ((S.removed || []).length ? " (" + S.removed.length + ")" : "") + "</button>" +
       (sh.archived_at ? '<button type="button" data-unarchive="' + sh.id + '">Bring back to the list</button>' : '<button type="button" data-archivesheet="' + sh.id + '">Archive this sheet</button>') +
       '<button type="button" class="danger" data-deletesheet="' + sh.id + '">Delete this sheet</button></div>' : "";
+    if (isPremium()) { $("menuBody").innerHTML = premiumMenuHtml(items, sh); if (!$("menu").open) $("menu").showModal(); return; }
     $("menuBody").innerHTML = "<h2>" + esc(S.company.name) + '</h2><p class="sub">' + esc(S.me.name) + " · " + esc(ROLE_LABEL[S.me.role] || S.me.role) + "</p>" +
       '<div class="menu-list">' + items.filter(function (x) { return x[2]; }).map(function (x) {
         return '<button type="button" data-view="' + x[0] + '"' + (S.view === x[0] ? ' aria-current="page"' : "") + ">" + x[1] + "</button>";
       }).join("") + "</div>" + sheetTools + modeHtml() + '<div class="pbtns"><button type="button" data-closemenu>Close</button></div>';
     if (!$("menu").open) $("menu").showModal();
   }
+  // Premium looks: the menu in sections with icons (Today, Office, This sheet,
+  // Display, You), and "Delete this sheet" alone at the bottom, in red.
+  var MENU_ICON = {
+    board: '<path d="M4 6h16M4 12h16M4 18h10"/>',
+    flights: '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>',
+    summary: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',
+    archive: '<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/>',
+    "import": '<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>',
+    staff: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.5 3.2-5.5 6.5-5.5s5.9 2 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.8c1.7.8 2.8 2.6 3 5.2"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+    me: '<circle cx="12" cy="8" r="4"/><path d="M4 21c.8-4 4-6.5 8-6.5s7.2 2.5 8 6.5"/>',
+    add: '<path d="M12 5v14M5 12h14"/>',
+    removed: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+    box: '<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/>',
+    bin: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'
+  };
+  function menuIcon(k) { return '<svg class="mi" viewBox="0 0 24 24" aria-hidden="true">' + (MENU_ICON[k] || "") + "</svg>"; }
+  function premiumMenuHtml(items, sh) {
+    var have = {}; items.forEach(function (x) { if (x[2]) have[x[0]] = x[1]; });
+    var btn = function (k) { return '<button type="button" data-view="' + k + '"' + (S.view === k ? ' aria-current="page"' : "") + ">" + menuIcon(k) + "<span>" + esc(have[k]) + "</span></button>"; };
+    var group = function (title, keys) { keys = keys.filter(function (k) { return have[k]; }); return keys.length ? "<label>" + title + '</label><div class="menu-list">' + keys.map(btn).join("") + "</div>" : ""; };
+    var h = "<h2>" + esc(S.company.name) + '</h2><p class="sub">' + esc(S.me.name) + " · " + esc(ROLE_LABEL[S.me.role] || S.me.role) + "</p>" +
+      group("TODAY", ["board", "flights", "summary"]) + group("OFFICE", ["archive", "import", "staff", "settings"]);
+    if (sh && can("import")) {
+      h += "<label>THIS SHEET · " + esc(sheetLabel(sh)) + '</label><div class="menu-list">' +
+        '<button type="button" data-addcar>' + menuIcon("add") + "<span>Add a car</span></button>" +
+        '<button type="button" data-removedlist>' + menuIcon("removed") + "<span>Removed cars" + ((S.removed || []).length ? " (" + S.removed.length + ")" : "") + "</span></button>" +
+        (sh.archived_at ? '<button type="button" data-unarchive="' + sh.id + '">' + menuIcon("box") + "<span>Bring back to the list</span></button>"
+          : '<button type="button" data-archivesheet="' + sh.id + '">' + menuIcon("box") + "<span>Archive this sheet</span></button>") + "</div>";
+    }
+    h += modeHtml() + group("YOU", ["me"]);
+    if (sh && can("import")) h += '<div class="menu-danger"><button type="button" class="danger" data-deletesheet="' + sh.id + '">' + menuIcon("bin") + "<span>Delete this sheet</span></button>" +
+      '<p class="hint">Only for a sheet imported by mistake. It asks first, and only works if nobody has tapped, set a yard or typed a note on it.</p></div>';
+    return h + '<div class="pbtns"><button type="button" data-closemenu>Close</button></div>';
+  }
   $("menu").addEventListener("click", function (e) { if (outside("menu", e) || e.target.closest("[data-closemenu]")) $("menu").close(); });
   $("shiftPick").addEventListener("click", function (e) { if (outside("shiftPick", e)) $("shiftPick").close(); });
+  // Activity search (Premium looks): only the list redraws, so the keyboard stays up.
+  document.addEventListener("input", function (e) {
+    if (e.target.id !== "actQ" || !S.activity) return;
+    S.actQ = e.target.value; if ($("actList")) $("actList").innerHTML = activityListHtml();
+  });
   // The clock, and the CALLED colours that change with waiting time.
   setInterval(function () {
     if (!S.me) return;

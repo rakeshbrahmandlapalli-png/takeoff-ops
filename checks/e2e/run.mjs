@@ -183,6 +183,8 @@ async function backend(ctx, db) {
       const ids = q.booking_id.slice(4, -1).split(",").map((x) => x.replace(/"/g, ""));
       return reply(200, (db.activity || []).filter((a) => ids.includes(a.booking_id)).sort((x, y) => (x.at < y.at ? 1 : -1)));
     }
+    // Summary → Activity: all activity, newest first.
+    if (p === "/rest/v1/activity") return reply(200, (db.activity || []).slice().sort((x, y) => (x.at < y.at ? 1 : -1)));
     if (p === "/rest/v1/staff") return reply(200, db.staff);
     if (p === "/rest/v1/sheets") return reply(200, db.sheets);
     if (p === "/rest/v1/bookings") {
@@ -379,6 +381,35 @@ await scenario(async () => {
   await page.click("#tallyFold"); await sleep(300);
   check("Premium: tapping the summary brings the numbers back", await page.isVisible("#tally") && await page.evaluate(() => localStorage.getItem("takeoff_tally_folded") === null));
   check("Premium: no errors", page.__errors.length === 0, page.__errors);
+});
+
+// Premium menu and summary: sections with icons, delete on its own, progress bar, activity by day with chips and search.
+await scenario(async () => {
+  const db = apbDb("premium");
+  db.bookings.find((b) => b.id === "b1").cleared_at = now();
+  db.activity = [
+    { at: now(), staff_name: "SUGU", sheet_id: "d0", booking_id: "b3", reg: "DV59ACF", action: "SENT", value: "" },
+    { at: now(), staff_name: "SUGU", sheet_id: "p0", booking_id: "p4", reg: "HJ12PGK", action: "INTAKE", value: "Collected" },
+    { at: new Date(Date.now() - 2 * 864e5).toISOString(), staff_name: "RAKESH", action: "STAFF", value: "PIN changed for Jasnu" },
+  ];
+  const page = await phone(browser, db, { width: 360 });
+  await open(page); await sleep(300);
+  await page.click("#cHead"); await page.waitForSelector("#menu[open]");
+  const menu = await page.evaluate(() => ({ labels: [...document.querySelectorAll("#menuBody > label")].map((l) => l.textContent), icons: document.querySelectorAll("#menuBody .menu-list .mi").length,
+    lastList: [...document.querySelectorAll("#menuBody .menu-list")].pop().textContent, danger: !!document.querySelector("#menuBody .menu-danger [data-deletesheet]"),
+    dangerInList: !!document.querySelector("#menuBody .menu-list [data-deletesheet]") }));
+  check("Premium menu: sections Today, Office, This sheet, Display, You, with icons", ["TODAY", "OFFICE"].every((x) => menu.labels.includes(x)) && menu.labels.some((x) => /^THIS SHEET/.test(x)) && menu.labels.includes("DISPLAY") && menu.labels.includes("YOU") && menu.icons >= 8, menu);
+  check("Premium menu: Delete this sheet sits alone at the bottom, not among the everyday buttons", menu.danger && !menu.dangerInList && /sign out/.test(menu.lastList), menu);
+  await page.click('#menuBody [data-view="summary"]'); await page.waitForSelector(".actrow");
+  const sum = await page.evaluate(() => ({ bar: document.querySelector(".stat.big .pbar i").style.width, pc: document.querySelector(".pbar-pc").textContent, days: [...document.querySelectorAll(".actday")].map((d) => d.textContent), rows: document.querySelectorAll(".actrow").length }));
+  check("Premium summary: Cars back with a progress bar", sum.bar === "33%" && /33% done/.test(sum.pc), sum);
+  check("Premium activity: grouped by day", sum.days.length === 2 && sum.rows === 3, sum);
+  await page.click('[data-actf="picks"]'); await sleep(200);
+  check("Premium activity: the Picks chip shows only picks work", await page.evaluate(() => document.querySelectorAll(".actrow").length === 1 && /HJ12PGK/.test(document.getElementById("actList").textContent)));
+  await page.click('[data-actf="all"]'); await sleep(200);
+  await page.fill("#actQ", "dv59"); await sleep(200);
+  check("Premium activity: search finds by reg and keeps the keyboard up", await page.evaluate(() => document.querySelectorAll(".actrow").length === 1 && document.activeElement && document.activeElement.id === "actQ"));
+  check("Premium menu and summary: no sideways scrolling, no errors", (await noSideScroll(page)) && page.__errors.length === 0, page.__errors);
 });
 
 // Premium Board: Premium with two-line rows like the old board.
