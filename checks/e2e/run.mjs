@@ -437,6 +437,49 @@ await scenario(async () => {
   check("Premium screens: no sideways scrolling, no errors", (await noSideScroll(page)) && page.__errors.length === 0, page.__errors);
 });
 
+// Premium looks: swipe right on a drop marks this person's step; pull down refreshes.
+{
+  const touch = (cdp, type, x, y) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+  const drag = async (cdp, x0, y0, x1, y1, end = true) => {
+    await touch(cdp, "touchStart", x0, y0);
+    for (let i = 1; i <= 8; i++) { await touch(cdp, "touchMove", x0 + (x1 - x0) * i / 8, y0 + (y1 - y0) * i / 8); await sleep(16); }
+    if (end) await touch(cdp, "touchEnd");
+  };
+  const swipeRow = async (page, cdp, id, dist = 130) => { const b = await page.locator('.row[data-id="' + id + '"]').boundingBox(); await drag(cdp, 25, b.y + b.height / 2, 25 + dist, b.y + b.height / 2); await sleep(400); };
+  for (const [role, act] of [["bongo", "sent"], ["office", "called"], ["terminal", "clear"]]) {
+    await scenario(async () => {
+      const db = apbDb("board"); db.me = { ...db.me, role };
+      const page = await phone(browser, db); await open(page); const cdp = await page.context().newCDPSession(page);
+      await swipeRow(page, cdp, "b1");
+      check("Swipe: a " + role + " swiping a drop right marks it " + act.toUpperCase(), db.calls.some((c) => c.fn === "tap_drop" && c.args.p_booking === "b1" && c.args.p_action === act && c.args.p_on === true), db.calls.filter((c) => c.fn === "tap_drop"));
+      if (role === "bongo") {
+        const n = db.calls.length;
+        await swipeRow(page, cdp, "b3");   // already SENT
+        check("Swipe: a car already marked is left alone (only marks, never unmarks)", !db.calls.slice(n).some((c) => c.fn === "tap_drop"), db.calls.slice(n));
+        const n2 = db.calls.length;
+        await swipeRow(page, cdp, "b2", 50);   // a short swipe does nothing
+        check("Swipe: a short swipe does nothing", !db.calls.slice(n2).some((c) => c.fn === "tap_drop"));
+        await page.click("#kindSeg [data-kind=picks]"); await page.waitForSelector('.row[data-id="p1"]');
+        const n3 = db.calls.length;
+        await swipeRow(page, cdp, "p1");
+        check("Swipe: picks don't swipe", !db.calls.slice(n3).some((c) => /tap_/.test(c.fn)), db.calls.slice(n3));
+      }
+      check("Swipe (" + role + "): no errors", page.__errors.length === 0, page.__errors);
+    });
+  }
+  await scenario(async () => {
+    const db = apbDb("board"); db.me = { ...db.me, role: "owner" };
+    const page = await phone(browser, db); await open(page); const cdp = await page.context().newCDPSession(page);
+    await swipeRow(page, cdp, "b1");
+    check("Swipe: owners and managers tap as before (no swipe)", !db.calls.some((c) => c.fn === "tap_drop"));
+    const before = (db.bookingGets || []).length;
+    const top = (await page.locator(".row").first().boundingBox()).y + 10;
+    await drag(cdp, 200, top, 200, top + 180); await sleep(900);
+    check("Pull down to refresh reloads the board", (db.bookingGets || []).length > before, { before, after: (db.bookingGets || []).length });
+    check("Pull to refresh: no errors", page.__errors.length === 0, page.__errors);
+  });
+}
+
 // Premium Board: Premium with two-line rows like the old board.
 await scenario(async () => {
   const page = await phone(browser, apbDb("board"), { width: 360 });
@@ -1168,7 +1211,7 @@ await scenario(async () => {
   const db = makeDb(), b3 = db.bookings.find((x) => x.id === "b3");
   db.company.overstay_rate = 30;
   Object.assign(db.bookings.find((x) => x.id === "b1"), { make: "VOLKSWAGEN GOLF", flight: "U22334", sched_time: "23:50", est_time: "00:12", flight_status: "landed", sent_at: iso(TONIGHT, "23:41"), sent_by: "s2" });
-  Object.assign(b3, { flight: "TBC", overstay: true, called_word: "Called", called_at: iso(TONIGHT, "22:51"), sent_at: iso(TONIGHT, "22:58"), sent_by: "s2", return_at: iso(addDays(TONIGHT, -1), "23:00") });
+  Object.assign(b3, { flight: "TBC", overstay: true, called_word: "Called", called_at: iso(TONIGHT, "22:51"), sent_at: iso(TONIGHT, "22:58"), sent_by: "s2", return_at: iso(addDays(TONIGHT, -2), "23:00") });   // two days back: £ due whatever the time of day
   const page = await phone(browser, db, { width: 390 });
   await open(page); await page.waitForSelector('.row[data-id="b3"] .reg');
   const r = await page.evaluate(() => {

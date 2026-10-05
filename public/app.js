@@ -4044,7 +4044,7 @@
     if (t.id === "flBtn") return checkFlights(t);
     if (t.id === "rtBtn") return openReturns();
     if (t.id === "psBtn") return (sheet() || {}).kind === "drops" ? openDropsStats() : openPicksStats();
-    if (t.id === "refreshBtn") { t.disabled = true; await loadSheets(); await loadRows(); S.runs = null; S.activity = null; render(); t.disabled = false; flush(); return; }
+    if (t.id === "refreshBtn") return refreshAll(t);
     if (t.dataset.checkflights !== undefined) return checkFlights(t);
     if (t.dataset.filltimes !== undefined) return fillTimes(t);
     if (t.dataset.savesettings !== undefined) return saveSettings(t);
@@ -4229,6 +4229,83 @@
       '<p class="hint">Only for a sheet imported by mistake. It asks first, and only works if nobody has tapped, set a yard or typed a note on it.</p></div>';
     return h + '<div class="pbtns"><button type="button" data-closemenu>Close</button></div>';
   }
+  // Refresh: the button, and (Premium looks) pulling the board down from the top.
+  async function refreshAll(btn) {
+    if (btn) btn.disabled = true;
+    try { await loadSheets(); await loadRows(); S.runs = null; S.activity = null; render(); }
+    finally { if (btn) btn.disabled = false; flush(); }
+  }
+
+  // ── Premium looks: swipe right on a drop, and pull down to refresh ──
+  // A swipe marks the car with the one step this person does: a bongo driver
+  // SENT, the office CALLED, the terminal CLEAR. It only ever marks: a car
+  // already marked is left alone (undo stays a tap on the button). Picks
+  // don't swipe. Other roles (owner, manager, view) tap as before.
+  var SWIPE_ACT = { bongo: ["sent", "Sent", "sent_at"], office: ["called", "Called", "called_at"], terminal: ["clear", "Clear", "cleared_at"] };
+  var SWIPE_AT = 90, PULL_AT = 64, sw = null;
+  function swipeAction(row) {
+    var sh = sheet(), a = S.me && SWIPE_ACT[S.me.role];
+    if (!row || !a || !sh || sh.kind !== "drops" || S.view !== "board" || !can(a[0])) return null;
+    return a;
+  }
+  function pullBar() {
+    var el = $("ptr");
+    if (!el) { el = document.createElement("div"); el.id = "ptr"; el.setAttribute("aria-hidden", "true"); document.body.appendChild(el); }
+    return el;
+  }
+  document.addEventListener("touchstart", function (e) {
+    sw = null;
+    if (!isPremium() || !S.me || S.view !== "board" || e.touches.length !== 1 || document.querySelector("dialog[open]")) return;
+    var t = e.touches[0];
+    sw = { x: t.clientX, y: t.clientY, dx: 0, dy: 0, mode: "", row: e.target.closest("#main .row[data-id]"), top: window.scrollY <= 0 };
+  }, { passive: true });
+  document.addEventListener("touchmove", function (e) {
+    if (!sw || e.touches.length !== 1) return;
+    var t = e.touches[0]; sw.dx = t.clientX - sw.x; sw.dy = t.clientY - sw.y;
+    if (!sw.mode) {
+      if (Math.abs(sw.dx) > 12 && Math.abs(sw.dx) > Math.abs(sw.dy) * 1.4) sw.mode = sw.dx > 0 && (sw.act = swipeAction(sw.row)) ? "swipe" : "none";
+      else if (sw.dy > 12 && sw.top && sw.dy > Math.abs(sw.dx)) sw.mode = "pull";
+      else if (Math.abs(sw.dy) > 12) sw.mode = "none";
+    }
+    if (sw.mode === "swipe") {
+      var x = Math.max(0, Math.min(sw.dx, 150)), done = !!rowOf(sw.row) && !!rowOf(sw.row)[sw.act[2]];
+      sw.row.classList.add("swiping"); sw.row.style.transform = "translateX(" + x + "px)";
+      sw.row.setAttribute("data-swipe", done ? "Already " + sw.act[1].toLowerCase() : sw.act[1]);
+      sw.row.classList.toggle("swipe-" + sw.act[0], true);
+      sw.row.classList.toggle("swipe-go", x >= SWIPE_AT && !done);
+    } else if (sw.mode === "pull") {
+      var d = Math.min(sw.dy * 0.5, 90), bar = pullBar();
+      bar.style.top = ($("boardHead").getBoundingClientRect().bottom) + "px";
+      bar.style.transition = "none"; bar.style.height = d + "px"; bar.className = d >= PULL_AT ? "go" : "";
+      bar.textContent = d >= PULL_AT ? "Release to refresh" : "Pull to refresh";
+      sw.pull = d;
+    }
+  }, { passive: true });
+  document.addEventListener("touchend", function () {
+    if (!sw) return;
+    var s0 = sw; sw = null;
+    if (s0.mode === "swipe") {
+      var row = s0.row, r = rowOf(row), go = s0.dx >= SWIPE_AT;
+      row.classList.remove("swiping", "swipe-go"); row.style.transform = "";
+      setTimeout(function () { row.removeAttribute("data-swipe"); row.classList.remove("swipe-" + s0.act[0]); }, 220);
+      if (!go || !r) return;
+      if (r[s0.act[2]]) { toast((r.reg || "This car") + " is already " + s0.act[1].toLowerCase() + "."); return; }
+      if (navigator.vibrate) try { navigator.vibrate(15); } catch (e) {}
+      tapDrop(r, s0.act[0]);
+    } else if (s0.mode === "pull") {
+      var bar = $("ptr"); if (!bar) return;
+      bar.style.transition = "";
+      if ((s0.pull || 0) >= PULL_AT) {
+        bar.className = "go busy"; bar.textContent = "Refreshing…";
+        refreshAll($("refreshBtn")).then(function () { bar.style.height = "0px"; bar.className = ""; });
+      } else { bar.style.height = "0px"; bar.className = ""; }
+    }
+  });
+  document.addEventListener("touchcancel", function () {
+    if (sw && sw.row) { sw.row.classList.remove("swiping", "swipe-go"); sw.row.style.transform = ""; sw.row.removeAttribute("data-swipe"); }
+    if ($("ptr")) $("ptr").style.height = "0px";
+    sw = null;
+  });
   $("menu").addEventListener("click", function (e) { if (outside("menu", e) || e.target.closest("[data-closemenu]")) $("menu").close(); });
   $("shiftPick").addEventListener("click", function (e) { if (outside("shiftPick", e)) $("shiftPick").close(); });
   // Activity search (Premium looks): only the list redraws, so the keyboard stays up.
