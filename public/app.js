@@ -4273,11 +4273,11 @@
     return '<label>SWIPE RIGHT ON DROPS</label><div class="pseg mode swipestep">' + opts.map(function (x) {
         return '<button type="button" data-swipestep="' + x[0] + '" class="' + (c === x[0] ? "on" : "") + '" aria-pressed="' + (c === x[0]) + '">' + x[1] + "</button>";
       }).join("") + "</div>" +
-      (c === "off" ? '<p class="hint">Pick the step a swipe right marks on this phone.</p>' :
+      (c === "off" ? "" :
         '<label>BUTTONS ON DROPS</label><div class="pseg mode swipebtns">' + [["0", "Show"], ["1", "Hide · swipe only"]].map(function (x) {
           var sel = (x[0] === "1") === only;
           return '<button type="button" data-swipeonlyme="' + x[0] + '" class="' + (sel ? "on" : "") + '" aria-pressed="' + sel + '">' + x[1] + "</button>";
-        }).join("") + '</div><p class="hint">Just for you, on this phone. With the buttons hidden, tap the reg to undo.</p>');
+        }).join("") + "</div>");
   }
   function stepStatus(r) {
     var parts = [["sent_at", "sent_by", "Sent", "s"], ["called_at", "called_by", r.called_word === "Overstay" ? "Overstay" : "Called", "c"], ["cleared_at", "cleared_by", r.clear_word === "COMPLAINT" ? "Complaint" : "Clear", "x"]]
