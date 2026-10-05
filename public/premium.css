@@ -18,8 +18,10 @@
 
 /* ── tokens: light (A) ── */
 html.premium{
-  --chrome:#0E3F7E;
-  --head:var(--chrome);--head-ink:#fff;--head-2:rgb(255 255 255 / .62);--head-tile:rgb(255 255 255 / .09);--head-line:rgb(255 255 255 / .16);
+  /* Navy for every client unless its brand names a header colour (brand.chrome);
+     the brand colour is the accent. Not --chrome: app.js sets that one inline. */
+  --pchrome:var(--brand-chrome,#0E3F7E);
+  --head:var(--pchrome);--head-ink:#fff;--head-2:rgb(255 255 255 / .62);--head-tile:rgb(255 255 255 / .09);--head-line:rgb(255 255 255 / .16);
   --bg:#F2F4F7;--card:#fff;--card-line:rgb(16 24 40 / .06);--card-shadow:0 1px 2px rgb(16 24 40 / .06);
   --ink:#111827;--ink-2:#4B5563;--ink-3:#8A93A1;--line:#E4E8EE;--line-soft:#EEF1F5;--field:#fff;--field-line:#D3D9E1;
   --seg:#E4E8EE;--seg-on:#fff;
@@ -68,7 +70,7 @@ html.premium .gate input:focus,html.premium .sheet input:focus,html.premium .she
 html.premium #pin{font:500 28px/1 var(--sans);letter-spacing:.5em;padding-left:.5em;}
 
 /* ── buttons ── */
-html.premium .btn{border-radius:var(--r);background:var(--chrome);border-color:var(--chrome);color:#fff;font:600 15px/1 var(--sans);letter-spacing:0;}
+html.premium .btn{border-radius:var(--r);background:var(--pchrome);border-color:var(--pchrome);color:#fff;font:600 15px/1 var(--sans);letter-spacing:0;}
 html.premium.dark .btn{background:#22314A;border-color:#22314A;}
 html.premium .btn.brand{background:var(--brand);border-color:var(--brand);color:var(--brand-ink);font-size:16px;}
 html.premium .btn.ghost{background:var(--card);color:var(--ink);border-color:var(--field-line);}
@@ -114,7 +116,7 @@ html.premium .tally,html.premium .tally.cats{display:flex;gap:0;margin:0;padding
 html.premium .tally{padding-top:12px;}
 html.premium body:not(.picks) .tally{padding-bottom:12px;}
 html.premium .tally.cats{padding-top:4px;padding-bottom:14px;}
-html.premium .tally button,html.premium .shortpick{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;align-items:flex-start;padding:5px 11px;background:none;border:0;border-right:1px solid var(--line-soft);border-radius:0;text-align:left;}
+html.premium .tally button,html.premium .shortpick{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;align-items:center;padding:5px 8px;background:none;border:0;border-right:1px solid var(--line-soft);border-radius:0;text-align:center;}
 html.premium .tally button:last-child,html.premium .shortpick:last-child{border-right:0;}
 html.premium .tally span,html.premium .shortpick span{order:0;font:600 10px/1.1 var(--cond);letter-spacing:.07em;color:var(--ink-3);text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 html.premium .tally b{order:1;margin:0;font:700 24px/1 var(--sans);font-variant-numeric:tabular-nums;color:var(--ink);}
@@ -127,7 +129,7 @@ html.premium .tally.cats button.short b{color:#16794A;}
 html.premium .tally.cats button.long b{color:#B86100;}
 html.premium.dark .tally.cats button.short b{color:#5BD69A;}
 html.premium.dark .tally.cats button.long b{color:#F5B83D;}
-html.premium .shortpick b,html.premium .shortpick select{margin:0;border:0;background:none;color:var(--ink);font:700 16px/1 var(--sans);padding:0;}
+html.premium .shortpick b,html.premium .shortpick select{text-align:center;text-align-last:center;margin:0;border:0;background:none;color:var(--ink);font:700 16px/1 var(--sans);padding:0;}
 html.premium .shortpick.unset span,html.premium .shortpick.unset b,html.premium .shortpick.unset select{color:var(--amb-tx);}
 
 /* To do / All as a segmented control, the search beside it */
@@ -176,11 +178,11 @@ html.premium .rt i.ld{color:var(--ok-tx);font-weight:600;}
 html.premium .left{grid-area:left;overflow:visible;}
 html.premium .l1{flex-wrap:wrap;align-items:center;gap:7px 8px;}
 html.premium .reg{font:700 20px/1 var(--cond);letter-spacing:.06em;padding:6px 8px 5px;}
-html.premium .pin{flex:1 1 auto;order:0;margin:0;padding-left:6px;text-align:right;font:500 13.5px/1.3 var(--sans);color:var(--ink-3);}
+html.premium .pin{flex:1 1 auto;order:0;margin:0;padding-left:6px;text-align:left;font:500 13.5px/1.3 var(--sans);color:var(--ink-3);}
 html.premium .reg{padding:5px 7px 4px;border-radius:6px;background:var(--plate);color:var(--plate-ink);font:700 15.5px/1 var(--cond);letter-spacing:.06em;}
 html.premium .row.done .reg{background:var(--seg);color:var(--ink-3);}
 html.premium .dn{font:500 12.5px/1 var(--sans);color:var(--ink-3);}
-html.premium .pin{flex-basis:100%;order:9;margin:2px 0 0;padding:0;font:500 14px/1.3 var(--sans);color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+html.premium .pin{flex-basis:100%;order:9;margin:2px 0 0;padding:0;font:600 15px/1.3 var(--sans);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 html.premium .l2{margin-top:7px;font:500 14px/1.35 var(--sans);color:var(--ink-2);}
 html.premium .l2 .mk{color:var(--ink);font-weight:600;}
 html.premium .l2 .bk b{color:var(--ink);font-weight:700;}
@@ -246,7 +248,7 @@ html.premium .bnav:not(.hidden){display:flex;position:fixed;z-index:25;left:0;ri
 html.premium .bnav button{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 0;border:0;background:none;color:var(--ink-3);font:500 11px/1.1 var(--sans);}
 html.premium .bnav button svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
 html.premium .bnav button.on{color:var(--brand);font-weight:600;}
-html.premium.dark .bnav button.on{color:#6EA8FF;}
+html.premium.dark .bnav button.on{color:#6EA8FF;color:color-mix(in srgb,var(--brand) 70%,#fff);}
 html.premium body:not(.on-board) main{padding-bottom:96px;}
 html.premium .toast{bottom:calc(84px + env(safe-area-inset-bottom));}
 
@@ -272,7 +274,7 @@ html.premium .pseg:not(.yard) button.on:not(.nb):not(.cm){background:var(--c-bg)
 html.premium .pseg button.on.nb{background:var(--o-bg);border-color:var(--o-bg);color:var(--o-tx);}
 html.premium .pseg button.on.cm{background:var(--r-bg);border-color:var(--r-bg);color:var(--r-tx);}
 html.premium .pbtns button{height:50px;border:1px solid var(--field-line);border-radius:12px;background:var(--btn);color:var(--ink);font:600 15px/1 var(--sans);letter-spacing:0;}
-html.premium .pbtns button.save{background:var(--chrome);border-color:var(--chrome);color:#fff;}
+html.premium .pbtns button.save{background:var(--pchrome);border-color:var(--pchrome);color:#fff;}
 html.premium.dark .pbtns button.save{background:#2F6FD6;border-color:#2F6FD6;}
 html.premium .pbtns button.undo{background:var(--bad-bg);border-color:var(--bad-bg);color:var(--bad-tx);}
 html.premium .pclose{width:36px;height:36px;border:0;background:var(--bg);color:var(--ink-2);font-size:18px;font-weight:500;}
@@ -338,3 +340,15 @@ html.premium .shiftrow .sr-tag{font:700 10.5px/1.2 var(--cond);letter-spacing:.0
 html.premium .kindseg:not(.hidden){display:flex;gap:4px;margin:0;padding:2px 14px 0;background:var(--head);}
 html.premium .kindseg button{flex:1;padding:12px 0 13px;border:0;border-bottom:2.5px solid transparent;background:none;color:var(--head-2);font:700 14px/1 var(--cond);letter-spacing:.1em;}
 html.premium .kindseg button[aria-pressed="true"]{color:#fff;border-bottom-color:var(--brand);}
+
+/* ── the numbers fold away to one line (app.js renderTallyFold) ── */
+html.premium .tfold:not(.hidden){grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:10px;width:100%;margin:0;padding:8px 14px;background:var(--card);border:0;border-top:1px solid var(--line-soft);color:var(--ink-3);font:600 12.5px/1.2 var(--sans);text-align:left;}
+html.premium .tfold .tf-act{flex:0 0 auto;color:var(--ink-2);}
+html.premium .tfold .tf-act::after{content:"";display:inline-block;width:6px;height:6px;margin:0 2px 3px 7px;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;transform:rotate(-135deg);vertical-align:middle;}
+html.premium body.tfolded .tfold{justify-content:space-between;padding:12px 14px;border-top:0;}
+html.premium body.tfolded .tfold .tf-act::after{transform:rotate(45deg);margin-bottom:5px;}
+html.premium .tfold .tf-sum{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:500 13.5px/1.2 var(--sans);color:var(--ink-3);}
+html.premium .tfold .tf-sum b{font-weight:700;color:var(--ink);}
+html.premium .tfold .tf-sum i{font:600 11px/1 var(--cond);font-style:normal;letter-spacing:.06em;}
+html.premium .tfold .tf-sum em{font-style:normal;font-weight:600;color:var(--brand-text,var(--ink));}
+html.premium body.tfolded #tally,html.premium body.tfolded #catTally{display:none;}
