@@ -7,6 +7,29 @@
    lines (isBoard). Everything here sits under html.pboard, so Premium itself
    never changes when these rows do. */
 
+/* ── the buttons sit on the right, like the old one-line rows ── */
+html.pboard .row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"left acts";gap:0 8px;align-items:center;margin:0 6px 6px;padding:9px 8px 9px 11px;border-radius:12px;contain-intrinsic-size:auto 84px;}
+html.pboard .left{min-width:0;}
+html.pboard .l1{flex-wrap:wrap;gap:4px 5px;min-width:0;}
+html.pboard .l1 > *:not(.pin){flex:none;}
+html.pboard .reg{padding:4px 6px 3px;font-size:14.5px;}
+html.pboard .row .cat,html.pboard .row .code{padding:2px 5px;font-size:10px;}
+html.pboard .row .dn{font-size:12px;}
+html.pboard .pin{flex:1 1 100%;order:9;min-width:0;margin:1px 0 0;padding:0;text-align:left;font:600 14px/1.25 var(--sans);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+html.pboard .l2{margin-top:2px;font-size:13px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+html.pboard .fst{margin-top:3px;font-size:12.5px;}
+html.pboard .l2t{margin-top:5px;}
+html.pboard .l3{margin-top:5px;padding:3px 7px;font-size:12px;}
+html.pboard .acts{grid-area:acts;align-self:stretch;grid-auto-columns:54px;gap:5px;margin:0;}
+html.pboard body.picks .acts{grid-auto-columns:46px;gap:4px;}
+html.pboard .acts button{min-height:50px;height:100%;padding:3px 1px;border-radius:9px;font-size:12.5px;line-height:1.1;flex-direction:column;flex-wrap:nowrap;row-gap:1px;}
+html.pboard .acts button.lng{font-size:10.5px;}
+html.pboard .acts button .w{flex-basis:auto;}
+html.pboard .acts button small,html.pboard .acts button em.by{display:block;margin:0;font-size:10px;line-height:1.15;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+html.pboard .acts button small + em.by::before{content:none;}
+@media(min-width:900px){html.pboard body.on-board main > .row{margin:0 6px 10px;}}
+
+/* ── two lines a car ── */
 html.pboard .row{padding:7px 7px 7px 10px;margin:0 6px 5px;border-radius:11px;contain-intrinsic-size:auto 64px;}
 html.pboard .l1{flex-wrap:nowrap;gap:6px;}
 html.pboard .pin{flex:1 1 auto;order:0;margin:0;font-size:14.5px;}
