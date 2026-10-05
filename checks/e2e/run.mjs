@@ -368,7 +368,7 @@ await scenario(async () => {
   check("Premium: the numbers sit centred and the name reads from the left", lay.tile === "center" && lay.name === "left", lay);
   const box = await page.evaluate(() => { const row = document.querySelector('.row[data-id="b1"]'), l = row.querySelector(".left").getBoundingClientRect(), a = row.querySelector(".acts").getBoundingClientRect();
     return { beside: a.left >= l.right - 1, h: Math.round(row.getBoundingClientRect().height) }; });
-  check("Premium: compact cards, buttons beside the car so more fit on screen", box.beside && box.h <= 110, box);
+  check("Premium: two-line rows like the old ones, buttons beside the car", box.beside && box.h <= 80, box);
   check("Premium: a Hide numbers control under the tiles", /Hide numbers/.test(await page.locator("#tallyFold").innerText()) && await page.isVisible("#tally"));
   await page.click("#tallyFold"); await sleep(300);
   const fold = await page.evaluate(() => ({ tally: getComputedStyle(document.getElementById("tally")).display, sum: document.getElementById("tallyFold").innerText, kept: localStorage.getItem("takeoff_tally_folded"), exp: document.getElementById("tallyFold").getAttribute("aria-expanded") }));
