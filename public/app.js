@@ -595,7 +595,7 @@
     if (s.day === addDaysKey(now, 1)) return "NEXT SHIFT";
     return s.day > now ? "COMING UP" : "PAST SHIFT";
   }
-  // Premium look header: the brand mark, "{Company} operations", who is on and
+  // Premium look header: the brand mark, the company, who is on and
   // their role, and the live "Updated HH:MM". Same mark/colour as every brand.
   function niceRole(role) {
     return { owner: "Owner", manager: "Manager", office: "Office", driver: "Driver" }[role] || "Team";
@@ -604,7 +604,7 @@
     var short = String((S.company && (S.company.brand || {}).short) || (S.company && S.company.name) || PRODUCT).trim();
     var mark = String((S.company && (S.company.brand || {}).mark) || short.charAt(0) || "P").slice(0, 2);
     return '<span class="ch-mark" aria-hidden="true">' + esc(mark) + '</span>' +
-      '<span class="ch-txt"><b>' + esc(short) + ' operations</b>' +
+      '<span class="ch-txt"><b>' + esc(short) + '</b>' +
       '<small>' + esc(S.me.name) + ' · ' + esc(niceRole(S.me.role)) + '</small></span>' +
       '<span class="ch-upd"><i aria-hidden="true"></i>Updated ' + esc(londonParts(new Date()).time) + '</span>';
   }
@@ -786,6 +786,7 @@
       return '<button type="button" data-tally="' + esc(x[1]) + '" class="' + (S.yardFilter === x[1] ? "on" : "") + (x[1] === "-" ? " warn" : "") + '" aria-pressed="' + (S.yardFilter === x[1]) + '"><span>' + esc(label) + '</span><b class="num">' + x[2] + "</b></button>";
     }).join("");
     renderCatStrip(picks);
+    renderTallyFold(cells);
     var cardsWords = pro && !isPremium();
     $("tabTodo").textContent = cardsWords ? S.rows.filter(waiting).length + " Waiting for action" : "TO DO (" + S.rows.filter(waiting).length + ")";
     $("tabAll").textContent = cardsWords ? "All " + S.rows.length : "ALL (" + S.rows.length + ")";
@@ -798,6 +799,28 @@
     show("qClear", !!S.q);
     $("colHead").innerHTML = '<span class="hl">' + (picks ? "CAR · CUSTOMER" : "CAR · FLIGHT") + '</span><span class="hr">' +
       (picks ? "<span>COLL</span><span>NO SHOW</span><span>RTC</span><span>PT</span>" : "<span>SENT</span><span>CALLED</span><span>CLEAR</span>") + "</span>";
+  }
+
+  // Premium look: the day's numbers fold away to one line, so the list starts
+  // higher on the screen. Remembered on this phone.
+  var TALLY_FOLD_KEY = "takeoff_tally_folded";
+  function tallyFolded() { try { return localStorage.getItem(TALLY_FOLD_KEY) === "1"; } catch (e) { return false; } }
+  function toggleTallyFold() {
+    try { if (tallyFolded()) localStorage.removeItem(TALLY_FOLD_KEY); else localStorage.setItem(TALLY_FOLD_KEY, "1"); } catch (e) {}
+    render();
+  }
+  function renderTallyFold(cells) {
+    var on = isPremium(), folded = on && tallyFolded();
+    document.body.classList.toggle("tfolded", folded);
+    show("tallyFold", on);
+    if (!on) return;
+    $("tallyFold").setAttribute("aria-expanded", !folded);
+    if (!folded) { $("tallyFold").innerHTML = '<span class="tf-act">Hide numbers</span>'; return; }
+    var sum = cells.map(function (x) { return '<b class="num">' + x[2] + "</b> <i>" + esc(x[0]) + "</i>"; }).join(" · ");
+    var f = S.yardFilter ? (cells.filter(function (x) { return x[1] === S.yardFilter; })[0] || [S.yardFilter])[0]
+      : S.catFilter ? (LEFT_CATS.concat(CATS).filter(function (c) { return c[0] === S.catFilter; })[0] || [0, S.catFilter])[1] : "";
+    $("tallyFold").innerHTML = '<span class="tf-sum">' + sum + (f ? ' · <em>showing ' + esc(f) + "</em>" : "") +
+      '</span><span class="tf-act">Show</span>';
   }
 
   function renderCatStrip(picks) {
@@ -2949,7 +2972,7 @@
     document.documentElement.classList.toggle("dark", dark);
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
     var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta && isCards()) meta.setAttribute("content", dark ? "#0A111D" : getComputedStyle(document.documentElement).getPropertyValue("--chrome").trim() || "#0E3F7E");
+    if (meta && isCards()) meta.setAttribute("content", dark ? "#0A111D" : getComputedStyle(document.documentElement).getPropertyValue(isPremium() ? "--pchrome" : "--chrome").trim() || "#0E3F7E");
   }
   function setMode(m) { try { localStorage.setItem(MODE_KEY, m); } catch (e) {} applyMode(); }
   if (darkMq && darkMq.addEventListener) darkMq.addEventListener("change", applyMode);
@@ -2998,6 +3021,8 @@
       if (b.text) root.setProperty("--brand-text", b.text);
       // The pro look's bar: the brand's own dark colour, else its text colour.
       if (b.chrome || b.text) root.setProperty("--chrome", b.chrome || b.text);
+      // Premium's header: only a colour the brand names for it, else navy.
+      if (b.chrome) root.setProperty("--brand-chrome", b.chrome); else root.removeProperty("--brand-chrome");
       var meta = document.querySelector('meta[name="theme-color"]');
       if (meta) meta.setAttribute("content", pro ? (b.chrome || b.text || b.colour) : b.colour);
     }
@@ -3946,6 +3971,7 @@
     if (t.dataset.discordclear !== undefined) { if (confirm("Stop posting " + brandName() + " alerts to Discord?")) saveDiscord(t, true); return; }
     if (t.dataset.resetsettings !== undefined) { S.settingsDraft = Object.assign({}, TIMING_DEFAULT); render(); return; }
     if (t.dataset.filter) { S.filter = t.dataset.filter; render(); return; }
+    if (t.closest("#tallyFold")) return toggleTallyFold();
     if (t.dataset.cat) { S.catFilter = S.catFilter === t.dataset.cat ? "" : t.dataset.cat; render(); return; }
     if (t.dataset.tally !== undefined) { S.yardFilter = S.yardFilter === t.dataset.tally ? "" : t.dataset.tally; render(); return; }
     var r = rowOf(t);
