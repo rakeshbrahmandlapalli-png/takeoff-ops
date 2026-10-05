@@ -457,3 +457,20 @@ html.premium details.box > summary::-webkit-details-marker{display:none;}
 html.premium details.box > summary::after{content:"";margin-left:auto;width:8px;height:8px;margin-right:4px;border-right:2px solid var(--ink-3);border-bottom:2px solid var(--ink-3);transform:rotate(45deg);transition:transform .15s;}
 html.premium details.box[open] > summary::after{transform:rotate(-135deg);}
 html.premium.dark .staffbox .rowline::before{background:color-mix(in srgb,var(--brand) 22%,var(--card));color:var(--brand);}
+
+/* ── swipe right on a drop: the row slides, the step it will mark shows behind ── */
+html.premium body.on-board main{overflow-x:hidden;}
+html.premium body.on-board .row{position:relative;touch-action:pan-y;transition:transform .2s ease;}
+html.premium body.on-board .row.swiping{transition:none;}
+html.premium .row[data-swipe]{content-visibility:visible;contain:none;overflow:visible;}
+html.premium .row[data-swipe]::before{content:attr(data-swipe);position:absolute;top:0;bottom:0;right:100%;width:150px;display:flex;align-items:center;justify-content:center;border-radius:inherit;background:var(--seg);color:var(--ink-3);font:700 14px/1 var(--sans);letter-spacing:.06em;text-transform:uppercase;}
+html.premium .row.swipe-go.swipe-sent::before{background:#1F9D5B;color:#fff;}
+html.premium .row.swipe-go.swipe-called::before{background:#2F6FD6;color:#fff;}
+html.premium .row.swipe-go.swipe-clear::before{background:#5B6573;color:#fff;}
+
+/* ── pull down to refresh ── */
+html.premium body.on-board{overscroll-behavior-y:contain;}
+#ptr{position:fixed;left:0;right:0;z-index:24;height:0;overflow:hidden;display:flex;align-items:center;justify-content:center;background:var(--bg,#f2f4f7);color:var(--ink-3,#8a93a1);font:600 13px/1 var(--sans,system-ui);transition:height .2s ease;pointer-events:none;}
+#ptr.go{color:var(--brand,#0e3f7e);}
+#ptr.busy::before{content:"";width:14px;height:14px;margin-right:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:ptrspin .8s linear infinite;}
+@keyframes ptrspin{to{transform:rotate(360deg);}}
