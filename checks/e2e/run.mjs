@@ -468,6 +468,23 @@ await scenario(async () => {
       check("Swipe (" + role + "): no errors", page.__errors.length === 0, page.__errors);
     });
   }
+  // Swipe left: a second step, Off to start.
+  await scenario(async () => {
+    const db = apbDb("board"); db.me = { ...db.me, role: "office" };
+    const page = await phone(browser, db); await open(page); const cdp = await page.context().newCDPSession(page);
+    const b = await page.locator('.row[data-id="b1"]').boundingBox(), y = b.y + b.height / 2;
+    await drag(cdp, 330, y, 200, y); await sleep(400);
+    check("Swipe left: does nothing until someone picks a step for it", !db.calls.some((c) => c.fn === "tap_drop"));
+    await page.click("#cHead"); await page.waitForSelector("#menu[open]");
+    check("Swipe left: its own choice in the menu, Off to start", await page.evaluate(() => (document.querySelector("[data-swipeleft].on") || {}).textContent === "Off"));
+    await page.click('[data-swipeleft="clear"]'); await sleep(200); await page.keyboard.press("Escape"); await sleep(300);
+    await drag(cdp, 330, y, 200, y); await sleep(400);
+    check("Swipe left: an office worker who picked Clear swipes left to mark CLEAR", db.calls.some((c) => c.fn === "tap_drop" && c.args.p_booking === "b1" && c.args.p_action === "clear"), db.calls.filter((c) => c.fn === "tap_drop"));
+    const b2 = await page.locator('.row[data-id="b2"]').boundingBox();
+    await drag(cdp, 25, b2.y + b2.height / 2, 155, b2.y + b2.height / 2); await sleep(400);
+    check("Swipe left: swipe right still marks the office's own step (CALLED)", db.calls.some((c) => c.fn === "tap_drop" && c.args.p_booking === "b2" && c.args.p_action === "called"));
+    check("Swipe left: no errors", page.__errors.length === 0, page.__errors);
+  });
   // Standard with features gets the same working features.
   await scenario(async () => {
     const db = apbDb("stdplus"); db.me = { ...db.me, role: "bongo" };
@@ -508,7 +525,10 @@ await scenario(async () => {
     const page = await phone(browser, db); await open(page); const cdp = await page.context().newCDPSession(page);
     await page.click("#cHead"); await page.waitForSelector("#menu[open]");
     check("Swipe choice: a bongo driver starts on Sent", await page.evaluate(() => (document.querySelector("[data-swipestep].on") || {}).textContent === "Sent"));
-    await page.click('[data-swipeonlyme="1"]'); await sleep(200); await page.keyboard.press("Escape"); await sleep(300);
+    check("Swipe choice: the buttons switch starts on (buttons shown)", await page.evaluate(() => document.querySelector("[data-swipeonlyme]").getAttribute("aria-checked") === "true"));
+    await page.click("[data-swipeonlyme]"); await sleep(200);
+    check("Swipe choice: tapping the switch turns the buttons off", await page.evaluate(() => document.querySelector("[data-swipeonlyme]").getAttribute("aria-checked") === "false"));
+    await page.keyboard.press("Escape"); await sleep(300);
     const row = await page.evaluate(() => ({ btns: document.querySelectorAll('#main .row [data-act]').length, b3: (document.querySelector('.row[data-id="b3"] .acts.steps') || {}).textContent || "", b1: (document.querySelector('.row[data-id="b1"] .acts.steps') || {}).textContent || "" }));
     check("Swipe only (own choice): no buttons on drops, just what's done", row.btns === 0 && /Sent/i.test(row.b3) && /Swipe/.test(row.b1), row);
     await swipeRow(page, cdp, "b1");
