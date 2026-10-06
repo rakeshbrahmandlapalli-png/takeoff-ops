@@ -565,8 +565,8 @@
     show("flBtn", !S.platform && can("flights") && !picks);
     show("rtBtn", !S.platform && can("picksinfo") && picks);
     show("psBtn", !S.platform && can("picksinfo"));
-    // The Cards look's bottom bar mirrors the top bar's buttons.
-    show("bnav", isCards() && !S.platform);
+    // The bottom bar (card looks, and Standard with features) mirrors the top bar's buttons.
+    show("bnav", (isCards() || isStdPlus()) && !S.platform);
     Array.prototype.forEach.call(document.querySelectorAll("#bnav [data-bn]"), function (b) {
       var src = $(b.dataset.bn); b.classList.toggle("hidden", !!src && src.classList.contains("hidden"));
     });
@@ -810,7 +810,7 @@
     render();
   }
   function renderTallyFold(cells) {
-    var on = isPremium(), folded = on && tallyFolded();
+    var on = hasFeatures(), folded = on && tallyFolded();
     document.body.classList.toggle("tfolded", folded);
     show("tallyFold", on);
     if (!on) return;
@@ -949,6 +949,10 @@
   function isPremium() { return document.documentElement.classList.contains("premium"); }
   // Premium Board: Premium with two-line rows (board.css).
   function isBoard() { return document.documentElement.classList.contains("pboard"); }
+  function isStdPlus() { return document.documentElement.classList.contains("stdplus"); }
+  // The working features (swipe, pull to refresh, the number fold, the menu in
+  // sections, the Summary upgrades): Premium looks and Standard with features.
+  function hasFeatures() { return isPremium() || isStdPlus(); }
   // Booking sites send names in capitals; the Cards look shows them as written ("Senior Miss").
   function niceMake(m) { return m.length <= 3 ? m : nice(m); }
   function sentence(t) { t = String(t || ""); return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase(); }
@@ -2937,7 +2941,7 @@
         var d = S.rows;
         var due = d.filter(function (r) { return /£/.test(r.note); }), D = dropsStats();
         var back = d.filter(function (r) { return r.cleared_at; }).length;
-        h += '<h2 class="title">' + esc(sheetLabel(sh)) + '</h2><div class="stats"><div class="stat' + (isPremium() ? " big" : "") + '"><span>Cars back</span><strong class="num">' + back + " / " + d.length +
+        h += '<h2 class="title">' + esc(sheetLabel(sh)) + '</h2><div class="stats"><div class="stat' + (hasFeatures() ? " big" : "") + '"><span>Cars back</span><strong class="num">' + back + " / " + d.length +
           '</strong>' + progressBar(back, d.length) + '</div><div class="stat"><span>On the way</span><strong class="num">' + d.filter(function (r) { return r.sent_at && !r.cleared_at; }).length +
           '</strong></div><div class="stat"><span>Overstays</span><strong class="num">' + d.filter(function (r) { return r.overstay; }).length +
           '</strong></div><div class="stat"><span>Complaints</span><strong class="num">' + d.filter(function (r) { return r.clear_word === "COMPLAINT" || /^!/.test(r.note); }).length +
@@ -2948,17 +2952,17 @@
         var p = S.rows, hours = {};
         p.filter(function (r) { return r.intake === "Collected"; }).forEach(function (r) { var k = hhmm(r.intake_at).slice(0, 2); hours[k] = (hours[k] || 0) + 1; });
         var cin = p.filter(function (r) { return r.intake === "Collected"; }).length;
-        h += '<h2 class="title">' + esc(sheetLabel(sh)) + '</h2><div class="stats"><div class="stat' + (isPremium() ? " big" : "") + '"><span>Cars in</span><strong class="num">' + cin + " / " + p.length +
+        h += '<h2 class="title">' + esc(sheetLabel(sh)) + '</h2><div class="stats"><div class="stat' + (hasFeatures() ? " big" : "") + '"><span>Cars in</span><strong class="num">' + cin + " / " + p.length +
           '</strong>' + progressBar(cin, p.length) + '</div><div class="stat"><span>No shows</span><strong class="num">' + p.filter(function (r) { return r.intake === "No Show"; }).length +
           '</strong></div><div class="stat"><span>RTC</span><strong class="num">' + p.filter(function (r) { return r.intake === "RTC"; }).length +
           '</strong></div><div class="stat"><span>Still to come</span><strong class="num">' + p.filter(function (r) { return !r.intake; }).length + "</strong></div></div>" +
-          '<div class="section-label">Cars in by hour</div>' + (isPremium() ? hourBars(hours) : '<div class="box">' + (Object.keys(hours).sort().map(function (k) { return '<div class="rowline"><span class="num grow">' + k + ':00</span><strong class="num">' + hours[k] + "</strong></div>"; }).join("") || '<div class="empty">None yet.</div>') + "</div>");
+          '<div class="section-label">Cars in by hour</div>' + (hasFeatures() ? hourBars(hours) : '<div class="box">' + (Object.keys(hours).sort().map(function (k) { return '<div class="rowline"><span class="num grow">' + k + ':00</span><strong class="num">' + hours[k] + "</strong></div>"; }).join("") || '<div class="empty">None yet.</div>') + "</div>");
       }
     }
     if (can("log")) {
       h += '<div class="section-label">Activity</div>';
       if (!S.activity) { loadActivity(); h += '<div class="empty">Loading…</div>'; }
-      else if (isPremium()) h += activityPremiumHtml();
+      else if (hasFeatures()) h += activityPremiumHtml();
       else h += S.activity.length ? '<div class="box">' + S.activity.map(function (a) {
         return '<div class="rowline"><span class="num note">' + esc(dayShort(a.at)) + " " + esc(hhmm(a.at)) + '</span><div class="grow"><strong>' + esc(a.action) + "</strong>" + (a.reg ? " · " + esc(a.reg) : "") +
           '<div class="note">' + esc(a.staff_name || "System") + (a.value ? " · " + esc(a.value) : "") + "</div></div></div>";
@@ -2994,7 +2998,7 @@
     }
   }
   function progressBar(done, all) {
-    if (!isPremium() || !all) return "";
+    if (!hasFeatures() || !all) return "";
     var pc = Math.round(done / all * 100);
     return '<div class="pbar" role="progressbar" aria-valuemin="0" aria-valuemax="' + all + '" aria-valuenow="' + done + '"><i style="width:' + pc + '%"></i></div><small class="pbar-pc">' + pc + "% done</small>";
   }
@@ -3109,6 +3113,8 @@
     document.documentElement.classList.toggle("cards", cards);
     document.documentElement.classList.toggle("premium", premium);
     document.documentElement.classList.toggle("pboard", board);
+    // Standard with features: Standard plus the bottom bar (stdplus.css).
+    document.documentElement.classList.toggle("stdplus", b.theme === "stdplus");
     var mark = String(b.mark || short.charAt(0) || "P").slice(0, 2);
     // Only the wordmark and the board button. NOT ".brand" on its own: the
     Array.prototype.forEach.call(document.querySelectorAll("span.brand, .tobrand"), function (el) {
@@ -3376,7 +3382,7 @@
   // ── Clients (product owner only, database part 19) ──
   // Counts only: this page never sees a client's customers.
   // The looks a client's app can wear (brand.theme): "pro" is pro.css, "cards" is cards.css, "premium" is premium.css, "board" is premium.css + board.css.
-  var LOOKS = [["", "Standard"], ["pro", "Airport Parking Bay UI"], ["cards", "Cards (light and dark)"], ["premium", "Premium UI"], ["board", "Premium Board"]];
+  var LOOKS = [["", "Standard"], ["pro", "Airport Parking Bay UI"], ["cards", "Cards (light and dark)"], ["premium", "Premium UI"], ["board", "Premium Board"], ["stdplus", "Standard with features"]];
   function lookName(b) { var l = LOOKS.filter(function (x) { return x[0] === ((b && b.theme) || ""); })[0]; return l ? l[1] : "Standard"; }
   function renderClients() {
     if (S.clients === undefined) { S.clients = null; loadClients(); }
@@ -4193,7 +4199,7 @@
       '<button type="button" data-removedlist>Removed cars' + ((S.removed || []).length ? " (" + S.removed.length + ")" : "") + "</button>" +
       (sh.archived_at ? '<button type="button" data-unarchive="' + sh.id + '">Bring back to the list</button>' : '<button type="button" data-archivesheet="' + sh.id + '">Archive this sheet</button>') +
       '<button type="button" class="danger" data-deletesheet="' + sh.id + '">Delete this sheet</button></div>' : "";
-    if (isPremium()) { $("menuBody").innerHTML = premiumMenuHtml(items, sh); if (!$("menu").open) $("menu").showModal(); return; }
+    if (hasFeatures()) { $("menuBody").innerHTML = premiumMenuHtml(items, sh); if (!$("menu").open) $("menu").showModal(); return; }
     $("menuBody").innerHTML = "<h2>" + esc(S.company.name) + '</h2><p class="sub">' + esc(S.me.name) + " · " + esc(ROLE_LABEL[S.me.role] || S.me.role) + "</p>" +
       '<div class="menu-list">' + items.filter(function (x) { return x[2]; }).map(function (x) {
         return '<button type="button" data-view="' + x[0] + '"' + (S.view === x[0] ? ' aria-current="page"' : "") + ">" + x[1] + "</button>";
@@ -4263,11 +4269,11 @@
   // drops; the row shows what is done, and the car's panel keeps the buttons.
   function swipeOnly() {
     var sh = sheet();
-    return !!(isPremium() && S.me && swipeChoice() !== "off" && swipeOnlyChoice() && sh && sh.kind === "drops");
+    return !!(hasFeatures() && S.me && swipeChoice() !== "off" && swipeOnlyChoice() && sh && sh.kind === "drops");
   }
   // Menu → Display (Premium looks): this phone's swipe step and buttons.
   function swipeMenuHtml() {
-    if (!isPremium() || S.platform) return "";
+    if (!hasFeatures() || S.platform) return "";
     var c = swipeChoice(), only = swipeOnlyChoice();
     var opts = [["off", "Off"]].concat(["sent", "called", "clear"].filter(can).map(function (k) { return [k, SWIPE_STEPS[k][1]]; }));
     return '<label>SWIPE RIGHT ON DROPS</label><div class="pseg mode swipestep">' + opts.map(function (x) {
@@ -4299,7 +4305,7 @@
   }
   document.addEventListener("touchstart", function (e) {
     sw = null;
-    if (!isPremium() || !S.me || S.view !== "board" || e.touches.length !== 1 || document.querySelector("dialog[open]")) return;
+    if (!hasFeatures() || !S.me || S.view !== "board" || e.touches.length !== 1 || document.querySelector("dialog[open]")) return;
     var t = e.touches[0];
     sw = { x: t.clientX, y: t.clientY, dx: 0, dy: 0, mode: "", row: e.target.closest("#main .row[data-id]"), top: window.scrollY <= 0 };
   }, { passive: true });

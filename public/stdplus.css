@@ -1,0 +1,102 @@
+/* "Standard with features" (Clients → Edit → LOOK), for companies whose brand
+   has theme: "stdplus". It is the Standard look (app.css) exactly as it is,
+   plus the bottom bar of the Premium looks (Board, Flights / Returns, Stats,
+   Summary and Menu, where a thumb reaches) and their working features: swipe
+   right to mark a drop, pull down to refresh, the number fold, the menu in
+   sections, and the Summary upgrades (app.js hasFeatures), in Standard's
+   own colours. The small icon buttons at the top
+   (summary, flights, returns, stats) move down into that bar, so nothing is
+   there twice; the day picker and refresh stay at the top. The active section
+   wears the brand colour. Everything here sits under html.stdplus, so
+   Standard itself never changes. */
+
+html.stdplus #logBtn,html.stdplus #rtBtn,html.stdplus #psBtn,html.stdplus #flBtn{display:none!important;}
+html.stdplus .bnav:not(.hidden){display:flex;position:fixed;z-index:25;left:0;right:0;bottom:0;padding:6px 4px calc(6px + env(safe-area-inset-bottom));background:#fff;border-top:1px solid #e3e5e8;}
+html.stdplus .bnav button{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 0;border:0;background:none;color:#80868b;font:500 11px/1.1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+html.stdplus .bnav button svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+html.stdplus .bnav button.on{color:var(--brand,#1a73e8);font-weight:600;}
+html.stdplus body{padding-bottom:calc(70px + env(safe-area-inset-bottom));}
+html.stdplus .toast{bottom:calc(84px + env(safe-area-inset-bottom));}
+
+/* ── the numbers fold away to one line ── */
+html.stdplus .tfold:not(.hidden){display:flex;align-items:center;justify-content:center;gap:10px;width:100%;margin:0;padding:6px 10px;background:#fff;border:0;border-bottom:1px solid #dadce0;color:#5f6368;font:600 12px/1.2 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+html.stdplus .tfold .tf-act{flex:0 0 auto;color:#3c4043;}
+html.stdplus .tfold .tf-act::after{content:"";display:inline-block;width:6px;height:6px;margin:0 2px 3px 7px;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;transform:rotate(-135deg);vertical-align:middle;}
+html.stdplus body.tfolded .tfold{justify-content:space-between;padding:10px;}
+html.stdplus body.tfolded .tfold .tf-act::after{transform:rotate(45deg);margin-bottom:5px;}
+html.stdplus .tfold .tf-sum{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;}
+html.stdplus .tfold .tf-sum b{font-weight:800;color:#202124;}
+html.stdplus .tfold .tf-sum i{font-style:normal;font-size:10.5px;letter-spacing:.5px;}
+html.stdplus .tfold .tf-sum em{font-style:normal;font-weight:700;color:var(--brand-text);}
+html.stdplus body.tfolded #tally,html.stdplus body.tfolded #catTally{display:none;}
+
+/* ── swipe right on a drop: the row slides, the step it will mark shows behind ── */
+html.stdplus body.on-board main{overflow-x:hidden;}
+html.stdplus body.on-board .row{position:relative;touch-action:pan-y;transition:transform .2s ease;}
+html.stdplus body.on-board .row.swiping{transition:none;}
+html.stdplus .row[data-swipe]{content-visibility:visible;contain:none;overflow:visible;}
+html.stdplus .row[data-swipe]::before{content:attr(data-swipe);position:absolute;top:0;bottom:0;right:100%;width:150px;display:flex;align-items:center;justify-content:center;background:#e8eaed;color:#5f6368;font:800 13px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:1px;text-transform:uppercase;}
+html.stdplus .row.swipe-go.swipe-sent::before{background:#1F9D5B;color:#fff;}
+html.stdplus .row.swipe-go.swipe-called::before{background:#2F6FD6;color:#fff;}
+html.stdplus .row.swipe-go.swipe-clear::before{background:#5B6573;color:#fff;}
+/* swipe only: what's done instead of buttons */
+html.stdplus .acts.steps{flex-direction:column;align-items:flex-end;justify-content:center;gap:2px;cursor:pointer;}
+html.stdplus .acts.steps .st{padding:2px 6px;border-radius:4px;background:#e8eaed;color:#3c4043;font-size:9px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;}
+html.stdplus .acts.steps .st small{margin-left:4px;font-size:10px;font-weight:600;letter-spacing:0;}
+html.stdplus .acts.steps .st em{display:none;}
+html.stdplus .acts.steps .st.s{background:#b6d7a8;color:#274e13;}
+html.stdplus .acts.steps .st.c{background:#9fc5e8;color:#0b3d78;}
+html.stdplus .acts.steps .st.x{background:#d9d9d9;color:#3c4043;}
+html.stdplus .acts.steps .st.none{background:none;color:#80868b;font-size:10px;text-transform:none;letter-spacing:0;font-weight:600;}
+/* the car panel's STEPS buttons, finger-sized */
+html.stdplus .acts.pacts{width:auto;flex:none;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:8px;margin-bottom:4px;}
+html.stdplus .acts.pacts button{min-height:50px;font-size:13px;}
+
+/* ── pull down to refresh ── */
+html.stdplus body.on-board{overscroll-behavior-y:contain;}
+html.stdplus #ptr{background:#f1f3f4;color:#5f6368;}
+html.stdplus #ptr.go{color:var(--brand);}
+
+/* ── menu: sections with icons; Delete this sheet alone at the bottom ── */
+html.stdplus #menuBody > label{display:block;margin:18px 2px 7px;font-size:11px;font-weight:800;letter-spacing:1px;color:#5f6368;}
+html.stdplus .menu-list button{position:relative;display:flex;align-items:center;gap:13px;width:100%;}
+html.stdplus .menu-list .mi{flex:none;width:21px;height:21px;fill:none;stroke:#80868b;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+html.stdplus .menu-list button[aria-current=page] .mi{stroke:var(--brand);}
+html.stdplus .menu-danger{margin-top:22px;padding-top:14px;border-top:1px dashed #dadce0;}
+html.stdplus .menu-danger button{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:13px 16px;border:1px solid #b42318;border-radius:8px;background:#fdeceb;color:#b42318;font-size:15.5px;font-weight:700;}
+html.stdplus .menu-danger .mi{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;}
+html.stdplus .pseg.swipestep button.on,html.stdplus .pseg.swipebtns button.on{background:#202124;border-color:#202124;color:#fff;}
+
+/* ── summary: progress bar, activity by day with chips and dots, hour bars ── */
+html.stdplus .stats:has(.stat.big){grid-template-columns:repeat(6,1fr);}
+html.stdplus .stats:has(.stat.big) > .stat{grid-column:span 3;}
+html.stdplus .stats:has(.stat.big) > .stat:nth-child(-n+4){grid-column:span 2;}
+html.stdplus .stat.big{grid-column:1/-1 !important;}
+html.stdplus .pbar{height:9px;margin-top:10px;border-radius:99px;background:#e8eaed;overflow:hidden;}
+html.stdplus .pbar i{display:block;height:100%;border-radius:99px;background:var(--brand);}
+html.stdplus .pbar-pc{display:block;margin-top:5px;font-size:12px;color:#5f6368;}
+html.stdplus .actbar{display:flex;flex-direction:column;gap:9px;margin:4px 0 6px;}
+html.stdplus .actbar .chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;}
+html.stdplus .actbar .chips::-webkit-scrollbar{display:none;}
+html.stdplus .actbar .chips button{flex:none;padding:7px 13px;border:1px solid #c4c7cc;border-radius:99px;background:#fff;color:#3c4043;font-size:13px;font-weight:700;}
+html.stdplus .actbar .chips button.on{background:#202124;border-color:#202124;color:#fff;}
+html.stdplus #actQ{width:100%;height:42px;padding:0 12px;border:1px solid #c4c7cc;border-radius:8px;font-size:15px;}
+html.stdplus .actday{margin:14px 2px 6px;font-size:11px;font-weight:800;letter-spacing:1px;color:#5f6368;text-transform:uppercase;}
+html.stdplus .actrow{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-top:1px solid #eceef1;}
+html.stdplus .actrow:first-child{border-top:0;}
+html.stdplus .actrow .at{flex:none;width:40px;font-size:12.5px;font-weight:700;color:#5f6368;}
+html.stdplus .actrow .note{margin-top:2px;}
+html.stdplus .actrow .adot{flex:none;width:9px;height:9px;margin-top:5px;border-radius:50%;background:#A3ADBB;}
+html.stdplus .actrow .adot.d-s{background:#1F9D5B;}
+html.stdplus .actrow .adot.d-c{background:#2F6FD6;}
+html.stdplus .actrow .adot.d-r{background:#D2463B;}
+html.stdplus .actrow .adot.d-o{background:#E39A1C;}
+html.stdplus .actrow .adot.d-p{background:#5B6F94;}
+html.stdplus .hbars{padding:10px 12px;}
+html.stdplus .hbar{display:grid;grid-template-columns:44px 1fr 28px;align-items:center;gap:10px;padding:4px 0;}
+html.stdplus .hbar .hh{font-size:12.5px;font-weight:700;color:#5f6368;}
+html.stdplus .hbar .track{height:13px;border-radius:4px;background:#eceef1;overflow:hidden;}
+html.stdplus .hbar .track i{display:block;height:100%;border-radius:4px;background:#80868b;}
+html.stdplus .hbar.top .track i{background:var(--brand);}
+html.stdplus .hbar b{text-align:right;}
+html.stdplus .hbar.zero b,html.stdplus .hbar.zero .hh{color:#9aa0a6;font-weight:500;}
