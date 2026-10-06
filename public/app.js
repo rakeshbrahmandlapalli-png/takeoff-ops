@@ -527,7 +527,7 @@
   // The header is the one the team already knows from the Sheet app: sheet
   // picker, who is signed in, and a row of icon buttons. The yard tally, TO DO /
   // ALL, search and column captions belong to the board only.
-  var VIEW_TITLE = { clients: "Clients", flights: "Flights", summary: "Summary and activity", import: "Import bookings", staff: "Staff", settings: "Settings", archive: "Archive", me: "Me" };
+  var VIEW_TITLE = { dashboard: "Dashboard", clients: "Clients", flights: "Flights", summary: "Summary and activity", import: "Import bookings", staff: "Staff", settings: "Settings", archive: "Archive", me: "Me" };
   var YARD_LABEL = { Y: "NB", S: "S YARD" };
   // The tally reads left to right as the Sheet's did; any yard not listed follows.
   var YARD_ORDER = ["Y", "S", "CP", "NY", "T"];
@@ -677,7 +677,7 @@
   function render() {
     if (!S.me) return;
     try { renderChrome(); } catch (err) { oopsLog(err); }
-    var fn = { clients: renderClients, board: renderBoard, flights: renderFlights, summary: renderSummary, import: renderImport, staff: renderStaff, settings: renderSettings, archive: renderArchive, me: renderMe }[S.view] || renderBoard;
+    var fn = { clients: renderClients, board: renderBoard, flights: renderFlights, summary: renderSummary, dashboard: renderDashboard, import: renderImport, staff: renderStaff, settings: renderSettings, archive: renderArchive, me: renderMe }[S.view] || renderBoard;
     var html;
     // One screen going wrong never takes the app down: it says so and offers a way out.
     try { html = fn(); } catch (err) {
@@ -689,7 +689,7 @@
     snapSave();
     if (flashId) { var el = document.querySelector('[data-id="' + flashId + '"]'); if (el) { el.classList.add("flash"); setTimeout(function () { el.classList.remove("flash"); }, 1500); } flashId = null; }
   }
-  function go(view) { if (S.platform && view !== "me") view = "clients"; if (view === "import" && S.updateReady && !S.queue.length && !pt && !camStream && !BK.length) { location.reload(); return; } if (view === "import") S.recentImports = null; S.view = view; S.settingsDraft = null; if (view === "summary") S.activity = null; if ($("menu").open) $("menu").close(); render(); window.scrollTo(0, 0); }
+  function go(view) { if (S.platform && view !== "me") view = "clients"; if (view === "import" && S.updateReady && !S.queue.length && !pt && !camStream && !BK.length) { location.reload(); return; } if (view === "import") S.recentImports = null; S.view = view; S.settingsDraft = null; if (view === "summary") S.activity = null; if (view === "dashboard") S.dash = null; if ($("menu").open) $("menu").close(); render(); window.scrollTo(0, 0); }
 
   // ── board ─────────────────────────────────
   // Same rules as the Sheet app, so nobody has to relearn what a count means.
@@ -3070,6 +3070,74 @@
     if (S.view === "summary") render();
   }
 
+  // ── dashboard (owner and managers) ───────
+  // Over the last 24 hours, 7 or 30 days: cars added at the desk (Add a car,
+  // and PICKS cars marked NEW BOOKING by hand), money taken and waived, money
+  // still owed (cars here now, and cars that left with no payment recorded),
+  // removed cars and complaints. One read: owner_dashboard() (setup part 66).
+  var DASH_PERIODS = [["1", "24 hours"], ["7", "7 days"], ["30", "30 days"]];
+  async function loadDash() {
+    var days = +(S.dashDays || "7"), want = S.dashDays || "7";
+    var r = await sb.rpc("owner_dashboard", { p_since: new Date(Date.now() - days * 86400000).toISOString() });
+    if ((S.dashDays || "7") !== want) return;
+    if (r.error) { S.dash = { error: r.error.message }; } else S.dash = r.data || {};
+    if (S.view === "dashboard") render();
+  }
+  function owedNow(r) {
+    if (r.charge_agreed != null) return { amount: +r.charge_agreed, days: 0 };
+    return overstayDue(r) || { amount: 0, days: 0 };
+  }
+  function renderDashboard() {
+    if (!can("settings")) return '<div class="empty">Nothing to show for your role.</div>';
+    var f = S.dashDays || "7";
+    var h = '<div class="dchips" role="group" aria-label="Period">' + DASH_PERIODS.map(function (x) {
+      return '<button type="button" data-dashp="' + x[0] + '" class="' + (f === x[0] ? "on" : "") + '" aria-pressed="' + (f === x[0]) + '">' + x[1] + "</button>";
+    }).join("") + "</div>";
+    if (!S.dash) { loadDash(); return h + '<div class="empty">Loading…</div>'; }
+    if (S.dash.error) return h + '<div class="alert">' + esc(S.dash.error) + "</div>";
+    var D = S.dash, sum = function (a, k) { return a.reduce(function (t, x) { return t + (+x[k] || 0); }, 0); };
+    var added = D.added || [], paid = D.paid || [], removed = D.removed || [], complaints = D.complaints || [];
+    var taken = paid.filter(function (x) { return x.charge_method !== "waived"; }), waived = paid.filter(function (x) { return x.charge_method === "waived"; });
+    var cash = sum(taken.filter(function (x) { return x.charge_method === "cash"; }), "charge_amount"), card = sum(taken.filter(function (x) { return x.charge_method === "card"; }), "charge_amount");
+    var owed = (D.owed || []).map(function (r) { var o = owedNow(r); return Object.assign({}, r, { due: o.amount, days: o.days }); }).filter(function (r) { return r.due > 0; });
+    var here = owed.filter(function (r) { return !r.cleared_at; }), left = owed.filter(function (r) { return r.cleared_at; });
+    var when = function (ts) { return esc(dayShort(ts)) + " " + esc(hhmm(ts)); };
+    var tile = function (label, big, small, cls) { return '<div class="stat' + (cls ? " " + cls : "") + '"><span>' + label + '</span><strong class="num">' + big + "</strong>" + (small ? "<small>" + small + "</small>" : "") + "</div>"; };
+    h += '<div class="stats dstats">' +
+      tile("Added at the desk", added.length, added.filter(function (a) { return a.action === "ADDED"; }).length + " added · " + added.filter(function (a) { return a.action !== "ADDED"; }).length + " NEW BOOKING") +
+      tile("Money taken", money(cash + card), "cash " + money(cash) + " · card " + money(card)) +
+      tile("Owed now", money(sum(here, "due")), here.length + (here.length === 1 ? " car" : " cars") + " here") +
+      tile("Left unpaid", money(sum(left, "due")), left.length + (left.length === 1 ? " car" : " cars"), left.length ? "warn" : "") +
+      tile("Waived", money(sum(waived, "charge_amount")), waived.length + (waived.length === 1 ? " car" : " cars")) +
+      tile("Removed", removed.length, ["No show", "Cancelled", "Duplicate"].map(function (k) { var n = removed.filter(function (x) { return x.removed_reason === k; }).length; return n ? n + " " + k.toLowerCase() : ""; }).filter(Boolean).join(" · ")) +
+      tile("Complaints", complaints.length, "") +
+      tile("Early returns", +D.early || 0, (+D.changed || 0) + " return changes") + "</div>";
+    var list = function (title, rows, line) { return '<div class="section-label">' + title + " (" + rows.length + ')</div><div class="box dlist">' + (rows.length ? rows.map(line).join("") : '<div class="empty">None.</div>') + "</div>"; };
+    if (left.length) h += list("Left with no payment recorded", left, function (r) {
+      return '<div class="rowline"><div class="grow"><strong>' + esc(r.reg) + "</strong> · " + esc(r.name) + '<div class="note">Cleared ' + when(r.cleared_at) + (r.charge_reason ? " · " + esc(r.charge_reason) : r.days ? " · " + r.days + (r.days === 1 ? " day" : " days") + " over" : "") + '</div></div><strong class="num due">' + money(r.due) + "</strong></div>";
+    });
+    h += list("Added at the desk", added, function (a) {
+      return '<div class="rowline"><span class="num note">' + when(a.at) + '</span><div class="grow"><strong>' + esc(a.reg || "NO REG") + "</strong>" + (a.customer ? " · " + esc(a.customer) : "") +
+        '<div class="note">' + (a.action === "ADDED" ? "Added to " + esc(String(a.kind || "").toUpperCase() || "the sheet") : "Marked NEW BOOKING") + " · " + esc(a.staff_name || "—") + "</div></div></div>";
+    });
+    h += list("Money taken", taken, function (x) {
+      return '<div class="rowline"><span class="num note">' + when(x.charge_at) + '</span><div class="grow"><strong>' + esc(x.reg) + "</strong> · " + esc(x.name) + '<div class="note">' + esc(String(x.charge_method).toUpperCase()) + (x.charge_reason ? " · " + esc(x.charge_reason) : "") + " · " + esc(x.by_name || "—") + '</div></div><strong class="num">' + money(x.charge_amount) + "</strong></div>";
+    });
+    h += list("Owed now", here, function (r) {
+      return '<div class="rowline"><div class="grow"><strong>' + esc(r.reg) + "</strong> · " + esc(r.name) + '<div class="note">Due back ' + when(r.orig_return_at || r.return_at) + (r.charge_reason ? " · " + esc(r.charge_reason) : r.days ? " · " + r.days + (r.days === 1 ? " day" : " days") + " over" : "") + '</div></div><strong class="num">' + money(r.due) + "</strong></div>";
+    });
+    if (waived.length) h += list("Waived", waived, function (x) {
+      return '<div class="rowline"><span class="num note">' + when(x.charge_at) + '</span><div class="grow"><strong>' + esc(x.reg) + "</strong> · " + esc(x.name) + '<div class="note">' + esc(x.by_name || "—") + '</div></div><strong class="num">' + money(x.charge_amount) + "</strong></div>";
+    });
+    h += list("Removed", removed, function (x) {
+      return '<div class="rowline"><span class="num note">' + when(x.removed_at) + '</span><div class="grow"><strong>' + esc(x.reg || "NO REG") + "</strong> · " + esc(x.name) + '<div class="note">' + esc(x.removed_reason) + " · " + esc(String(x.kind || "").toUpperCase()) + " · " + esc(x.by_name || "—") + "</div></div></div>";
+    });
+    if (complaints.length) h += list("Complaints", complaints, function (a) {
+      return '<div class="rowline"><span class="num note">' + when(a.at) + '</span><div class="grow"><strong>' + esc(a.reg) + "</strong>" + (a.customer ? " · " + esc(a.customer) : "") + '<div class="note">' + esc(a.staff_name || "—") + "</div></div></div>";
+    });
+    return h + '<div class="row-actions"><button type="button" class="btn ghost small" data-dashreload>Refresh</button></div>';
+  }
+
   // ── import ────────────────────────────────
   // ── whose app this is ─────────────────────────────────────────────────────
   // One codebase, several parking companies. Each carries its own name, colour
@@ -4135,6 +4203,8 @@
     if (t.dataset.restart !== undefined) { S.imp = newImport(S.imp.kind); render(); return; }
     if (t.dataset.create !== undefined) return createSheet();
     if (t.dataset.reloadlog !== undefined) { S.activity = null; render(); return; }
+    if (t.dataset.dashp) { S.dashDays = t.dataset.dashp; S.dash = null; render(); return; }
+    if (t.dataset.dashreload !== undefined) { S.dash = null; render(); return; }
     if (t.dataset.reset) {
       var p = S.staff[t.dataset.reset];
       if (!confirm("Give " + p.name + " a new link and PIN? Their old link stops working.")) return;
@@ -4219,7 +4289,7 @@
         '</div><div class="pbtns"><button type="button" data-closemenu>Close</button></div>';
       return $("menu").showModal();
     }
-    var items = [["board", "Board", true], ["flights", "Flights", true], ["summary", "Summary and activity", can("summary") || can("log")], ["archive", "Archive: older days and search", can("log")],
+    var items = [["board", "Board", true], ["flights", "Flights", true], ["summary", "Summary and activity", can("summary") || can("log")], ["archive", "Archive: older days and search", can("log")], ["dashboard", "Dashboard", can("settings")],
       ["import", "Import bookings", can("import")], ["staff", "Staff", can("staff")], ["settings", "Settings", can("settings")], ["me", "Me · sign out", true]];
     var sh = sheet();
     var sheetTools = sh && can("import") ? '<label>THIS SHEET · ' + esc(sheetLabel(sh)) + '</label><div class="menu-list">' +
@@ -4250,6 +4320,7 @@
     removed: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
     box: '<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/>',
     bin: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+    dashboard: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
     play: '<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l6-3.5z"/>'
   };
   function menuIcon(k) { return '<svg class="mi" viewBox="0 0 24 24" aria-hidden="true">' + (MENU_ICON[k] || "") + "</svg>"; }
@@ -4258,7 +4329,7 @@
     var btn = function (k) { return '<button type="button" data-view="' + k + '"' + (S.view === k ? ' aria-current="page"' : "") + ">" + menuIcon(k) + "<span>" + esc(have[k]) + "</span></button>"; };
     var group = function (title, keys) { keys = keys.filter(function (k) { return have[k]; }); return keys.length ? "<label>" + title + '</label><div class="menu-list">' + keys.map(btn).join("") + "</div>" : ""; };
     var h = "<h2>" + esc(S.company.name) + '</h2><p class="sub">' + esc(S.me.name) + " · " + esc(ROLE_LABEL[S.me.role] || S.me.role) + "</p>" +
-      group("TODAY", ["board", "flights", "summary"]) + group("OFFICE", ["archive", "import", "staff", "settings"]);
+      group("TODAY", ["board", "flights", "summary"]) + group("OFFICE", ["dashboard", "archive", "import", "staff", "settings"]);
     if (sh && can("import")) {
       h += "<label>THIS SHEET · " + esc(sheetLabel(sh)) + '</label><div class="menu-list">' +
         '<button type="button" data-addcar>' + menuIcon("add") + "<span>Add a car</span></button>" +

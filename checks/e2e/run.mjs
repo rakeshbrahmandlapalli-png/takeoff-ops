@@ -83,7 +83,8 @@ function rpc(db, fn, a) {
     case "set_swipe_only": db.company.swipe_only = !!a.p_on; return !!a.p_on;
     case "admin_clients": return [{ id: "c1", name: "TAKEOFF", slug: "takeoff", yards: ["NB", "S"], brand: { colour: "#F59E0B", host: "takeoff-ops.vercel.app" }, staff: 14, has_owner: true, sheets_7d: 18, cars_7d: 2074, last_activity: now() }];
     case "admin_usage": return { db_bytes: 25709715, store_bytes: 0, store_files: 0, clients: [{ id: "c1", name: "TAKEOFF", cars_30d: 2074, sheets_30d: 18, pt_sets_30d: 134, pt_photos_30d: 4277, fr24_calls_30d: 209, fr24_calls_today: 46, timetable_runs_30d: 148, timetable_last_ok: now(), timetable_last_error: "", activity_30d: 5805 }] };
-    case "my_permissions": return Object.fromEntries(["sent", "called", "clear", "yard", "summary", "log", "flights", "rtc", "picksinfo", "import", "staff", "settings", "note", "intake"].map((k) => [k, true]));
+    case "owner_dashboard": (db.dashCalls = db.dashCalls || []).push(a.p_since); return db.dash || { added: [], paid: [], owed: [], removed: [], complaints: [], early: 0, changed: 0 };
+    case "my_permissions": return db.perms || Object.fromEntries(["sent", "called", "clear", "yard", "summary", "log", "flights", "rtc", "picksinfo", "import", "staff", "settings", "note", "intake"].map((k) => [k, true]));
     case "tap_drop": {
       const b = row(a.p_booking), f = { sent: "sent", called: "called", clear: "cleared" }[a.p_action];
       b[f + "_at"] = a.p_on ? now() : null; b[f + "_by"] = a.p_on ? "s1" : null;
@@ -1326,6 +1327,55 @@ for (const [theme, role, want] of [["", "owner", 7], ["stdplus", "terminal", 3],
   await page.click("#panelBody [data-tutorial]"); await sleep(400);
   await page.keyboard.press("Escape"); await sleep(300);
   check("Tutorials (" + look + "): closing stops the video", await page.evaluate(() => { const v = document.querySelector("#panelBody video"); return !v || v.paused; }));
+});
+
+// 18a3c. Menu → Dashboard (owner, managers): cars added at the desk, money taken and owed, removed cars, complaints
+const dashData = () => {
+  const ago = (h) => new Date(Date.now() - h * 3600000).toISOString();
+  return {
+    added: [{ at: ago(2), reg: "AB12CDE", customer: "MR WALK IN", staff_name: "SUGU", action: "ADDED", value: "added by hand", kind: "drops" },
+      { at: ago(5), reg: "XY34ZZZ", customer: "MRS DESK", staff_name: "TERRY", action: "CALLED", value: "New Booking", kind: "picks" }],
+    paid: [{ id: "p1", reg: "CASH01", name: "MR CASH", charge_amount: 20, charge_method: "cash", charge_at: ago(3), charge_reason: "", by_name: "SUGU" },
+      { id: "p2", reg: "CARD01", name: "MR CARD", charge_amount: 50, charge_method: "card", charge_at: ago(4), charge_reason: "return date changed", by_name: "SUGU" },
+      { id: "p3", reg: "WAIVE1", name: "MR FREE", charge_amount: 30, charge_method: "waived", charge_at: ago(6), charge_reason: "", by_name: "RAKESH" }],
+    owed: [{ id: "o1", kind: "drops", reg: "OWE001", name: "MR HERE", return_at: ago(30), cleared_at: null, overstay: true, charge_agreed: 40, charge_reason: "" },
+      { id: "o2", kind: "drops", reg: "LEFT01", name: "MR GONE", return_at: ago(80), cleared_at: ago(1), overstay: true, charge_agreed: null, charge_reason: "" },
+      { id: "o3", kind: "drops", reg: "ZERO01", name: "MR ONTIME", return_at: ago(1), cleared_at: null, overstay: true, charge_agreed: null, charge_reason: "" }],
+    removed: [{ id: "r1", kind: "picks", reg: "NOSHOW1", name: "MR AWAY", removed_reason: "No show", removed_at: ago(7), by_name: "SUGU" }],
+    complaints: [{ at: ago(8), reg: "MAD001", customer: "MR CROSS", staff_name: "TERRY" }],
+    early: 2, changed: 3
+  };
+};
+for (const theme of ["", "stdplus"]) await scenario(async () => {
+  const db = theme ? apbDb(theme) : makeDb(); db.company.overstay_rate = 30; db.dash = dashData();
+  const page = await phone(browser, db);
+  await open(page); await sleep(400);
+  const look = theme || "standard";
+  await page.evaluate(() => (document.querySelector("#cHead:not(.hidden)") || document.getElementById("menuBtn")).click()); await page.waitForSelector("#menu[open]"); await sleep(300);
+  check("Dashboard (" + look + "): the owner's menu has Dashboard", await page.locator('#menuBody [data-view="dashboard"]').count() === 1);
+  await page.click('#menuBody [data-view="dashboard"]'); await sleep(700);
+  const tiles = await page.locator("#main .dstats .stat").evaluateAll((els) => els.map((e) => e.innerText.replace(/\s+/g, " ").trim()));
+  const tile = (name) => tiles.find((t) => t.startsWith(name)) || "";
+  check("Dashboard (" + look + "): cars added at the desk, by hand and NEW BOOKING", /^Added at the desk 2 1 added · 1 NEW BOOKING/.test(tile("Added at the desk")), tile("Added at the desk"));
+  check("Dashboard (" + look + "): money taken, cash and card", /Money taken £70 cash £20 · card £50/.test(tile("Money taken")), tile("Money taken"));
+  check("Dashboard (" + look + "): owed now only counts cars still here that owe something", /Owed now £40 1 car here/.test(tile("Owed now")), tile("Owed now"));
+  check("Dashboard (" + look + "): a car that left with no payment recorded shows red", /^Left unpaid £(\d+) 1 car/.test(tile("Left unpaid")) && +tile("Left unpaid").match(/£(\d+)/)[1] >= 60 && await page.locator("#main .dstats .stat.warn").count() === 1, tile("Left unpaid"));
+  check("Dashboard (" + look + "): waived, removed, complaints, early returns", /Waived £30 1 car/.test(tile("Waived")) && /Removed 1 1 no show/.test(tile("Removed")) && /Complaints 1/.test(tile("Complaints")) && /Early returns 2 3 return changes/.test(tile("Early returns")), tiles.join(" | "));
+  const body = await page.locator("#main").innerText();
+  check("Dashboard (" + look + "): the lists name the cars and who did it", /Left with no payment recorded \(1\)[\s\S]*LEFT01/i.test(body) && /AB12CDE[\s\S]*Added to DROPS · SUGU/.test(body) && /XY34ZZZ[\s\S]*Marked NEW BOOKING · TERRY/.test(body) && /CARD01[\s\S]*CARD · return date changed · SUGU/.test(body) && !/ZERO01/.test(body), body.slice(0, 400));
+  const first = new Date(db.dashCalls[0]).getTime();
+  check("Dashboard (" + look + "): opens on the last 7 days", Math.abs(Date.now() - first - 7 * 86400000) < 600000);
+  await page.click('#main [data-dashp="30"]'); await sleep(600);
+  const last = new Date(db.dashCalls[db.dashCalls.length - 1]).getTime();
+  check("Dashboard (" + look + "): 30 days reads again from 30 days back", Math.abs(Date.now() - last - 30 * 86400000) < 600000 && await page.locator('#main [data-dashp="30"].on').count() === 1);
+});
+await scenario(async () => {
+  const db = makeDb(); db.me.role = "office";
+  db.perms = Object.fromEntries(["sent", "called", "clear", "yard", "summary", "log", "flights", "rtc", "picksinfo", "import", "staff", "note", "intake"].map((k) => [k, true]));
+  const page = await phone(browser, db);
+  await open(page); await sleep(400);
+  await page.click("#menuBtn"); await sleep(300);
+  check("Dashboard: office staff don't get it", await page.locator('#menuBody [data-view="dashboard"]').count() === 0 && await page.locator('#menuBody [data-view="archive"]').count() === 1);
 });
 
 // 18a4. a new version of the app is picked up without anyone reloading
