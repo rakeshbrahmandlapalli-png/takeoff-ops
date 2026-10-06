@@ -4043,7 +4043,8 @@
     if (t.dataset.backup !== undefined) return downloadBackup(t);
     if (t.dataset.saverate !== undefined) return saveOverstayRate(t);
     if (t.dataset.swipestep) { setSwipeChoice(t.dataset.swipestep); render(); return openMenu(); }
-    if (t.dataset.swipeonlyme) { setSwipeOnlyChoice(t.dataset.swipeonlyme === "1"); render(); return openMenu(); }
+    if (t.dataset.swipeleft) { setSwipeLeftChoice(t.dataset.swipeleft); render(); return openMenu(); }
+    if (t.closest("[data-swipeonlyme]")) { setSwipeOnlyChoice(!swipeOnlyChoice()); render(); return openMenu(); }
     if (t.dataset.view) return go(t.dataset.view);
     if (t.id === "menuBtn" || t.closest("#cHead")) return openMenu();
     if (t.id === "shiftBtn" || t.closest("#cShift")) return openShiftPick();
@@ -4248,14 +4249,15 @@
   }
 
   // ── Premium looks: swipe right on a drop, and pull down to refresh ──
-  // A swipe right marks the car with the step this person chooses on their
-  // own phone (Menu → Display → Swipe right on drops): Sent, Called or Clear,
+  // A swipe right (and, if they pick one, a swipe left) marks the car with the
+  // step this person chooses on their own phone (Menu → Swipe right / left on
+  // drops): Sent, Called or Clear. Swipe right
   // starting from their role (bongo Sent, office Called, terminal Clear;
   // others Off). It only ever marks: a car already marked is left alone
   // (undo stays a tap on the button). Picks don't swipe.
   var SWIPE_STEPS = { sent: ["sent", "Sent", "sent_at"], called: ["called", "Called", "called_at"], clear: ["clear", "Clear", "cleared_at"] };
   var SWIPE_ROLE = { bongo: "sent", office: "called", terminal: "clear" };
-  var SWIPE_KEY = "takeoff_swipe", SWIPE_ONLY_KEY = "takeoff_swipe_only";
+  var SWIPE_KEY = "takeoff_swipe", SWIPE_LEFT_KEY = "takeoff_swipe_left", SWIPE_ONLY_KEY = "takeoff_swipe_only";
   var SWIPE_AT = 90, PULL_AT = 64, sw = null;
   function swipeChoice() {
     var v = null; try { v = localStorage.getItem(SWIPE_KEY); } catch (e) {}
@@ -4263,27 +4265,34 @@
     return v !== "off" && !can(v) ? "off" : v;
   }
   function setSwipeChoice(v) { try { localStorage.setItem(SWIPE_KEY, v); } catch (e) {} }
+  // A second step on swipe left (Off to start for everyone).
+  function swipeLeftChoice() {
+    var v = null; try { v = localStorage.getItem(SWIPE_LEFT_KEY); } catch (e) {}
+    return SWIPE_STEPS[v] && can(v) ? v : "off";
+  }
+  function setSwipeLeftChoice(v) { try { localStorage.setItem(SWIPE_LEFT_KEY, v); } catch (e) {} }
+  function swipeOn() { return swipeChoice() !== "off" || swipeLeftChoice() !== "off"; }
   function swipeOnlyChoice() { try { return localStorage.getItem(SWIPE_ONLY_KEY) === "1"; } catch (e) { return false; } }
   function setSwipeOnlyChoice(on) { try { if (on) localStorage.setItem(SWIPE_ONLY_KEY, "1"); else localStorage.removeItem(SWIPE_ONLY_KEY); } catch (e) {} }
   // "Swipe only" (this person's choice): no SENT / CALLED / CLEAR buttons on
   // drops; the row shows what is done, and the car's panel keeps the buttons.
   function swipeOnly() {
     var sh = sheet();
-    return !!(hasFeatures() && S.me && swipeChoice() !== "off" && swipeOnlyChoice() && sh && sh.kind === "drops");
+    return !!(hasFeatures() && S.me && swipeOn() && swipeOnlyChoice() && sh && sh.kind === "drops");
   }
   // Menu → Display (Premium looks): this phone's swipe step and buttons.
   function swipeMenuHtml() {
     if (!hasFeatures() || S.platform) return "";
-    var c = swipeChoice(), only = swipeOnlyChoice();
+    var c = swipeChoice(), l = swipeLeftChoice(), shown = !swipeOnlyChoice();
     var opts = [["off", "Off"]].concat(["sent", "called", "clear"].filter(can).map(function (k) { return [k, SWIPE_STEPS[k][1]]; }));
-    return '<label>SWIPE RIGHT ON DROPS</label><div class="pseg mode swipestep">' + opts.map(function (x) {
-        return '<button type="button" data-swipestep="' + x[0] + '" class="' + (c === x[0] ? "on" : "") + '" aria-pressed="' + (c === x[0]) + '">' + x[1] + "</button>";
-      }).join("") + "</div>" +
-      (c === "off" ? "" :
-        '<label>BUTTONS ON DROPS</label><div class="pseg mode swipebtns">' + [["0", "Show"], ["1", "Hide · swipe only"]].map(function (x) {
-          var sel = (x[0] === "1") === only;
-          return '<button type="button" data-swipeonlyme="' + x[0] + '" class="' + (sel ? "on" : "") + '" aria-pressed="' + sel + '">' + x[1] + "</button>";
-        }).join("") + "</div>");
+    var seg = function (title, attr, cls, cur) {
+      return "<label>" + title + '</label><div class="pseg mode ' + cls + '">' + opts.map(function (x) {
+        return '<button type="button" ' + attr + '="' + x[0] + '" class="' + (cur === x[0] ? "on" : "") + '" aria-pressed="' + (cur === x[0]) + '">' + x[1] + "</button>";
+      }).join("") + "</div>";
+    };
+    return seg("SWIPE RIGHT ON DROPS", "data-swipestep", "swipestep", c) + seg("SWIPE LEFT ON DROPS", "data-swipeleft", "swipestep swipeleft", l) +
+      (!swipeOn() ? "" :
+        '<button type="button" class="swtoggle" data-swipeonlyme role="switch" aria-checked="' + shown + '"><span>Show buttons on drops</span><i aria-hidden="true"></i></button>');
   }
   function stepStatus(r) {
     var parts = [["sent_at", "sent_by", "Sent", "s"], ["called_at", "called_by", r.called_word === "Overstay" ? "Overstay" : "Called", "c"], ["cleared_at", "cleared_by", r.clear_word === "COMPLAINT" ? "Complaint" : "Clear", "x"]]
@@ -4293,8 +4302,8 @@
       });
     return '<div class="acts steps" data-open>' + (parts.join("") || '<span class="st none">Swipe ›</span>') + "</div>";
   }
-  function swipeAction(row) {
-    var sh = sheet(), c = S.me ? swipeChoice() : "off";
+  function swipeAction(row, dir) {
+    var sh = sheet(), c = !S.me ? "off" : dir === "left" ? swipeLeftChoice() : swipeChoice();
     if (!row || c === "off" || !sh || sh.kind !== "drops" || S.view !== "board") return null;
     return SWIPE_STEPS[c];
   }
@@ -4313,16 +4322,17 @@
     if (!sw || e.touches.length !== 1) return;
     var t = e.touches[0]; sw.dx = t.clientX - sw.x; sw.dy = t.clientY - sw.y;
     if (!sw.mode) {
-      if (Math.abs(sw.dx) > 12 && Math.abs(sw.dx) > Math.abs(sw.dy) * 1.4) sw.mode = sw.dx > 0 && (sw.act = swipeAction(sw.row)) ? "swipe" : "none";
+      if (Math.abs(sw.dx) > 12 && Math.abs(sw.dx) > Math.abs(sw.dy) * 1.4) { sw.dir = sw.dx > 0 ? "right" : "left"; sw.mode = (sw.act = swipeAction(sw.row, sw.dir)) ? "swipe" : "none"; }
       else if (sw.dy > 12 && sw.top && sw.dy > Math.abs(sw.dx)) sw.mode = "pull";
       else if (Math.abs(sw.dy) > 12) sw.mode = "none";
     }
     if (sw.mode === "swipe") {
-      var x = Math.max(0, Math.min(sw.dx, 150)), done = !!rowOf(sw.row) && !!rowOf(sw.row)[sw.act[2]];
+      var x = sw.dir === "left" ? Math.min(0, Math.max(sw.dx, -150)) : Math.max(0, Math.min(sw.dx, 150)), done = !!rowOf(sw.row) && !!rowOf(sw.row)[sw.act[2]];
+      sw.row.classList.toggle("swipe-left", sw.dir === "left");
       sw.row.classList.add("swiping"); sw.row.style.transform = "translateX(" + x + "px)";
       sw.row.setAttribute("data-swipe", done ? "Already " + sw.act[1].toLowerCase() : sw.act[1]);
       sw.row.classList.toggle("swipe-" + sw.act[0], true);
-      sw.row.classList.toggle("swipe-go", x >= SWIPE_AT && !done);
+      sw.row.classList.toggle("swipe-go", Math.abs(x) >= SWIPE_AT && !done);
     } else if (sw.mode === "pull") {
       var d = Math.min(sw.dy * 0.5, 90), bar = pullBar();
       bar.style.top = ($("boardHead").getBoundingClientRect().bottom) + "px";
@@ -4335,9 +4345,9 @@
     if (!sw) return;
     var s0 = sw; sw = null;
     if (s0.mode === "swipe") {
-      var row = s0.row, r = rowOf(row), go = s0.dx >= SWIPE_AT;
+      var row = s0.row, r = rowOf(row), go = s0.dir === "left" ? s0.dx <= -SWIPE_AT : s0.dx >= SWIPE_AT;
       row.classList.remove("swiping", "swipe-go"); row.style.transform = "";
-      setTimeout(function () { row.removeAttribute("data-swipe"); row.classList.remove("swipe-" + s0.act[0]); }, 220);
+      setTimeout(function () { row.removeAttribute("data-swipe"); row.classList.remove("swipe-" + s0.act[0], "swipe-left"); }, 220);
       if (!go || !r) return;
       if (r[s0.act[2]]) { toast((r.reg || "This car") + " is already " + s0.act[1].toLowerCase() + "."); return; }
       if (navigator.vibrate) try { navigator.vibrate(15); } catch (e) {}
@@ -4352,7 +4362,7 @@
     }
   });
   document.addEventListener("touchcancel", function () {
-    if (sw && sw.row) { sw.row.classList.remove("swiping", "swipe-go"); sw.row.style.transform = ""; sw.row.removeAttribute("data-swipe"); }
+    if (sw && sw.row) { sw.row.classList.remove("swiping", "swipe-go", "swipe-left"); sw.row.style.transform = ""; sw.row.removeAttribute("data-swipe"); }
     if ($("ptr")) $("ptr").style.height = "0px";
     sw = null;
   });
