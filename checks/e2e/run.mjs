@@ -1304,6 +1304,30 @@ for (const theme of ["", "board"]) await scenario(async () => {
   check("App version (" + look + "): Update now reloads into the new version", !(await page.evaluate(() => window.__stillHere === true)));
 });
 
+// 18a3b. Menu → Tutorials: everyone has it; terminal and bongo see their own videos, others all 7
+for (const [theme, role, want] of [["", "owner", 7], ["stdplus", "terminal", 3], ["stdplus", "bongo", 3], ["board", "office", 7]]) await scenario(async () => {
+  const db = theme ? apbDb(theme) : makeDb(); db.me = { ...db.me, role };
+  const page = await phone(browser, db);
+  await open(page); await sleep(400);
+  await page.evaluate(() => (document.querySelector("#cHead:not(.hidden)") || document.getElementById("menuBtn")).click()); await page.waitForSelector("#menu[open]"); await sleep(300);
+  const look = (theme || "standard") + ", " + role;
+  check("Tutorials (" + look + "): the menu has a Tutorials button", await page.locator("#menuBody [data-tutorials]").count() === 1);
+  await page.click("#menuBody [data-tutorials]"); await sleep(300);
+  const names = await page.locator("#panelBody [data-tutorial]").evaluateAll((b) => b.map((x) => x.dataset.tutorial));
+  const ownOnly = role === "terminal" || role === "bongo" ? names.every((n) => n.includes(role)) : true;
+  check("Tutorials (" + look + "): the list shows " + want + " videos for this role", names.length === want && ownOnly && !(await page.evaluate(() => document.getElementById("menu").open)), names.join(","));
+  await page.click("#panelBody [data-tutorial]"); await sleep(600);
+  const src = await page.locator("#panelBody video").getAttribute("src");
+  check("Tutorials (" + look + "): tapping one plays it in the app", src === "/tutorials/" + names[0] + ".mp4" && await page.evaluate(() => document.querySelector("#panelBody video").controls));
+  const head = await page.evaluate(async (u) => (await fetch(u, { method: "HEAD" })).status, src);
+  check("Tutorials (" + look + "): the video file is there", head === 200, String(head));
+  await page.click('#panelBody [data-tutorials]'); await sleep(300);
+  check("Tutorials (" + look + "): All videos goes back to the list", await page.locator("#panelBody [data-tutorial]").count() === want);
+  await page.click("#panelBody [data-tutorial]"); await sleep(400);
+  await page.keyboard.press("Escape"); await sleep(300);
+  check("Tutorials (" + look + "): closing stops the video", await page.evaluate(() => { const v = document.querySelector("#panelBody video"); return !v || v.paused; }));
+});
+
 // 18a4. a new version of the app is picked up without anyone reloading
 await scenario(async () => {
   const db = makeDb();

@@ -4,4 +4,3 @@ setup
 supabase
 *.md
 SECRET-*
-tutorials

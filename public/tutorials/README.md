@@ -14,4 +14,4 @@ every person. Swipe is not shown.
 | `6-bongo-picks-and-pt.mp4` | 1:31 | Bongo: picks board and PT photos |
 | `7-bongo-drops.mp4` | 1:38 | Bongo: SENT, undo, search, notes |
 
-Not deployed (the site serves `public/` only).
+Played in the app from Menu → Tutorials: terminal staff see 2–4, bongo drivers 5–7, everyone else all 7. The service worker leaves them alone (no offline copy). To add one, put the MP4 here with a still `.jpg` of the same name (`ffmpeg -ss 1.2 -i X.mp4 -frames:v 1 -vf scale=390:-2 X.jpg`) and add it to `TUTORIALS` in `app.js`.
