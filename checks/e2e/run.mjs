@@ -114,7 +114,10 @@ function rpc(db, fn, a) {
       .filter(({ b, d }) => d && !db.bookings.some((x) => x.sheet_id === d.id && x.reg === b.reg))
       .map(({ b, d }) => ({ id: b.id, reg: b.reg, name: b.name, return_at: b.return_at, day: d.day, sheet_id: d.id }));
     case "add_pick_to_drops": { const p = db.bookings.find((x) => x.id === a.p_booking), d = db.sheets.find((s) => s.kind === "drops" && s.day === p.return_at.slice(0, 10)); const n = { ...p, id: "dn" + db.bookings.length, sheet_id: d.id, kind: "drops" }; db.bookings.push(n); return n; }
-    case "add_booking": { const n = { id: "new" + db.bookings.length, company_id: "c1", sheet_id: a.p_sheet, kind: db.sheets.find((x) => x.id === a.p_sheet).kind, ref: a.p.ref || "", reg: String(a.p.reg).toUpperCase(), name: a.p.name || "", num: 99, return_at: a.p.return_local ? new Date(a.p.return_local.replace(" ", "T") + ":00+01:00").toISOString() : null, note: a.p.note || "" }; db.bookings.push(n); return n; }
+    case "add_booking": { const n = { id: "new" + db.bookings.length, company_id: "c1", sheet_id: a.p_sheet, kind: db.sheets.find((x) => x.id === a.p_sheet).kind, ref: a.p.ref || "", reg: String(a.p.reg).toUpperCase(), name: a.p.name || "", num: 99, return_at: a.p.return_local ? new Date(a.p.return_local.replace(" ", "T") + ":00+01:00").toISOString() : null, note: a.p.note || "" };
+      if (a.p.desk && n.kind === "picks") Object.assign(n, { pick_called: "New Booking", pick_called_at: now(), intake: a.p.taken_in ? "Collected" : "", intake_at: a.p.taken_in ? now() : null, yard: a.p.yard || "" });
+      db.bookings.push(n); return n; }
+    case "set_doc": { const b = row(a.p_booking); b.doc_path = a.p_path; b.doc_at = now(); return b; }
     case "set_overstay_paid": { const b = row(a.p_booking); Object.assign(b, { charge_amount: a.p_amount, charge_method: a.p_method, charge_at: a.p_method ? new Date().toISOString() : null, charge_by: a.p_method ? "s1" : null }); return b; }
     case "set_overstay_agreed": { const b = row(a.p_booking); b.charge_agreed = a.p_amount; b.charge_reason = a.p_amount == null ? "" : (a.p_reason || ""); return b; }
     case "remove_booking": { const b = row(a.p_booking); Object.assign(b, { removed_at: new Date().toISOString(), removed_reason: a.p_reason, removed_by: "s1" }); return b; }
@@ -156,6 +159,7 @@ async function backend(ctx, db) {
       db.calls.push({ fn, args });
       return reply(200, rpc(db, fn, args));
     }
+    if (p.startsWith("/storage/v1/object/sign/pt-photos/")) return reply(200, { signedURL: "/object/sign/pt-photos/" + p.slice(34) + "?token=t" });
     if (p.startsWith("/storage/v1/object/pt-photos/")) { db.uploads.push(p.slice(29)); (db.uploadMarks = db.uploadMarks || []).push(((req.postDataBuffer() || Buffer.alloc(0)).toString("latin1").match(/name="cacheControl"\r\n\r\n(\d+)/) || [])[1] || ""); return reply(200, { Key: "pt-photos/" + p.slice(29) }); }
     if (p.startsWith("/functions/v1/manage-staff")) {
       const a = JSON.parse(req.postData() || "{}"); (db.staffCalls = db.staffCalls || []).push(a);
@@ -1421,6 +1425,44 @@ await scenario(async () => {
   if (await page.locator("#kindSeg:not(.hidden)").count()) await page.click("#kindSeg [data-kind=picks]"); else await page.selectOption("#sheetPick", "p0");
   await page.waitForSelector('.row[data-id="p1"]');
   check("Location on PICKS: switched off, rows keep NO SHOW and no yard counts", await page.locator('.row[data-id="p1"] [data-pick="No Show"]').count() === 1 && await page.locator(".pyard").count() === 0 && await page.locator("#tally .tyards").count() === 0);
+});
+
+// 18a3e. PICKS: a new booking at the desk, with a photo of the docket (database part 69)
+for (const [theme, role] of [["", "office"], ["stdplus", "terminal"]]) await scenario(async () => {
+  const db = theme ? apbDb(theme) : makeDb(); db.me = { ...db.me, role }; db.company.brand = { ...db.company.brand, picks_yard: true };
+  if (role === "terminal") db.perms = { clear: true, picksinfo: true, note: true, intake: true };
+  const page = await phone(browser, db);
+  await open(page); await sleep(300);
+  const look = (theme || "standard") + ", " + role;
+  check("Desk booking (" + look + "): no button on DROPS", await page.locator("[data-deskbook]").count() === 0);
+  if (await page.locator("#kindSeg:not(.hidden)").count()) await page.click("#kindSeg [data-kind=picks]"); else await page.selectOption("#sheetPick", "p0");
+  await page.waitForSelector('.row[data-id="p1"]');
+  check("Desk booking (" + look + "): PICKS has the + New booking button", await page.locator("[data-deskbook]").count() === 1);
+  await page.click("[data-deskbook]"); await page.waitForSelector("#deskForm");
+  await page.setInputFiles("[data-deskfile]", path.join(ROOT, "icons/icon-512.png")); await sleep(200);
+  check("Desk booking (" + look + "): the docket photo shows as taken", /Docket photo taken/.test(await page.textContent("#dkShot")));
+  await page.fill("#dkReg", "bu15dde"); await page.fill("#dkName", "MR DESK"); await page.fill("#dkRetD", addDays(TONIGHT, 4)); await page.fill("#dkRetT", "05:15");
+  await page.click('#dkYard [data-dkyard="' + db.company.yards[0] + '"]');
+  check("Desk booking (" + look + "): Car taken in now is ticked to start with", await page.isChecked("#dkIn"));
+  await page.click("#dkGo"); await sleep(1500);
+  const call = db.calls.find((c) => c.fn === "add_booking");
+  check("Desk booking (" + look + "): saved as a desk booking, taken in, with its location", call && call.args.p_sheet === "p0" && call.args.p.desk === true && call.args.p.taken_in === true && call.args.p.yard === db.company.yards[0] && call.args.p.return_local === addDays(TONIGHT, 4) + " 05:15", call && call.args);
+  const doc = db.calls.find((c) => c.fn === "set_doc");
+  const up = db.uploads.find((u) => /\/docs\//.test(u));
+  check("Desk booking (" + look + "): the docket photo is uploaded and kept with the car", doc && up && new RegExp("^" + db.company.id + "/docs/" + doc.args.p_booking + "/\\d+\\.jpg$").test(doc.args.p_path) && up === doc.args.p_path, { doc: doc && doc.args, up });
+  await page.click("#tabAll"); await sleep(300);
+  check("Desk booking (" + look + "): the car is on the board, NEW BOOKING", /BU15DDE/.test(await page.textContent("#main")) && /NEW BOOKING/.test(await page.textContent("#main")));
+  const nb = db.bookings.find((b) => b.reg === "BU15DDE");
+  await page.click('.row[data-id="' + nb.id + '"] .reg'); await page.waitForSelector("#panel[open]"); await sleep(600);
+  const src = await page.locator("#docImg img").getAttribute("src").catch(() => "");
+  check("Desk booking (" + look + "): the car's panel shows the docket photo", /object\/sign\/pt-photos\/.*docs/.test(src || ""), src);
+});
+await scenario(async () => {
+  const db = makeDb(); db.me = { ...db.me, role: "view" }; db.perms = { };
+  const page = await phone(browser, db);
+  await open(page); await sleep(300);
+  await page.selectOption("#sheetPick", "p0"); await page.waitForSelector('.row[data-id="p1"]');
+  check("Desk booking: view-only staff don't get the button", await page.locator("[data-deskbook]").count() === 0);
 });
 
 // 18a4. a new version of the app is picked up without anyone reloading

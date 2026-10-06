@@ -478,3 +478,13 @@ html.premium:not(.pboard) .acts .pyard{min-height:52px;border-radius:12px;font-s
 .dpark .rowline.late strong{color:var(--bad-tx,#b42318);}
 /* number-box icons, ring and mini bars: only Standard with features shows them (stdplus.css) */
 .stat .ki,.pring,.mbar{display:none;}
+
+/* PICKS: new booking at the desk (database part 69) */
+.deskbtn{display:flex;align-items:center;justify-content:center;gap:8px;width:calc(100% - 20px);margin:10px;padding:13px;border:2px dashed var(--brand,#334155);border-radius:12px;background:var(--brand-soft,#eef1f5);color:var(--brand-text,#27323f);font-size:16px;font-weight:700;}
+.deskbtn b{font-size:22px;line-height:1;}
+.docshot{display:flex;align-items:center;justify-content:center;gap:10px;margin:4px 0 6px;padding:18px 12px;border:2px dashed #c4c7cc;border-radius:12px;background:#f8f9fa;font-size:16px;font-weight:700;color:#3c4043;cursor:pointer;}
+.docshot .docshot-ico{font-size:24px;}
+.docshot.done{border-style:solid;border-color:#8fbc7a;background:#eef7ea;color:#274e13;}
+.docbox{display:flex;flex-direction:column;gap:8px;align-items:flex-start;}
+.docbox .docimg img{display:block;max-width:100%;max-height:260px;border-radius:10px;border:1px solid var(--line,#dadce0);}
+.docbox .docadd{cursor:pointer;}

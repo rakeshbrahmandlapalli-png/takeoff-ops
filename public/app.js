@@ -851,7 +851,90 @@
     $("catTally").innerHTML = cells + pick;
   }
 
-  function renderBoard() { return backupNudge() + renderSheet() + otherDaysHtml(); }
+  function renderBoard() { return backupNudge() + deskBtn() + renderSheet() + otherDaysHtml(); }
+  // PICKS: a booking made at the desk, added in one go with a photo of the
+  // docket (database part 69). Anyone who takes cars in can add one.
+  function deskBtn() {
+    var sh = sheet();
+    if (!sh || sh.kind !== "picks" || sh.archived_at || S.platform || !can("intake")) return "";
+    return '<button type="button" class="deskbtn" data-deskbook><b>+</b> New booking at the desk</button>';
+  }
+  var deskPhoto = null;
+  function openDeskBooking() {
+    var sh = sheet(); if (!sh) return;
+    deskPhoto = null;
+    var now = londonParts(new Date());
+    function f(id, label, attrs) { return '<label for="' + id + '">' + label + '</label><input id="' + id + '" ' + (attrs || "") + ">"; }
+    $("panelBody").innerHTML = '<h2 id="panelTitle">New booking <small>' + esc(sheetLabel(sh)) + "</small></h2>" +
+      '<form id="deskForm" novalidate>' +
+      '<label class="docshot" id="dkShot"><input type="file" accept="image/*" capture="environment" data-deskfile hidden><span class="docshot-ico" aria-hidden="true">📷</span><span id="dkShotTxt">Take photo of docket</span></label>' +
+      f("dkReg", "REG", 'autocomplete="off" autocapitalize="characters" maxlength="12" required') +
+      f("dkName", "NAME", 'autocomplete="off" maxlength="80"') +
+      f("dkPhone", "PHONE", 'type="tel" autocomplete="off" maxlength="30"') +
+      f("dkMake", "CAR", 'autocomplete="off" maxlength="60" placeholder="Make and colour"') +
+      f("dkRef", "REF", 'autocomplete="off" maxlength="40" placeholder="Docket or booking number"') +
+      '<label>BACK</label><div class="when2"><input id="dkRetD" type="date">' + timeBox("dkRetT", "") + "</div>" +
+      (picksYard() ? '<label>LOCATION</label><div class="pseg yard" id="dkYard">' + (S.company.yards || []).map(function (y) { return '<button type="button" data-dkyard="' + esc(y) + '">' + esc(YARD_LABEL[y] || y) + "</button>"; }).join("") + "</div>" : "") +
+      '<label for="dkNote">NOTE</label><textarea id="dkNote" maxlength="500" placeholder="e.g. £20 paid cash"></textarea>' +
+      '<label class="check"><input type="checkbox" id="dkIn" checked> Car taken in now (COLL)</label>' +
+      '<div class="pbtns"><button type="button" data-close>Cancel</button><button class="save" id="dkGo">Add booking</button></div></form>';
+    $("panelBody").dataset.drop = now.key + " " + now.time;
+    if (!$("panel").open) $("panel").showModal();
+    setTimeout(function () { $("dkReg").focus(); }, 50);
+  }
+  async function saveDeskBooking() {
+    var sh = sheet(), reg = $("dkReg").value.trim();
+    if (!reg) return toast("Enter the registration.", true);
+    var ret = localWhen("dkRet");
+    if (ret === null) return toast("Type the time like 13:20 (or 1320).", true);
+    var yb = document.querySelector("#dkYard button.on");
+    var p = { reg: reg, name: $("dkName").value, phone: $("dkPhone").value, make: $("dkMake").value, ref: $("dkRef").value, note: $("dkNote").value,
+      return_local: ret, drop_local: $("panelBody").dataset.drop || "", yard: yb ? yb.dataset.dkyard : "", desk: true, taken_in: $("dkIn").checked };
+    $("dkGo").disabled = true;
+    var x = await sb.rpc("add_booking", { p_sheet: sh.id, p: p });
+    if (x.error) { $("dkGo").disabled = false; return toast(x.error.message, true); }
+    var photo = deskPhoto; deskPhoto = null;
+    $("panel").close();
+    await loadRows();
+    toast(x.data.reg + " added" + (photo ? " · saving the docket photo…" : ""));
+    if (photo) await uploadDoc(x.data, photo);
+    if (can("import")) await askDrops([x.data.id]);
+  }
+  async function uploadDoc(r, file) {
+    try {
+      var small = await bkSmall(file, true);
+      var path = S.company.id + "/docs/" + r.id + "/" + Date.now() + ".jpg";
+      var up = await sb.storage.from("pt-photos").upload(path, small.blob, { contentType: "image/jpeg" });
+      if (up.error) throw up.error;
+      var x = await sb.rpc("set_doc", { p_booking: r.id, p_path: path });
+      if (x.error) throw x.error;
+      var row = S.rows.filter(function (y) { return y.id === r.id; })[0];
+      if (row) { row.doc_path = path; row.doc_at = nowIso(); }
+      toast("Docket photo saved for " + r.reg);
+      if (panelRow && panelRow.id === r.id && $("panel").open) openPanel(row || r);
+    } catch (e) { toast("The docket photo didn't save: " + ((e && e.message) || e), true); }
+  }
+  // The car's panel: the docket photo (its own, or for a DROPS car its PICKS car's).
+  function docBlockHtml(r) {
+    var mine = r.kind === "picks";
+    if (!r.doc_path && !(mine && can("intake")) && !r.ref) return "";
+    return '<label>DOCKET</label><div class="docbox" id="docBox">' + (r.doc_path ? '<a class="docimg" id="docImg" target="_blank" rel="noopener"><span class="note">Loading photo…</span></a>' : '<span class="note" id="docNone">' + (mine ? "No photo yet." : "") + "</span>") +
+      (mine && can("intake") ? '<label class="btn ghost small docadd">' + (r.doc_path ? "Retake photo" : "Take photo of docket") + '<input type="file" accept="image/*" capture="environment" data-docfile hidden></label>' : "") + "</div>";
+  }
+  async function fillDoc(r) {
+    var path = r.doc_path;
+    if (!path && r.kind === "drops" && r.ref) {
+      var m = await sb.from("bookings").select("doc_path").eq("kind", "picks").eq("ref", r.ref).neq("doc_path", "").limit(1);
+      path = m.data && m.data[0] && m.data[0].doc_path;
+      if (!path) { var box = $("docBox"); if (box && !box.querySelector(".docadd")) { box.previousElementSibling.remove(); box.remove(); } return; }
+      if ($("docNone")) $("docNone").outerHTML = '<a class="docimg" id="docImg" target="_blank" rel="noopener"><span class="note">Loading photo…</span></a>';
+    }
+    if (!path) return;
+    var u = await sb.storage.from("pt-photos").createSignedUrl(path, 3600);
+    var a = $("docImg"); if (!a || !panelRow || panelRow.id !== r.id) return;
+    if (u.error || !u.data) { a.innerHTML = '<span class="note">Photo not found.</span>'; return; }
+    a.href = u.data.signedUrl; a.innerHTML = '<img alt="Docket photo" src="' + esc(u.data.signedUrl) + '">';
+  }
   // The free plan's nightly backups live inside Supabase itself: the owner is
   // reminded weekly to keep a copy of their own somewhere else.
   var BACKUP_EVERY_DAYS = 7;
@@ -2330,6 +2413,7 @@
       if (r.flight === "NO FLIGHT") h += '<label for="collectText">COLLECTION TIME</label>' + timeBox("collectText", /^\d{2}:\d{2}$/.test(r.est_time) ? r.est_time : "");
       else h += '<label for="schedText">SCHEDULED LANDING</label>' + timeBox("schedText", /^\d{2}:\d{2}$/.test(r.sched_time) ? r.sched_time : "");
     }
+    h += docBlockHtml(r);
     if (can("note")) h += '<label for="noteText">NOTE</label><textarea id="noteText" maxlength="500">' + esc(r.note) + '</textarea>';
     var extra = "";
     if (drops) {
@@ -2352,6 +2436,7 @@
     if (!$("panel").open) $("panel").showModal();
     ptPhotosList(r);
     carHistory(r);
+    if ($("docBox")) fillDoc(r);
   }
   // Everything done to this car, who and when: this row and its other half
   // (the PICKS and DROPS rows of one booking share the ref). Office only,
@@ -4241,6 +4326,8 @@
     if (t.closest("#tallyFold")) return toggleTallyFold();
     if (t.dataset.actf) { S.actFilter = t.dataset.actf; return render(); }
     if (t.dataset.cat) { S.catFilter = S.catFilter === t.dataset.cat ? "" : t.dataset.cat; render(); return; }
+    if (t.dataset.deskbook !== undefined) return openDeskBooking();
+    if (t.dataset.dkyard) { var on = t.classList.contains("on"); document.querySelectorAll("#dkYard button").forEach(function (b) { b.classList.remove("on"); }); if (!on) t.classList.add("on"); return; }
     if (t.dataset.tally !== undefined) { S.yardFilter = S.yardFilter === t.dataset.tally ? "" : t.dataset.tally; render(); return; }
     var r = rowOf(t);
     if (r && t.dataset.addflight !== undefined) return openQuickFlight(r, S.view === "flights");
@@ -4286,6 +4373,7 @@
   document.addEventListener("submit", async function (e) {
     if (e.target.id === "archSearch") { e.preventDefault(); return searchArchive(); }
     if (e.target.id === "addCarForm") { e.preventDefault(); return addCar(); }
+    if (e.target.id === "deskForm") { e.preventDefault(); return saveDeskBooking(); }
     if (e.target.id === "pinChange") { e.preventDefault(); return changePin(); }
     if (e.target.id === "clientForm") { e.preventDefault(); return saveClient(); }
     if (e.target.id === "clientOwnerForm") { e.preventDefault(); return createClientOwner(); }
@@ -4315,6 +4403,12 @@
       return;
     }
     if (t.dataset.ptfile !== undefined) return ptAdd(t);
+    if (t.dataset.deskfile !== undefined) {
+      deskPhoto = t.files && t.files[0] || null;
+      if (deskPhoto) { $("dkShot").classList.add("done"); $("dkShotTxt").textContent = "Docket photo taken ✓ (tap to retake)"; }
+      return;
+    }
+    if (t.dataset.docfile !== undefined) { var f0 = t.files && t.files[0]; if (f0 && panelRow) { toast("Saving the docket photo…"); uploadDoc(panelRow, f0); } return; }
     if (t.dataset.ptmethod !== undefined) return savePtMethod(t);
     if (t.dataset.file) { var f = t.files && t.files[0]; if (!f) return; S.imp[t.dataset.file + "File"] = f; S.imp.error = ""; render(); return; }
     if (t.dataset.alertpref !== undefined) {
