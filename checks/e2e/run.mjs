@@ -1274,6 +1274,26 @@ await scenario(async () => {
   check("import: every car at the same time is refused, nothing sent", /same drop-off time \(01:00\)/.test(await text(page, ".alert")) && !db.calls.some((c) => c.fn === "import_sheet"), await text(page, ".alert"));
 });
 
+// 18a3. the menu says which app version this phone runs, and offers a newer one
+for (const theme of ["", "board"]) await scenario(async () => {
+  const db = theme ? apbDb(theme) : makeDb();
+  let tag = '"6bf99e0ff1194dbd"';
+  const page = await phone(browser, db);
+  await page.route("**/app.js", (route) => route.request().method() === "HEAD" ? route.fulfill({ status: 200, headers: { etag: tag } }) : route.continue());
+  await open(page); await sleep(400);
+  const openMenu = async () => { await page.evaluate(() => (document.querySelector("#cHead:not(.hidden)") || document.getElementById("menuBtn")).click()); await page.waitForSelector("#menu[open]"); await sleep(400); };
+  await openMenu();
+  const look = theme || "standard";
+  check("App version (" + look + "): the menu shows this phone's version, up to date", /App version 6bf99e0 · up to date/.test(await page.locator("#menuBody .appver").innerText()));
+  await page.keyboard.press("Escape"); await sleep(200);
+  await page.evaluate(() => { window.__stillHere = true; });
+  tag = '"9a1b2c3d4e5f"';
+  await openMenu();
+  check("App version (" + look + "): after a release, the menu offers the new version", /New version ready/.test(await page.locator("#menuBody .appver").innerText()) && await page.evaluate(() => window.__stillHere === true));
+  await page.click("[data-appupdate]"); await sleep(1500);
+  check("App version (" + look + "): Update now reloads into the new version", !(await page.evaluate(() => window.__stillHere === true)));
+});
+
 // 18a4. a new version of the app is picked up without anyone reloading
 await scenario(async () => {
   const db = makeDb();
