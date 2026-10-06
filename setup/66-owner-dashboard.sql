@@ -11,6 +11,11 @@
 --   • removed  cars removed in the period, with the reason
 --   • complaints  CLEAR · COMPLAINT taps in the period
 --   • early / changed  how many early returns and return changes
+--   • parked   cars in the car park right now, whatever the period: PICKS
+--              cars taken in (COLL), not removed, whose DROPS car (same
+--              booking ref, or same reg when there's no ref) isn't CLEARed
+--              yet. Counted by return day; "late" = return time passed.
+--              Returns more than 14 days ago are left out (old, unmatched).
 -- Reads only; nothing changes. Safe to run twice.
 
 create or replace function owner_dashboard(p_since timestamptz)
@@ -18,9 +23,23 @@ returns jsonb language plpgsql stable security definer set search_path = public 
 declare
   co uuid := my_company();
   since timestamptz := greatest(coalesce(p_since, now() - interval '7 days'), now() - interval '400 days');
+  tz text := coalesce((select time_zone from companies where id = co), 'Europe/London');
+  parked jsonb;
 begin
   if not can('settings') then raise exception 'Only the owner and managers can see the dashboard.'; end if;
+  with p as (
+    select b.return_at, b.yard from bookings b
+    where b.company_id = co and b.kind = 'picks' and b.intake = 'Collected' and b.removed_at is null
+      and b.return_at > now() - interval '14 days'
+      and not exists (select 1 from bookings d where d.company_id = co and d.kind = 'drops' and d.removed_at is null and d.cleared_at is not null
+        and (case when b.ref <> '' then d.ref = b.ref else d.reg = b.reg and b.reg <> '' end))
+  )
+  select jsonb_build_object('total', (select count(*) from p), 'late', (select count(*) from p where return_at <= now()),
+    'days', coalesce((select jsonb_agg(jsonb_build_object('day', d, 'n', n) order by d) from
+      (select (return_at at time zone tz)::date as d, count(*) as n from p where return_at > now() group by 1) z), '[]'))
+  into parked;
   return jsonb_build_object(
+    'parked', parked,
     'added', coalesce((select jsonb_agg(x order by x.at desc) from (
         select a.at, a.reg, a.customer, a.staff_name, a.action, a.value, a.booking_id, s.kind, s.day
         from activity a left join sheets s on s.id = a.sheet_id

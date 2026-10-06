@@ -951,6 +951,10 @@ await scenario(async () => {
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
   await page.selectOption("#clLook", "pro"); await page.click("#clGo"); await sleep(400);
   check("Parking Ops: choosing Airport Parking Bay UI saves theme pro", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "pro"), db.clientSaves);
+  await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clPicksYard");
+  check("Parking Ops: Location on PICKS is off until ticked", !(await page.isChecked("#clPicksYard")));
+  await page.check("#clPicksYard"); await page.click("#clGo"); await sleep(400);
+  check("Parking Ops: ticking Location on PICKS saves picks_yard on", db.clientSaves[db.clientSaves.length - 1].brand.picks_yard === true, db.clientSaves[db.clientSaves.length - 1]);
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
   await page.selectOption("#clLook", "cards"); await page.click("#clGo"); await sleep(400);
   check("Parking Ops: choosing Cards saves theme cards", (db.clientSaves || []).slice(-1)[0].brand.theme === "cards");
@@ -1343,7 +1347,8 @@ const dashData = () => {
       { id: "o3", kind: "drops", reg: "ZERO01", name: "MR ONTIME", return_at: ago(1), cleared_at: null, overstay: true, charge_agreed: null, charge_reason: "" }],
     removed: [{ id: "r1", kind: "picks", reg: "NOSHOW1", name: "MR AWAY", removed_reason: "No show", removed_at: ago(7), by_name: "SUGU" }],
     complaints: [{ at: ago(8), reg: "MAD001", customer: "MR CROSS", staff_name: "TERRY" }],
-    early: 2, changed: 3
+    early: 2, changed: 3,
+    parked: { total: 30, late: 2, days: [{ day: new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 8 }, { day: new Date(Date.now() + 2 * 86400000).toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 20 }] }
   };
 };
 for (const theme of ["", "stdplus"]) await scenario(async () => {
@@ -1363,6 +1368,8 @@ for (const theme of ["", "stdplus"]) await scenario(async () => {
   check("Dashboard (" + look + "): waived, removed, complaints, early returns", /Waived £30 1 car/.test(tile("Waived")) && /Removed 1 1 no show/.test(tile("Removed")) && /Complaints 1/.test(tile("Complaints")) && /Early returns 2 3 return changes/.test(tile("Early returns")), tiles.join(" | "));
   const body = await page.locator("#main").innerText();
   check("Dashboard (" + look + "): the lists name the cars and who did it", /Left with no payment recorded \(1\)[\s\S]*LEFT01/i.test(body) && /AB12CDE[\s\S]*Added to DROPS · SUGU/.test(body) && /XY34ZZZ[\s\S]*Marked NEW BOOKING · TERRY/.test(body) && /CARD01[\s\S]*CARD · return date changed · SUGU/.test(body) && !/ZERO01/.test(body), body.slice(0, 400));
+  check("Dashboard (" + look + "): Parked now counts the cars in, with those past their return", /^Parked now 30 2 past their return/.test(tile("Parked now")), tile("Parked now"));
+  check("Dashboard (" + look + "): parked cars by return day, past return first", /Parked now, by return day\s*Past their return[\s\S]*?2\s*Today\s*8\s*\w{3}, \d+ \w{3}\s*20/i.test(body), (body.match(/Parked now, by return day[\s\S]{0,160}/i) || [""])[0]);
   const first = new Date(db.dashCalls[0]).getTime();
   check("Dashboard (" + look + "): opens on the last 7 days", Math.abs(Date.now() - first - 7 * 86400000) < 600000);
   await page.click('#main [data-dashp="30"]'); await sleep(600);
@@ -1376,6 +1383,44 @@ await scenario(async () => {
   await open(page); await sleep(400);
   await page.click("#menuBtn"); await sleep(300);
   check("Dashboard: office staff don't get it", await page.locator('#menuBody [data-view="dashboard"]').count() === 0 && await page.locator('#menuBody [data-view="archive"]').count() === 1);
+});
+
+// 18a3d. Location on PICKS (brand.picks_yard): the row's NO SHOW becomes the location, NO SHOW is in the panel, yards counted
+for (const [theme, role] of [["", "owner"], ["stdplus", "terminal"]]) await scenario(async () => {
+  const db = theme ? apbDb(theme) : makeDb(); db.company.brand = { ...db.company.brand, picks_yard: true }; db.me = { ...db.me, role };
+  if (role === "terminal") db.perms = { clear: true, picksinfo: true, note: true, intake: true };
+  const yards = db.company.yards;
+  const page = await phone(browser, db);
+  await open(page); await sleep(300);
+  if (await page.locator("#kindSeg:not(.hidden)").count()) await page.click("#kindSeg [data-kind=picks]"); else await page.selectOption("#sheetPick", "p0");
+  await page.waitForSelector('.row[data-id="p1"]');
+  const look = (theme || "standard") + ", " + role;
+  const row = '.row[data-id="p1"]';
+  check("Location on PICKS (" + look + "): the row has a location button, not NO SHOW", await page.locator(row + ' [data-pick="No Show"]').count() === 0 && await page.locator(row + " .pyard select[data-yard]").count() === 1
+    && (await page.locator(row + " .pyard select option").allInnerTexts()).length === yards.length + 1);
+  const yardCounts = async () => page.locator("#tally .tyards button").evaluateAll((b) => b.map((x) => x.innerText.replace(/\s+/g, " ").trim()));
+  const before = await yardCounts();
+  check("Location on PICKS (" + look + "): the column heading says YARD", /COLL\s*YARD\s*RTC/.test(await page.locator("#colHead").innerText()));
+  check("Location on PICKS (" + look + "): the numbers count cars per yard on their own line", before.length >= yards.length && /^\S+.* 0$/.test(before[0]), before);
+  await page.selectOption(row + " .pyard select", yards[1]); await sleep(500);
+  const call = db.calls.filter((c) => c.fn === "set_yard").pop();
+  check("Location on PICKS (" + look + "): choosing a location saves it", call && call.args.p_booking === "p1" && call.args.p_yard === yards[1], call);
+  check("Location on PICKS (" + look + "): the button then shows the location", (await page.locator(row + " .pyard.on span").innerText()).length > 0);
+  const after = await yardCounts();
+  check("Location on PICKS (" + look + "): that yard's count goes up", after[1] && / 1$/.test(after[1]), after);
+  await page.click(row + " .reg"); await page.waitForSelector("#panel[open]");
+  check("Location on PICKS (" + look + "): NO SHOW is in the car's panel", await page.locator("#panelBody [data-pnoshow]").count() === 1);
+  await page.click("#panelBody [data-pnoshow]"); await sleep(500);
+  const tp = db.calls.filter((c) => c.fn === "tap_pick").pop();
+  check("Location on PICKS (" + look + "): NO SHOW from the panel marks the car", tp && tp.args.p_booking === "p1" && tp.args.p_key === "intake" && tp.args.p_value === "No Show", tp);
+});
+await scenario(async () => {
+  const db = makeDb();
+  const page = await phone(browser, db);
+  await open(page); await sleep(300);
+  if (await page.locator("#kindSeg:not(.hidden)").count()) await page.click("#kindSeg [data-kind=picks]"); else await page.selectOption("#sheetPick", "p0");
+  await page.waitForSelector('.row[data-id="p1"]');
+  check("Location on PICKS: switched off, rows keep NO SHOW and no yard counts", await page.locator('.row[data-id="p1"] [data-pick="No Show"]').count() === 1 && await page.locator(".pyard").count() === 0 && await page.locator("#tally .tyards").count() === 0);
 });
 
 // 18a4. a new version of the app is picked up without anyone reloading

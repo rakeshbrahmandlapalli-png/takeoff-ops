@@ -463,3 +463,16 @@ table.usage tr+tr{border-top:1px solid #e5e7eb;}
 .dlist .rowline .note{font-size:12.5px;}
 .dlist .rowline > .num.note{flex:none;width:84px;line-height:1.3;}
 .dlist .due{color:var(--bad-tx,#b42318);}
+
+/* Location on PICKS (brand.picks_yard): the row's location button, a select laid over it */
+.acts .pyard{position:relative;flex:1;min-width:0;min-height:44px;display:flex;align-items:center;justify-content:center;padding:2px 0;border:1px solid var(--btn-line,#c4c7cc);border-radius:5px;background:var(--btn,#fff);color:var(--btn-ink,#5f6368);font-size:9px;font-weight:700;letter-spacing:.4px;overflow:hidden;}
+.acts .pyard.on{background:var(--brand-soft,#eef1f5);border-color:var(--brand,#334155);color:var(--brand-text,#27323f);font-size:13px;}
+.acts .pyard select{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:16px;cursor:pointer;}
+html.pboard .acts .pyard{border-radius:5px;}
+html.premium:not(.pboard) .acts .pyard{min-height:52px;border-radius:12px;font-size:12px;}
+/* the yard counts under the PICKS numbers, on a line of their own */
+.tally.has-yards{flex-wrap:wrap;}
+.tally .tyards{display:flex;flex:1 0 100%;gap:1px;border-top:1px solid var(--line,#dadce0);}
+.tally .tyards button{flex:1;}
+.dstats .stat.wide{grid-column:1/-1;}
+.dpark .rowline.late strong{color:var(--bad-tx,#b42318);}

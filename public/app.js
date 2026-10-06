@@ -759,7 +759,8 @@
       if (S.filter === "todo" && !outstanding(r)) return false;
       if (S.catFilter && !inCat(r, S.catFilter)) return false;
       if (S.yardFilter) {
-        if (r.kind === "picks" ? (r.intake || "LEFT") !== S.yardFilter : (S.yardFilter === "-" ? r.yard || r.cleared_at : r.yard !== S.yardFilter || r.cleared_at)) return false;
+        if (S.yardFilter.slice(0, 2) === "y:") { var yf = S.yardFilter.slice(2); if (yf === "-" ? r.yard || r.intake !== "Collected" : r.yard !== yf) return false; }
+        else if (r.kind === "picks" ? (r.intake || "LEFT") !== S.yardFilter : (S.yardFilter === "-" ? r.yard || r.cleared_at : r.yard !== S.yardFilter || r.cleared_at)) return false;
       }
       return true;
     }).sort(function (a, b) {
@@ -774,6 +775,11 @@
       var c = { LEFT: 0, Collected: 0, "No Show": 0, RTC: 0 };
       S.rows.forEach(function (r) { var k = r.intake || "LEFT"; if (c[k] !== undefined) c[k]++; });
       cells = [["LEFT", "LEFT", c.LEFT], ["COLL", "Collected", c.Collected], ["NO SHOW", "No Show", c["No Show"]], ["RTC", "RTC", c.RTC]];
+      if (picksYard()) {
+        (S.company.yards || []).forEach(function (y) { cells.push([YARD_LABEL[y] || y, "y:" + y, S.rows.filter(function (r) { return r.yard === y; }).length]); });
+        var unset = S.rows.filter(function (r) { return !r.yard && r.intake === "Collected"; }).length;
+        if (unset) cells.push(["NO YARD", "y:-", unset]);
+      }
     } else {
       var open = S.rows.filter(function (r) { return !r.cleared_at; });
       cells = yardOrder().map(function (y) { return [YARD_LABEL[y] || y, y, open.filter(function (r) { return r.yard === y; }).length]; });
@@ -781,10 +787,13 @@
       if (none && can("yard")) cells.push(["NO YARD", "-", none]);
     }
     var pro = isCards();
-    $("tally").innerHTML = cells.map(function (x) {
-      var label = x[0];
-      return '<button type="button" data-tally="' + esc(x[1]) + '" class="' + (S.yardFilter === x[1] ? "on" : "") + (x[1] === "-" ? " warn" : "") + '" aria-pressed="' + (S.yardFilter === x[1]) + '"><span>' + esc(label) + '</span><b class="num">' + x[2] + "</b></button>";
-    }).join("");
+    var cellHtml = function (x) {
+      return '<button type="button" data-tally="' + esc(x[1]) + '" class="' + (S.yardFilter === x[1] ? "on" : "") + (x[1] === "-" || x[1] === "y:-" ? " warn" : "") + '" aria-pressed="' + (S.yardFilter === x[1]) + '"><span>' + esc(x[0]) + '</span><b class="num">' + x[2] + "</b></button>";
+    };
+    var yardCells = cells.filter(function (x) { return String(x[1]).slice(0, 2) === "y:"; });
+    $("tally").innerHTML = cells.filter(function (x) { return String(x[1]).slice(0, 2) !== "y:"; }).map(cellHtml).join("") +
+      (yardCells.length ? '<div class="tyards">' + yardCells.map(cellHtml).join("") + "</div>" : "");
+    $("tally").classList.toggle("has-yards", !!yardCells.length);
     renderCatStrip(picks);
     renderTallyFold(cells);
     var cardsWords = pro && !isPremium();
@@ -798,7 +807,7 @@
     $("q").placeholder = pro ? "Search reg or name" : "Search reg, name, number or note";
     show("qClear", !!S.q);
     $("colHead").innerHTML = '<span class="hl">' + (picks ? "CAR · CUSTOMER" : "CAR · FLIGHT") + '</span><span class="hr">' +
-      (picks ? "<span>COLL</span><span>NO SHOW</span><span>RTC</span><span>PT</span>" : swipeOnly() ? "<span>DONE</span>" : "<span>SENT</span><span>CALLED</span><span>CLEAR</span>") + "</span>";
+      (picks ? "<span>COLL</span><span>" + (picksYard() ? "YARD" : "NO SHOW") + "</span><span>RTC</span><span>PT</span>" : swipeOnly() ? "<span>DONE</span>" : "<span>SENT</span><span>CALLED</span><span>CLEAR</span>") + "</span>";
   }
 
   // Premium look: the day's numbers fold away to one line, so the list starts
@@ -1166,6 +1175,16 @@
     return d ? '<span class="cat was">WAS ' + dayWord(d) + "</span>" : "";
   }
   function catTag(r) { var c = r.kind === "drops" ? dropCat(r) : catOf(r); return c ? '<span class="cat ' + c + '">' + c.toUpperCase() + "</span>" : ""; }
+  // Location on PICKS (Clients → Edit, brand.picks_yard): the row's NO SHOW
+  // button becomes the car's location (the company's yards); NO SHOW is in
+  // the car's panel. Anyone who takes cars in can set it (database part 67).
+  function picksYard() { return !!(S.company && S.company.brand && S.company.brand.picks_yard); }
+  function pickYardBtn(r) {
+    var on = !!r.yard, lab = on ? esc(YARD_LABEL[r.yard] || r.yard) : "YARD";
+    if (!can("intake")) return '<button type="button" class="pyard' + (on ? " on y-" + esc(r.yard) : "") + '" disabled>' + lab + "</button>";
+    return '<label class="pyard' + (on ? " on y-" + esc(r.yard) : "") + '"><span>' + lab + '</span><select data-yard aria-label="Location of ' + esc(r.reg) + '"><option value="">' + (on ? "— none" : "Choose") + "</option>" +
+      (S.company.yards || []).map(function (y) { return "<option" + (y === r.yard ? " selected" : "") + ' value="' + esc(y) + '">' + esc(YARD_LABEL[y] || y) + "</option>"; }).join("") + "</select></label>";
+  }
   function pickRow(r) {
     var bang = /^!/.test(r.note);
     var cls = r.intake === "Collected" ? " coll" : r.intake === "No Show" ? " nosh" : r.intake === "RTC" ? " rtc" : bang ? " cmpl" : "";
@@ -1178,7 +1197,7 @@
       // Just the make on the row; the full car and booking ref are in the car's panel.
       '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(niceMake(makeOnly(r.make))) + "</span>" : "") + '<span class="dp">' + (makeOnly(r.make) ? " · " : "") + "drop " + esc(hhmm(r.drop_at) || "—") + "</span>" + (S.ptUnsaved[r.id] && r.pt_at ? ' · <span class="tag due">PT NOT SAVED</span>' : "") + (r.pick_called ? ' · <span class="tag' + (r.pick_called === "New Booking" ? ' nb">NEW BOOKING' : '">' + esc(r.pick_called)) + "</span> " + esc(hhmm(r.pick_called_at)) : "") + "</span></div>" +
       noteLine(r) + "</div>") +
-      '<div class="acts">' + b("Collected", "k", "COLL") + b("No Show", "n", "NO SHOW") + b("RTC", "r", "RTC", "rtc") +
+      '<div class="acts">' + b("Collected", "k", "COLL") + (picksYard() ? pickYardBtn(r) : b("No Show", "n", "NO SHOW")) + b("RTC", "r", "RTC", "rtc") +
       actBtn(r, "data-pt", "p", "PT", !!r.pt_at, r.pt_at, can("intake"), r.pt_by) + "</div></div>";
   }
 
@@ -2301,8 +2320,8 @@
       var rp = r.return_at ? londonParts(new Date(r.return_at)) : { key: "", time: "" };
       h += '<label for="retD">BACK DATE AND TIME</label><div class="when2"><input id="retD" type="date" value="' + esc(rp.key) + '">' + timeBox("retT", rp.time) + "</div>";
     }
-    if (drops && can("yard")) {
-      h += '<label>YARD</label><div class="pseg yard">' + (S.company.yards || []).map(function (y) {
+    if (drops ? can("yard") : picksYard() && can("intake")) {
+      h += '<label>' + (drops ? "YARD" : "LOCATION") + '</label><div class="pseg yard">' + (S.company.yards || []).map(function (y) {
         return '<button type="button" data-setyard="' + esc(y) + '" class="' + (r.yard === y ? "on y-" + esc(y) : "") + '">' + esc(YARD_LABEL[y] || y) + "</button>";
       }).join("") + "</div>";
     }
@@ -2319,6 +2338,7 @@
     } else if (can("intake")) {
       extra += '<button type="button" data-pcall="Called" class="' + (r.pick_called === "Called" ? "on" : "") + '">CALLED</button>';
       extra += '<button type="button" data-pcall="New Booking" class="' + (r.pick_called === "New Booking" ? "on nb" : "") + '">NEW BOOKING</button>';
+      if (picksYard()) extra += '<button type="button" data-pnoshow class="' + (r.intake === "No Show" ? "on n" : "") + '">NO SHOW</button>';
     }
     if (extra) h += '<label>MARK AS</label><div class="pseg">' + extra + "</div>";
     if (drops) h += chargePanelHtml(r);
@@ -2427,6 +2447,7 @@
     }
     if (t.dataset.word) { var p = t.dataset.word.split(":"); tapDrop(r, p[0], p[1]); return $("panel").close(); }
     if (t.dataset.pcall) { tapPick(r, "called", t.dataset.pcall); return $("panel").close(); }
+    if (t.dataset.pnoshow !== undefined) { tapPick(r, "intake", "No Show"); return $("panel").close(); }
     if (t.dataset.ptcam !== undefined) return ptCamera(r);
     if (t.dataset.shutter !== undefined) return ptShoot(r);
     if (t.dataset.camtorch !== undefined) return camToggleTorch();
@@ -3103,7 +3124,10 @@
     var here = owed.filter(function (r) { return !r.cleared_at; }), left = owed.filter(function (r) { return r.cleared_at; });
     var when = function (ts) { return esc(dayShort(ts)) + " " + esc(hhmm(ts)); };
     var tile = function (label, big, small, cls) { return '<div class="stat' + (cls ? " " + cls : "") + '"><span>' + label + '</span><strong class="num">' + big + "</strong>" + (small ? "<small>" + small + "</small>" : "") + "</div>"; };
+    var PK = D.parked || { total: 0, late: 0, days: [] }, todayKey = londonParts(new Date()).key;
+    var dayName = function (k) { return k === todayKey ? "Today" : k === addDaysKey(todayKey, 1) ? "Tomorrow" : longDay(k); };
     h += '<div class="stats dstats">' +
+      tile("Parked now", +PK.total || 0, (+PK.late ? PK.late + " past their return · " : "") + "right now, whatever the period", "wide") +
       tile("Added at the desk", added.length, added.filter(function (a) { return a.action === "ADDED"; }).length + " added · " + added.filter(function (a) { return a.action !== "ADDED"; }).length + " NEW BOOKING") +
       tile("Money taken", money(cash + card), "cash " + money(cash) + " · card " + money(card)) +
       tile("Owed now", money(sum(here, "due")), here.length + (here.length === 1 ? " car" : " cars") + " here") +
@@ -3113,6 +3137,10 @@
       tile("Complaints", complaints.length, "") +
       tile("Early returns", +D.early || 0, (+D.changed || 0) + " return changes") + "</div>";
     var list = function (title, rows, line) { return '<div class="section-label">' + title + " (" + rows.length + ')</div><div class="box dlist">' + (rows.length ? rows.map(line).join("") : '<div class="empty">None.</div>') + "</div>"; };
+    var pdays = (PK.late ? [{ late: true, n: PK.late }] : []).concat(PK.days || []);
+    h += '<div class="section-label">Parked now, by return day</div><div class="box dlist dpark">' + (pdays.length ? pdays.map(function (d) {
+      return '<div class="rowline' + (d.late ? " late" : "") + '"><div class="grow"><strong>' + (d.late ? "Past their return" : esc(dayName(d.day))) + "</strong>" + (d.late ? '<div class="note">Return time gone, not handed back yet</div>' : "") + '</div><strong class="num">' + d.n + "</strong></div>";
+    }).join("") : '<div class="empty">No cars in.</div>') + "</div>";
     if (left.length) h += list("Left with no payment recorded", left, function (r) {
       return '<div class="rowline"><div class="grow"><strong>' + esc(r.reg) + "</strong> · " + esc(r.name) + '<div class="note">Cleared ' + when(r.cleared_at) + (r.charge_reason ? " · " + esc(r.charge_reason) : r.days ? " · " + r.days + (r.days === 1 ? " day" : " days") + " over" : "") + '</div></div><strong class="num due">' + money(r.due) + "</strong></div>";
     });
@@ -3522,6 +3550,7 @@
       '<label for="clColour">COLOUR</label><div class="when2"><input id="clColour" type="color" value="' + esc(b.colour || "#334155") + '"><select id="clInk"><option value="#FFFFFF"' + (b.ink !== "#16181D" ? " selected" : "") + '>White text on it</option><option value="#16181D"' + (b.ink === "#16181D" ? " selected" : "") + ">Dark text on it</option></select></div>" +
       '<label for="clLook">LOOK</label><select id="clLook">' + LOOKS.map(function (l) { return '<option value="' + l[0] + '"' + ((b.theme || "") === l[0] ? " selected" : "") + ">" + l[1] + "</option>"; }).join("") + "</select>" +
       '<p class="hint">How their app looks to their team. Their phones change the next time the app refreshes.</p>' +
+      '<label class="check"><input type="checkbox" id="clPicksYard"' + (b.picks_yard ? " checked" : "") + "> Location on PICKS (instead of NO SHOW)</label>" +
       f("clHost", "WEB ADDRESS", b.host, 'autocapitalize="off" placeholder="e.g. clientname-ops.vercel.app"', "Add the same address in Vercel (Settings, Domains) or it won't open.") +
       '<div class="pbtns"><button type="button" data-close>Cancel</button><button class="save" id="clGo">' + (c ? "Save" : "Add client") + "</button></div></form>";
     if (!$("panel").open) $("panel").showModal();
@@ -3537,7 +3566,7 @@
     var was = id ? ((S.clients || []).filter(function (x) { return x.id === id; })[0] || {}).brand || {} : {};
     var p = { id: id, name: $("clName").value, slug: $("clSlug") ? $("clSlug").value.trim() : "", drops_day_end: $("clEnd").value,
       yards: $("clYards").value.split(/[\s,]+/).filter(Boolean),
-      brand: { short: $("clShort").value, colour: colour, ink: $("clInk").value, soft: hexMix(colour, "#FFFFFF", 0.88), text: hexMix(colour, "#000000", 0.35), host: $("clHost").value.trim().toLowerCase(), theme: $("clLook").value } };
+      brand: { short: $("clShort").value, colour: colour, ink: $("clInk").value, soft: hexMix(colour, "#FFFFFF", 0.88), text: hexMix(colour, "#000000", 0.35), host: $("clHost").value.trim().toLowerCase(), theme: $("clLook").value, picks_yard: $("clPicksYard").checked } };
     // Same colour as before: keep their hand-picked tints rather than recalculating.
     if (was.colour && was.colour.toUpperCase() === colour) { p.brand.soft = was.soft || p.brand.soft; p.brand.text = was.text || p.brand.text; }
     $("clGo").disabled = true;
