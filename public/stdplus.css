@@ -109,3 +109,34 @@ html.stdplus .swtoggle i{position:relative;flex:none;width:46px;height:28px;bord
 html.stdplus .swtoggle i::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgb(0 0 0 / .25);transition:left .2s;}
 html.stdplus .swtoggle[aria-checked="true"] i{background:#1F9D5B;}
 html.stdplus .swtoggle[aria-checked="true"] i::after{left:21px;}
+
+/* ── number boxes (Summary, Dashboard): each its own colour and icon ── */
+html.stdplus .stats{gap:10px;}
+html.stdplus .stats .stat{--k:#5f6368;position:relative;padding:12px 12px 13px;border:0;border-radius:14px;background:#fff;box-shadow:0 1px 2px rgb(0 0 0 / .06),0 3px 10px rgb(0 0 0 / .05);overflow:hidden;}
+html.stdplus .stats .stat .ki{display:block;width:32px;height:32px;margin-bottom:9px;padding:6px;border-radius:10px;background:color-mix(in srgb,var(--k) 13%,#fff);fill:none;stroke:var(--k);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+html.stdplus .stats .stat > span{display:block;font-size:12.5px;font-weight:600;color:#5f6368;}
+html.stdplus .stats .stat > strong{margin-top:1px;font-size:28px;font-weight:800;letter-spacing:-.5px;color:#202124;}
+html.stdplus .stats .stat > small{display:block;margin-top:3px;font-size:12px;line-height:1.35;color:#5f6368;}
+html.stdplus .stats .stat.zero{--k:#9aa0a6;}
+html.stdplus .stats .stat.zero > strong{color:#bdc1c6;}
+html.stdplus .stats .stat .mbar{display:block;height:6px;margin-top:9px;border-radius:9px;background:#eef0f2;overflow:hidden;}
+html.stdplus .stats .stat .mbar i{display:block;height:100%;border-radius:9px;background:var(--k);}
+html.stdplus .stat.k-way,html.stdplus .stat.k-come,html.stdplus .stat.k-added{--k:#1a73e8;}
+html.stdplus .stat.k-over,html.stdplus .stat.k-owed{--k:#e37400;}
+html.stdplus .stat.k-comp,html.stdplus .stat.k-unpaid,html.stdplus .stat.k-rtc{--k:#d93025;}
+html.stdplus .stat.k-morn{--k:#f29900;}
+html.stdplus .stat.k-night,html.stdplus .stat.k-early{--k:#5b5fc7;}
+html.stdplus .stat.k-money{--k:#188038;}
+html.stdplus .stat.k-noshow,html.stdplus .stat.k-waived,html.stdplus .stat.k-removed{--k:#80868b;}
+html.stdplus .dstats .stat.warn{background:#fdeceb;box-shadow:inset 0 0 0 1px #f4c7c3;}
+html.stdplus .dstats .stat.warn > strong{color:#c5221f;}
+/* the headline box (Cars back / Cars in / Parked now): brand colour, ring on the right */
+html.stdplus .stats .stat.big,html.stdplus .stats .stat.k-parked{min-height:112px;padding:16px 112px 16px 18px;background:var(--brand);color:var(--brand-ink);box-shadow:0 4px 16px color-mix(in srgb,var(--brand) 35%,transparent);}
+html.stdplus .stats .stat.big .ki,html.stdplus .stats .stat.k-parked .ki{background:color-mix(in srgb,var(--brand-ink) 16%,transparent);stroke:var(--brand-ink);}
+html.stdplus .stats .stat.big > span,html.stdplus .stats .stat.k-parked > span,html.stdplus .stats .stat.k-parked > small{color:var(--brand-ink);opacity:.85;}
+html.stdplus .stats .stat.big > strong,html.stdplus .stats .stat.k-parked > strong{font-size:34px;color:var(--brand-ink);}
+html.stdplus .stats .stat.big .pbar,html.stdplus .stats .stat.big .pbar-pc{display:none;}
+html.stdplus .stats .stat .pring{display:block;position:absolute;right:18px;top:50%;width:80px;height:80px;margin-top:-40px;border-radius:50%;background:conic-gradient(var(--brand-ink) calc(var(--pc) * 1%),color-mix(in srgb,var(--brand-ink) 22%,transparent) 0);}
+html.stdplus .stats .stat .pring::before{content:"";position:absolute;inset:8px;border-radius:50%;background:var(--brand);}
+html.stdplus .stats .stat .pring::after{content:attr(data-pc);position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;color:var(--brand-ink);}
+html.stdplus .stats .stat.k-parked{padding-right:18px;}

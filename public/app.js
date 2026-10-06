@@ -2986,21 +2986,23 @@
         var d = S.rows;
         var due = d.filter(function (r) { return /£/.test(r.note); }), D = dropsStats();
         var back = d.filter(function (r) { return r.cleared_at; }).length;
-        h += '<h2 class="title">' + esc(sheetLabel(sh)) + '</h2><div class="stats"><div class="stat' + (hasFeatures() ? " big" : "") + '"><span>Cars back</span><strong class="num">' + back + " / " + d.length +
-          '</strong>' + progressBar(back, d.length) + '</div><div class="stat"><span>On the way</span><strong class="num">' + d.filter(function (r) { return r.sent_at && !r.cleared_at; }).length +
-          '</strong></div><div class="stat"><span>Overstays</span><strong class="num">' + d.filter(function (r) { return r.overstay; }).length +
-          '</strong></div><div class="stat"><span>Complaints</span><strong class="num">' + d.filter(function (r) { return r.clear_word === "COMPLAINT" || /^!/.test(r.note); }).length +
-          '</strong></div><div class="stat"><span>Morning 06:00–17:30</span><strong class="num">' + D.morning.done + " / " + D.morning.due +
-          '</strong></div><div class="stat"><span>Night 17:31–05:59</span><strong class="num">' + D.night.done + " / " + D.night.due + "</strong></div></div>" +
+        h += '<h2 class="title">' + esc(sheetLabel(sh)) + '</h2><div class="stats">' +
+          kstat("back", "Cars back", back + " / " + d.length, progressBar(back, d.length), hasFeatures() ? "big" : "") +
+          kstat("way", "On the way", d.filter(function (r) { return r.sent_at && !r.cleared_at; }).length) +
+          kstat("over", "Overstays", d.filter(function (r) { return r.overstay; }).length) +
+          kstat("comp", "Complaints", d.filter(function (r) { return r.clear_word === "COMPLAINT" || /^!/.test(r.note); }).length) +
+          kstat("morn", "Morning 06:00–17:30", D.morning.done + " / " + D.morning.due, miniBar(D.morning.done, D.morning.due)) +
+          kstat("night", "Night 17:31–05:59", D.night.done + " / " + D.night.due, miniBar(D.night.done, D.night.due)) + "</div>" +
           (due.length ? '<div class="section-label">Money due</div><div class="box">' + due.map(function (r) { return '<div class="rowline"><div class="grow"><strong>' + esc(r.reg) + "</strong> · " + esc(r.name) + '<div class="note">' + esc(r.note) + "</div></div></div>"; }).join("") + "</div>" : "");
       } else {
         var p = S.rows, hours = {};
         p.filter(function (r) { return r.intake === "Collected"; }).forEach(function (r) { var k = hhmm(r.intake_at).slice(0, 2); hours[k] = (hours[k] || 0) + 1; });
         var cin = p.filter(function (r) { return r.intake === "Collected"; }).length;
-        h += '<h2 class="title">' + esc(sheetLabel(sh)) + '</h2><div class="stats"><div class="stat' + (hasFeatures() ? " big" : "") + '"><span>Cars in</span><strong class="num">' + cin + " / " + p.length +
-          '</strong>' + progressBar(cin, p.length) + '</div><div class="stat"><span>No shows</span><strong class="num">' + p.filter(function (r) { return r.intake === "No Show"; }).length +
-          '</strong></div><div class="stat"><span>RTC</span><strong class="num">' + p.filter(function (r) { return r.intake === "RTC"; }).length +
-          '</strong></div><div class="stat"><span>Still to come</span><strong class="num">' + p.filter(function (r) { return !r.intake; }).length + "</strong></div></div>" +
+        h += '<h2 class="title">' + esc(sheetLabel(sh)) + '</h2><div class="stats">' +
+          kstat("back", "Cars in", cin + " / " + p.length, progressBar(cin, p.length), hasFeatures() ? "big" : "") +
+          kstat("noshow", "No shows", p.filter(function (r) { return r.intake === "No Show"; }).length) +
+          kstat("rtc", "RTC", p.filter(function (r) { return r.intake === "RTC"; }).length) +
+          kstat("come", "Still to come", p.filter(function (r) { return !r.intake; }).length) + "</div>" +
           '<div class="section-label">Cars in by hour</div>' + (hasFeatures() ? hourBars(hours) : '<div class="box">' + (Object.keys(hours).sort().map(function (k) { return '<div class="rowline"><span class="num grow">' + k + ':00</span><strong class="num">' + hours[k] + "</strong></div>"; }).join("") || '<div class="empty">None yet.</div>') + "</div>");
       }
     }
@@ -3042,10 +3044,36 @@
       default: return "x";
     }
   }
+  // Standard with features: each number box has its own colour and icon
+  // (stdplus.css); a box at 0 goes grey. Other looks hide the icons.
+  var KICON = {
+    back: '<path d="M5 17h14M6 17l1.5-5h9L18 17M8 12l1-3h6l1 3"/><circle cx="8" cy="17.5" r="1.5"/><circle cx="16" cy="17.5" r="1.5"/>',
+    way: '<path d="M4 12h13M13 7l5 5-5 5"/>',
+    over: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
+    comp: '<path d="M12 4 3 19h18z"/><path d="M12 10v4M12 16.5v.5"/>',
+    morn: '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/>',
+    night: '<path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5z"/>',
+    noshow: '<circle cx="10" cy="8" r="3.5"/><path d="M3.5 19c.6-3.3 3.2-5 6.5-5M16 14l5 5M21 14l-5 5"/>',
+    rtc: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
+    come: '<circle cx="12" cy="12" r="8"/><path d="M12 7v5h4"/>',
+    parked: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M10 16V8h3a2.5 2.5 0 0 1 0 5h-3"/>',
+    added: '<path d="M12 5v14M5 12h14"/>',
+    money: '<path d="M15 6.5A3.5 3.5 0 0 0 8.5 8v4.5H7M8.5 12.5c0 2.5-.5 4-2 5.5H16"/>',
+    owed: '<path d="M7 4h10M7 20h10M8 4c0 4 8 4 8 8s-8 4-8 8M16 4c0 3-8 5-8 8"/>',
+    unpaid: '<circle cx="12" cy="12" r="8"/><path d="M12 8v5M12 15.5v.5"/>',
+    waived: '<circle cx="12" cy="12" r="8"/><path d="m7 7 10 10"/>',
+    removed: '<path d="M6 6l12 12M18 6 6 18"/>',
+    early: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/>'
+  };
+  function kstat(k, label, value, extra, cls) {
+    var zero = /^(0|£0|0 \/ 0)$/.test(String(value));
+    return '<div class="stat k-' + k + (zero ? " zero" : "") + (cls ? " " + cls : "") + '"><svg class="ki" viewBox="0 0 24 24" aria-hidden="true">' + (KICON[k] || "") + "</svg><span>" + label + '</span><strong class="num">' + value + "</strong>" + (extra || "") + "</div>";
+  }
+  function miniBar(done, all) { return '<span class="mbar" aria-hidden="true"><i style="width:' + (all ? Math.round(done / all * 100) : 0) + '%"></i></span>'; }
   function progressBar(done, all) {
     if (!hasFeatures() || !all) return "";
     var pc = Math.round(done / all * 100);
-    return '<div class="pbar" role="progressbar" aria-valuemin="0" aria-valuemax="' + all + '" aria-valuenow="' + done + '"><i style="width:' + pc + '%"></i></div><small class="pbar-pc">' + pc + "% done</small>";
+    return '<div class="pbar" role="progressbar" aria-valuemin="0" aria-valuemax="' + all + '" aria-valuenow="' + done + '"><i style="width:' + pc + '%"></i></div><small class="pbar-pc">' + pc + '% done</small><div class="pring" aria-hidden="true" style="--pc:' + pc + '" data-pc="' + pc + '%"></div>';
   }
   // Which part of the work an activity line is about, for the filter chips.
   var PICK_ACTIONS = { INTAKE: 1, PT: 1, "PT PHOTOS": 1, "PT COPY": 1, "SHORT DATES": 1, "COLLECTION TIME": 1 };
@@ -3123,7 +3151,8 @@
     var owed = (D.owed || []).map(function (r) { var o = owedNow(r); return Object.assign({}, r, { due: o.amount, days: o.days }); }).filter(function (r) { return r.due > 0; });
     var here = owed.filter(function (r) { return !r.cleared_at; }), left = owed.filter(function (r) { return r.cleared_at; });
     var when = function (ts) { return esc(dayShort(ts)) + " " + esc(hhmm(ts)); };
-    var tile = function (label, big, small, cls) { return '<div class="stat' + (cls ? " " + cls : "") + '"><span>' + label + '</span><strong class="num">' + big + "</strong>" + (small ? "<small>" + small + "</small>" : "") + "</div>"; };
+    var TK = { "Parked now": "parked", "Added at the desk": "added", "Money taken": "money", "Owed now": "owed", "Left unpaid": "unpaid", Waived: "waived", Removed: "removed", Complaints: "comp", "Early returns": "early" };
+    var tile = function (label, big, small, cls) { return kstat(TK[label] || "x", label, big, small ? "<small>" + small + "</small>" : "", cls); };
     var PK = D.parked || { total: 0, late: 0, days: [] }, todayKey = londonParts(new Date()).key;
     var dayName = function (k) { return k === todayKey ? "Today" : k === addDaysKey(todayKey, 1) ? "Tomorrow" : longDay(k); };
     h += '<div class="stats dstats">' +
