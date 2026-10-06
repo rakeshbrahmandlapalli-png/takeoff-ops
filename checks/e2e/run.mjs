@@ -468,6 +468,26 @@ await scenario(async () => {
       check("Swipe (" + role + "): no errors", page.__errors.length === 0, page.__errors);
     });
   }
+  // Standard with features gets the same working features.
+  await scenario(async () => {
+    const db = apbDb("stdplus"); db.me = { ...db.me, role: "bongo" };
+    db.bookings.find((b) => b.id === "b1").cleared_at = now();
+    const page = await phone(browser, db); await open(page); const cdp = await page.context().newCDPSession(page);
+    await swipeRow(page, cdp, "b2");
+    check("Standard with features: a bongo driver swipes a drop to SENT", db.calls.some((c) => c.fn === "tap_drop" && c.args.p_booking === "b2" && c.args.p_action === "sent"), db.calls.filter((c) => c.fn === "tap_drop"));
+    const before = (db.bookingGets || []).length;
+    const top = (await page.locator(".row").first().boundingBox()).y + 10;
+    await drag(cdp, 200, top, 200, top + 180); await sleep(900);
+    check("Standard with features: pull down to refresh", (db.bookingGets || []).length > before);
+    await page.click("#tallyFold"); await sleep(300);
+    check("Standard with features: Hide numbers folds the tiles to one line", await page.evaluate(() => getComputedStyle(document.getElementById("tally")).display === "none" && /Show/.test(document.getElementById("tallyFold").textContent)));
+    await page.click('#bnav [data-bn="menuBtn"]'); await page.waitForSelector("#menu[open]");
+    const m = await page.evaluate(() => ({ labels: [...document.querySelectorAll("#menuBody > label")].map((l) => l.textContent), swipe: (document.querySelector("[data-swipestep].on") || {}).textContent, danger: !!document.querySelector(".menu-danger [data-deletesheet]") }));
+    check("Standard with features: the menu in sections, swipe choices, Delete on its own", m.labels.includes("TODAY") && m.labels.includes("SWIPE RIGHT ON DROPS") && m.swipe === "Sent" && m.danger, m);
+    await page.click('#menuBody [data-view="summary"]'); await page.waitForSelector(".actbar");
+    check("Standard with features: Summary has the progress bar and activity chips", await page.evaluate(() => !!document.querySelector(".stat.big .pbar i") && document.querySelectorAll(".actbar [data-actf]").length === 5));
+    check("Standard with features (features): no errors", page.__errors.length === 0, page.__errors);
+  });
   // Each person: Menu → Display → their swipe step, and buttons shown or hidden.
   await scenario(async () => {
     const db = apbDb("board"); db.me = { ...db.me, role: "owner" };
