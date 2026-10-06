@@ -468,6 +468,16 @@ await scenario(async () => {
       check("Swipe (" + role + "): no errors", page.__errors.length === 0, page.__errors);
     });
   }
+  // "Show buttons on drops" off works in every look that has swipe (it didn't on Standard with features).
+  for (const theme of ["stdplus", "board", "premium"]) await scenario(async () => {
+    const db = apbDb(theme); db.me = { ...db.me, role: "office" };
+    const page = await phone(browser, db); await page.addInitScript(() => { localStorage.setItem("takeoff_swipe", "called"); localStorage.setItem("takeoff_swipe_only", "1"); }); await open(page);
+    const r = await page.evaluate(() => ({ btns: document.querySelectorAll("#main .row [data-act]").length, steps: document.querySelectorAll("#main .row .acts.steps").length, rows: document.querySelectorAll("#main .row[data-id]").length }));
+    check("Show buttons off (" + theme + "): no SENT / CALLED / CLEAR buttons on the drops, what's done instead", r.btns === 0 && r.steps === r.rows && r.rows > 0, r);
+    await page.click('.row[data-id="b1"] .reg'); await page.waitForSelector("#panel[open]");
+    check("Show buttons off (" + theme + "): tapping the reg still has the buttons", (await page.locator("#panel .pacts [data-act]").count()) === 3);
+    check("Show buttons off (" + theme + "): no errors", page.__errors.length === 0, page.__errors);
+  });
   // Swipe left: a second step, Off to start.
   await scenario(async () => {
     const db = apbDb("board"); db.me = { ...db.me, role: "office" };

@@ -798,7 +798,7 @@
     $("q").placeholder = pro ? "Search reg or name" : "Search reg, name, number or note";
     show("qClear", !!S.q);
     $("colHead").innerHTML = '<span class="hl">' + (picks ? "CAR · CUSTOMER" : "CAR · FLIGHT") + '</span><span class="hr">' +
-      (picks ? "<span>COLL</span><span>NO SHOW</span><span>RTC</span><span>PT</span>" : "<span>SENT</span><span>CALLED</span><span>CLEAR</span>") + "</span>";
+      (picks ? "<span>COLL</span><span>NO SHOW</span><span>RTC</span><span>PT</span>" : swipeOnly() ? "<span>DONE</span>" : "<span>SENT</span><span>CALLED</span><span>CLEAR</span>") + "</span>";
   }
 
   // Premium look: the day's numbers fold away to one line, so the list starts
@@ -1146,11 +1146,8 @@
         : /over 6 h from the booked time/.test(r.flight_note) && r.return_at ? "CHECK FLIGHT · BOOKED " + esc(hhmm(r.return_at)) : "CHECK FLIGHT NO.") + "</span>" : "", canc ? '<span class="tag cx">CANCELLED</span>' : "",
         over ? '<span class="tag ov">OVERSTAY</span>' : "", cmpl ? '<span class="tag cm">COMPLAINT</span>' : "", chargeTag(r).replace(/^ · /, "")]) +
       earlyLine(r) + noteLine(r) + "</div>" +
-      '<div class="acts">' +
-      actBtn(r, 'data-act="sent"', "s", "SENT", !!r.sent_at, r.sent_at, can("sent"), r.sent_by) +
-      actBtn(r, 'data-act="called"', "c" + (overWord ? " ov" : ""), overWord ? "OVERSTAY" : "CALLED", !!r.called_at, r.called_at, can("called"), r.called_by) +
-      actBtn(r, 'data-act="clear"', "x" + (cmpl ? " cm" : ""), cmpl ? "COMPLAINT" : "CLEAR", !!r.cleared_at, r.cleared_at, can("clear"), r.cleared_by) +
-      "</div></div>";
+      // "Show buttons on drops" off (Standard with features): what's done instead of buttons.
+      (swipeOnly() ? stepStatus(r) : dropButtons(r, overWord, cmpl)) + "</div>";
   }
 
   // Short words on the row, so the customer's name still fits on a phone.
