@@ -1,0 +1,16 @@
+/* "Standard with features" (Clients → Edit → LOOK), for companies whose brand
+   has theme: "stdplus". It is the Standard look (app.css) exactly as it is,
+   plus the bottom bar of the Premium looks: Board, Flights / Returns, Stats,
+   Summary and Menu, where a thumb reaches. The small icon buttons at the top
+   (summary, flights, returns, stats) move down into that bar, so nothing is
+   there twice; the day picker and refresh stay at the top. The active section
+   wears the brand colour. Everything here sits under html.stdplus, so
+   Standard itself never changes. */
+
+html.stdplus #logBtn,html.stdplus #rtBtn,html.stdplus #psBtn,html.stdplus #flBtn{display:none!important;}
+html.stdplus .bnav:not(.hidden){display:flex;position:fixed;z-index:25;left:0;right:0;bottom:0;padding:6px 4px calc(6px + env(safe-area-inset-bottom));background:#fff;border-top:1px solid #e3e5e8;}
+html.stdplus .bnav button{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 0;border:0;background:none;color:#80868b;font:500 11px/1.1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+html.stdplus .bnav button svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+html.stdplus .bnav button.on{color:var(--brand,#1a73e8);font-weight:600;}
+html.stdplus body{padding-bottom:calc(70px + env(safe-area-inset-bottom));}
+html.stdplus .toast{bottom:calc(84px + env(safe-area-inset-bottom));}

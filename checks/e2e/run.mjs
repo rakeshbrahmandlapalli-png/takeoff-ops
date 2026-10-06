@@ -514,6 +514,28 @@ await scenario(async () => {
   });
 }
 
+// Standard with features: the Standard look plus the bottom bar.
+await scenario(async () => {
+  const page = await phone(browser, apbDb("stdplus"), { width: 360 });
+  await open(page); await sleep(300);
+  const look = await page.evaluate(() => { const c = document.documentElement.classList;
+    return { stdplus: c.contains("stdplus"), others: ["pro", "cards", "premium", "pboard"].filter((x) => c.contains(x)), nav: getComputedStyle(document.getElementById("bnav")).display,
+      topIcons: ["logBtn", "flBtn", "psBtn"].map((id) => getComputedStyle(document.getElementById(id)).display), picker: getComputedStyle(document.getElementById("sheetPick")).display,
+      oneLine: getComputedStyle(document.querySelector(".row")).display, head: !!document.querySelector("#cHead:not(.hidden)") }; });
+  check("Standard with features: Standard's look, nothing else", look.stdplus && !look.others.length && !look.head && look.oneLine === "flex" && look.picker !== "none", look);
+  check("Standard with features: the bottom bar is there, the top icons moved into it", look.nav === "flex" && look.topIcons.every((d) => d === "none"), look);
+  check("Standard with features: no sideways scrolling on a 360 px phone", await noSideScroll(page));
+  await page.click('#bnav [data-bn="logBtn"]'); await sleep(400);
+  check("Standard with features: Summary in the bottom bar opens Summary", await page.evaluate(() => /Summary/i.test(document.getElementById("viewTitle").textContent)));
+  await page.click("#bnBoard"); await sleep(300);
+  check("Standard with features: Board brings the board back", await page.isVisible("#boardHead"));
+  check("Standard with features: no errors", page.__errors.length === 0, page.__errors);
+});
+await scenario(async () => {
+  const page = await phone(browser, makeDb(), { width: 360 }); await open(page);
+  check("Standard: still no bottom bar", await page.evaluate(() => getComputedStyle(document.getElementById("bnav")).display === "none"));
+});
+
 // Premium Board: Premium with two-line rows like the old board.
 await scenario(async () => {
   const page = await phone(browser, apbDb("board"), { width: 360 });
@@ -866,12 +888,15 @@ await scenario(async () => {
   await page.click("#panelBody [data-close]");
   check("Parking Ops: each client card says which look it has", /Standard/.test(await text(page, ".client")));
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
-  check("Parking Ops: the client editor offers the five looks", (await page.locator("#clLook option").allInnerTexts()).join("|") === "Standard|Airport Parking Bay UI|Cards (light and dark)|Premium UI|Premium Board");
+  check("Parking Ops: the client editor offers the six looks", (await page.locator("#clLook option").allInnerTexts()).join("|") === "Standard|Airport Parking Bay UI|Cards (light and dark)|Premium UI|Premium Board|Standard with features");
   await page.selectOption("#clLook", "premium"); await page.click("#clGo"); await sleep(400);
   check("Parking Ops: choosing Premium UI saves theme premium", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "premium"), db.clientSaves);
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
   await page.selectOption("#clLook", "board"); await page.click("#clGo"); await sleep(400);
   check("Parking Ops: choosing Premium Board saves theme board", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "board"), db.clientSaves);
+  await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
+  await page.selectOption("#clLook", "stdplus"); await page.click("#clGo"); await sleep(400);
+  check("Parking Ops: choosing Standard with features saves theme stdplus", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "stdplus"), db.clientSaves);
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
   await page.selectOption("#clLook", "pro"); await page.click("#clGo"); await sleep(400);
   check("Parking Ops: choosing Airport Parking Bay UI saves theme pro", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "pro"), db.clientSaves);

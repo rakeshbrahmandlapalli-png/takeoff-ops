@@ -565,8 +565,8 @@
     show("flBtn", !S.platform && can("flights") && !picks);
     show("rtBtn", !S.platform && can("picksinfo") && picks);
     show("psBtn", !S.platform && can("picksinfo"));
-    // The Cards look's bottom bar mirrors the top bar's buttons.
-    show("bnav", isCards() && !S.platform);
+    // The bottom bar (card looks, and Standard with features) mirrors the top bar's buttons.
+    show("bnav", (isCards() || isStdPlus()) && !S.platform);
     Array.prototype.forEach.call(document.querySelectorAll("#bnav [data-bn]"), function (b) {
       var src = $(b.dataset.bn); b.classList.toggle("hidden", !!src && src.classList.contains("hidden"));
     });
@@ -949,6 +949,7 @@
   function isPremium() { return document.documentElement.classList.contains("premium"); }
   // Premium Board: Premium with two-line rows (board.css).
   function isBoard() { return document.documentElement.classList.contains("pboard"); }
+  function isStdPlus() { return document.documentElement.classList.contains("stdplus"); }
   // Booking sites send names in capitals; the Cards look shows them as written ("Senior Miss").
   function niceMake(m) { return m.length <= 3 ? m : nice(m); }
   function sentence(t) { t = String(t || ""); return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase(); }
@@ -3109,6 +3110,8 @@
     document.documentElement.classList.toggle("cards", cards);
     document.documentElement.classList.toggle("premium", premium);
     document.documentElement.classList.toggle("pboard", board);
+    // Standard with features: Standard plus the bottom bar (stdplus.css).
+    document.documentElement.classList.toggle("stdplus", b.theme === "stdplus");
     var mark = String(b.mark || short.charAt(0) || "P").slice(0, 2);
     // Only the wordmark and the board button. NOT ".brand" on its own: the
     Array.prototype.forEach.call(document.querySelectorAll("span.brand, .tobrand"), function (el) {
@@ -3376,7 +3379,7 @@
   // ── Clients (product owner only, database part 19) ──
   // Counts only: this page never sees a client's customers.
   // The looks a client's app can wear (brand.theme): "pro" is pro.css, "cards" is cards.css, "premium" is premium.css, "board" is premium.css + board.css.
-  var LOOKS = [["", "Standard"], ["pro", "Airport Parking Bay UI"], ["cards", "Cards (light and dark)"], ["premium", "Premium UI"], ["board", "Premium Board"]];
+  var LOOKS = [["", "Standard"], ["pro", "Airport Parking Bay UI"], ["cards", "Cards (light and dark)"], ["premium", "Premium UI"], ["board", "Premium Board"], ["stdplus", "Standard with features"]];
   function lookName(b) { var l = LOOKS.filter(function (x) { return x[0] === ((b && b.theme) || ""); })[0]; return l ? l[1] : "Standard"; }
   function renderClients() {
     if (S.clients === undefined) { S.clients = null; loadClients(); }
