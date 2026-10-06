@@ -13,7 +13,7 @@ owner; also the platform admin, "Parking Ops").
 - `supabase/functions/` — edge functions (flights, manage-staff, pt-photos, pt-r2,
   send-alerts, staff-login, takeoff-bookings).
 - `checks/` — tests (see `checks/README.md`).
-- `tutorials/` — the 7 how-to videos (owner, terminal, bongo); see its README.
+- `public/tutorials/` — the 7 how-to videos (owner, terminal, bongo); played from Menu → Tutorials (not cached by `sw.js`); see its README.
 - Hosting: Vercel (`takeoff-ops.vercel.app` TakeOff, `parkingbay-ops.vercel.app`
   Airport Parking Bay), deploys from `main`. Phones fetch the new app network-first.
 - Supabase project **`oioqjfrlwrjovnouhusp`** ("Ops", Pro plan).
@@ -70,7 +70,7 @@ The user wants looks kept **separate** (a change to one must not change another)
   force-push it (it only carries merged history).
 - Keep UI text short; the user removed explanatory notes in the menu (keep only
   the Display note).
-- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **324 passing** as of 6 Oct
+- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **348 passing** as of 6 Oct
   2026. Add tests for every change. Write output to a file and grep `FAIL|passed`.
   The mock Supabase lives in run.mjs (`rpc()` cases, REST routes).
 - New DB part: copy the previous `admin_save_client` part, change only what's

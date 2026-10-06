@@ -2364,7 +2364,7 @@
       return '<a class="ptset" href="/p/' + esc(x.token) + '" target="_blank" rel="noopener"><span><b>' + x.n + " photo" + (x.n === 1 ? "" : "s") + "</b> · " + esc(dayShort(x.at) + " " + hhmm(x.at)) + (x.by ? " · " + esc(x.by) : "") + "</span><i>View ›</i></a>";
     }).join("");
   }
-  $("panel").addEventListener("close", function () { camStop(); panelRow = null; quick = null; staffEdit = null; render(); setTimeout(bkPump, 500); });
+  $("panel").addEventListener("close", function () { var tv = document.querySelector("#panelBody video"); if (tv) tv.pause(); camStop(); panelRow = null; quick = null; staffEdit = null; render(); setTimeout(bkPump, 500); });
   // Closes on a tap outside only when the press started outside too: selecting
   // text in a box and letting go past the edge must not close it.
   var downOn = {};
@@ -2496,6 +2496,33 @@
           '</small></span><button type="button" data-restore="' + r.id + '">Put back</button></div>';
       }).join("") + "</div>" : '<p class="sub">Nothing removed from this sheet.</p>') +
       '<div class="pbtns"><button type="button" data-close>Close</button></div>';
+    if (!$("panel").open) $("panel").showModal();
+  }
+  // Tutorials (Menu → Tutorials): short videos in public/tutorials, played
+  // here. Terminal and bongo staff see their own; everyone else sees all.
+  var TUTORIALS = [
+    ["1-owner-every-option", "Every option in the app", "3:19", ""],
+    ["2-terminal-setup", "Terminal: getting set up", "0:58", "terminal"],
+    ["3-terminal-picks-and-pt", "Terminal: picks and PT", "1:39", "terminal"],
+    ["4-terminal-drops", "Terminal: drops", "1:38", "terminal"],
+    ["5-bongo-setup", "Bongo: getting set up", "0:58", "bongo"],
+    ["6-bongo-picks-and-pt", "Bongo: picks and PT", "1:31", "bongo"],
+    ["7-bongo-drops", "Bongo: drops", "1:38", "bongo"]
+  ];
+  function myTutorials() {
+    var role = S.me && S.me.role;
+    var own = TUTORIALS.filter(function (t) { return t[3] === role; });
+    return own.length ? own : TUTORIALS;
+  }
+  function openTutorials(key) {
+    var t = key && TUTORIALS.find(function (x) { return x[0] === key; });
+    $("panelBody").innerHTML = t
+      ? '<h2 id="panelTitle">' + esc(t[1]) + "</h2>" +
+        '<video class="tutvid" src="/tutorials/' + t[0] + '.mp4" poster="/tutorials/' + t[0] + '.jpg" controls autoplay playsinline preload="metadata" style="display:block;height:68vh;max-width:100%;aspect-ratio:390/844;margin:0 auto;border-radius:10px;background:#000;object-fit:contain"></video>' +
+        '<div class="pbtns"><button type="button" data-tutorials>All videos</button><button type="button" data-close>Close</button></div>'
+      : '<h2 id="panelTitle">Tutorials</h2><div class="menu-list">' + myTutorials().map(function (x) {
+          return '<button type="button" data-tutorial="' + x[0] + '">' + (hasFeatures() ? menuIcon("play") : "") + "<span>" + esc(x[1]) + " <small>" + x[2] + "</small></span></button>";
+        }).join("") + '</div><div class="pbtns"><button type="button" data-close>Close</button></div>';
     if (!$("panel").open) $("panel").showModal();
   }
   async function restoreCar(btn) {
@@ -4074,6 +4101,8 @@
     if (t.id === "qClear") { S.q = ""; S.other = null; $("q").value = ""; show("qClear", false); $("main").innerHTML = renderBoard(); $("q").focus(); return; }
     if (t.dataset.othersheet) { var oq = t.dataset.otherreg; S.other = null; await openArchived(t.dataset.othersheet, oq); searchOtherDays(); window.scrollTo(0, 0); return; }
     if (t.dataset.removedlist !== undefined) { $("menu").close(); return openRemoved(); }
+    if (t.dataset.tutorials !== undefined) { if ($("menu").open) $("menu").close(); return openTutorials(); }
+    if (t.dataset.tutorial) return openTutorials(t.dataset.tutorial);
     if (t.dataset.notifyon !== undefined) return turnOnNotifications(t);
     if (t.dataset.notifyoff !== undefined) return turnOffNotifications(false);
     if (t.dataset.notifytest !== undefined) return sendTest(t, false);
@@ -4201,7 +4230,7 @@
     if (hasFeatures()) { $("menuBody").innerHTML = premiumMenuHtml(items, sh); if (!$("menu").open) $("menu").showModal(); menuVersionCheck(); return; }
     $("menuBody").innerHTML = "<h2>" + esc(S.company.name) + '</h2><p class="sub">' + esc(S.me.name) + " · " + esc(ROLE_LABEL[S.me.role] || S.me.role) + "</p>" +
       '<div class="menu-list">' + items.filter(function (x) { return x[2]; }).map(function (x) {
-        return '<button type="button" data-view="' + x[0] + '"' + (S.view === x[0] ? ' aria-current="page"' : "") + ">" + x[1] + "</button>";
+        return (x[0] === "me" ? '<button type="button" data-tutorials>Tutorials</button>' : "") + '<button type="button" data-view="' + x[0] + '"' + (S.view === x[0] ? ' aria-current="page"' : "") + ">" + x[1] + "</button>";
       }).join("") + "</div>" + sheetTools + modeHtml() + '<div class="pbtns"><button type="button" data-closemenu>Close</button></div>' + appVersionHtml();
     if (!$("menu").open) $("menu").showModal();
     menuVersionCheck();
@@ -4220,7 +4249,8 @@
     add: '<path d="M12 5v14M5 12h14"/>',
     removed: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
     box: '<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/>',
-    bin: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'
+    bin: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+    play: '<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l6-3.5z"/>'
   };
   function menuIcon(k) { return '<svg class="mi" viewBox="0 0 24 24" aria-hidden="true">' + (MENU_ICON[k] || "") + "</svg>"; }
   function premiumMenuHtml(items, sh) {
@@ -4236,7 +4266,7 @@
         (sh.archived_at ? '<button type="button" data-unarchive="' + sh.id + '">' + menuIcon("box") + "<span>Bring back to the list</span></button>"
           : '<button type="button" data-archivesheet="' + sh.id + '">' + menuIcon("box") + "<span>Archive this sheet</span></button>") + "</div>";
     }
-    h += modeHtml() + swipeMenuHtml() + group("YOU", ["me"]);
+    h += modeHtml() + swipeMenuHtml() + '<label>YOU</label><div class="menu-list"><button type="button" data-tutorials>' + menuIcon("play") + "<span>Tutorials</span></button>" + btn("me") + "</div>";
     if (sh && can("import")) h += '<div class="menu-danger"><button type="button" class="danger" data-deletesheet="' + sh.id + '">' + menuIcon("bin") + "<span>Delete this sheet</span></button></div>";
     return h + '<div class="pbtns"><button type="button" data-closemenu>Close</button></div>' + appVersionHtml();
   }

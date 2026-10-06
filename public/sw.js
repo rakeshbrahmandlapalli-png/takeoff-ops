@@ -1,12 +1,15 @@
 // TakeOff: keeps the app's own files on the phone so it opens with no signal.
 // Bookings are never cached here; they come from Supabase every time.
-const CACHE = "takeoff-ops-v8";
+const CACHE = "takeoff-ops-v9";
 const FILES = ["/", "/index.html", "/app.css", "/pro.css", "/cards.css", "/premium.css", "/board.css", "/stdplus.css", "/fonts/barlow-400.woff2", "/fonts/barlow-600.woff2", "/fonts/barlow-700.woff2", "/fonts/barlow-semi-condensed-700.woff2", "/app.js", "/reader.js", "/vendor/supabase-2.117.2.js", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png"];
 self.addEventListener("install", e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())));
 self.addEventListener("activate", e => e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== CACHE).map(x => caches.delete(x)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== self.location.origin) return;
+  // Tutorial videos stream straight from the network (too big to keep, and
+  // phones ask for them in pieces).
+  if (url.pathname.startsWith("/tutorials/")) return;
   // Newest copy from the network, but on a weak signal the saved copy after
   // 4 seconds, so the app never sits on a blank screen waiting.
   const net = fetch(e.request).then(res => {
