@@ -476,3 +476,5 @@ html.premium:not(.pboard) .acts .pyard{min-height:52px;border-radius:12px;font-s
 .tally .tyards button{flex:1;}
 .dstats .stat.wide{grid-column:1/-1;}
 .dpark .rowline.late strong{color:var(--bad-tx,#b42318);}
+/* number-box icons, ring and mini bars: only Standard with features shows them (stdplus.css) */
+.stat .ki,.pring,.mbar{display:none;}
