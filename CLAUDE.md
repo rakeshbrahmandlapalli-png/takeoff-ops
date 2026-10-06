@@ -13,6 +13,7 @@ owner; also the platform admin, "Parking Ops").
 - `supabase/functions/` — edge functions (flights, manage-staff, pt-photos, pt-r2,
   send-alerts, staff-login, takeoff-bookings).
 - `checks/` — tests (see `checks/README.md`).
+- `tutorials/` — the 7 how-to videos (owner, terminal, bongo); see its README.
 - Hosting: Vercel (`takeoff-ops.vercel.app` TakeOff, `parkingbay-ops.vercel.app`
   Airport Parking Bay), deploys from `main`. Phones fetch the new app network-first.
 - Supabase project **`oioqjfrlwrjovnouhusp`** ("Ops", Pro plan).
