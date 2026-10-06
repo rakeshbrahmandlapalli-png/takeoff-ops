@@ -527,7 +527,7 @@
   // The header is the one the team already knows from the Sheet app: sheet
   // picker, who is signed in, and a row of icon buttons. The yard tally, TO DO /
   // ALL, search and column captions belong to the board only.
-  var VIEW_TITLE = { clients: "Clients", flights: "Flights", summary: "Summary and activity", import: "Import bookings", staff: "Staff", settings: "Settings", archive: "Archive", me: "Me" };
+  var VIEW_TITLE = { dashboard: "Dashboard", clients: "Clients", flights: "Flights", summary: "Summary and activity", import: "Import bookings", staff: "Staff", settings: "Settings", archive: "Archive", me: "Me" };
   var YARD_LABEL = { Y: "NB", S: "S YARD" };
   // The tally reads left to right as the Sheet's did; any yard not listed follows.
   var YARD_ORDER = ["Y", "S", "CP", "NY", "T"];
@@ -677,7 +677,7 @@
   function render() {
     if (!S.me) return;
     try { renderChrome(); } catch (err) { oopsLog(err); }
-    var fn = { clients: renderClients, board: renderBoard, flights: renderFlights, summary: renderSummary, import: renderImport, staff: renderStaff, settings: renderSettings, archive: renderArchive, me: renderMe }[S.view] || renderBoard;
+    var fn = { clients: renderClients, board: renderBoard, flights: renderFlights, summary: renderSummary, dashboard: renderDashboard, import: renderImport, staff: renderStaff, settings: renderSettings, archive: renderArchive, me: renderMe }[S.view] || renderBoard;
     var html;
     // One screen going wrong never takes the app down: it says so and offers a way out.
     try { html = fn(); } catch (err) {
@@ -689,7 +689,7 @@
     snapSave();
     if (flashId) { var el = document.querySelector('[data-id="' + flashId + '"]'); if (el) { el.classList.add("flash"); setTimeout(function () { el.classList.remove("flash"); }, 1500); } flashId = null; }
   }
-  function go(view) { if (S.platform && view !== "me") view = "clients"; if (view === "import" && S.updateReady && !S.queue.length && !pt && !camStream && !BK.length) { location.reload(); return; } if (view === "import") S.recentImports = null; S.view = view; S.settingsDraft = null; if (view === "summary") S.activity = null; if ($("menu").open) $("menu").close(); render(); window.scrollTo(0, 0); }
+  function go(view) { if (S.platform && view !== "me") view = "clients"; if (view === "import" && S.updateReady && !S.queue.length && !pt && !camStream && !BK.length) { location.reload(); return; } if (view === "import") S.recentImports = null; S.view = view; S.settingsDraft = null; if (view === "summary") S.activity = null; if (view === "dashboard") S.dash = null; if ($("menu").open) $("menu").close(); render(); window.scrollTo(0, 0); }
 
   // ── board ─────────────────────────────────
   // Same rules as the Sheet app, so nobody has to relearn what a count means.
@@ -759,7 +759,8 @@
       if (S.filter === "todo" && !outstanding(r)) return false;
       if (S.catFilter && !inCat(r, S.catFilter)) return false;
       if (S.yardFilter) {
-        if (r.kind === "picks" ? (r.intake || "LEFT") !== S.yardFilter : (S.yardFilter === "-" ? r.yard || r.cleared_at : r.yard !== S.yardFilter || r.cleared_at)) return false;
+        if (S.yardFilter.slice(0, 2) === "y:") { var yf = S.yardFilter.slice(2); if (yf === "-" ? r.yard || r.intake !== "Collected" : r.yard !== yf) return false; }
+        else if (r.kind === "picks" ? (r.intake || "LEFT") !== S.yardFilter : (S.yardFilter === "-" ? r.yard || r.cleared_at : r.yard !== S.yardFilter || r.cleared_at)) return false;
       }
       return true;
     }).sort(function (a, b) {
@@ -774,6 +775,11 @@
       var c = { LEFT: 0, Collected: 0, "No Show": 0, RTC: 0 };
       S.rows.forEach(function (r) { var k = r.intake || "LEFT"; if (c[k] !== undefined) c[k]++; });
       cells = [["LEFT", "LEFT", c.LEFT], ["COLL", "Collected", c.Collected], ["NO SHOW", "No Show", c["No Show"]], ["RTC", "RTC", c.RTC]];
+      if (picksYard()) {
+        (S.company.yards || []).forEach(function (y) { cells.push([YARD_LABEL[y] || y, "y:" + y, S.rows.filter(function (r) { return r.yard === y; }).length]); });
+        var unset = S.rows.filter(function (r) { return !r.yard && r.intake === "Collected"; }).length;
+        if (unset) cells.push(["NO YARD", "y:-", unset]);
+      }
     } else {
       var open = S.rows.filter(function (r) { return !r.cleared_at; });
       cells = yardOrder().map(function (y) { return [YARD_LABEL[y] || y, y, open.filter(function (r) { return r.yard === y; }).length]; });
@@ -781,10 +787,13 @@
       if (none && can("yard")) cells.push(["NO YARD", "-", none]);
     }
     var pro = isCards();
-    $("tally").innerHTML = cells.map(function (x) {
-      var label = x[0];
-      return '<button type="button" data-tally="' + esc(x[1]) + '" class="' + (S.yardFilter === x[1] ? "on" : "") + (x[1] === "-" ? " warn" : "") + '" aria-pressed="' + (S.yardFilter === x[1]) + '"><span>' + esc(label) + '</span><b class="num">' + x[2] + "</b></button>";
-    }).join("");
+    var cellHtml = function (x) {
+      return '<button type="button" data-tally="' + esc(x[1]) + '" class="' + (S.yardFilter === x[1] ? "on" : "") + (x[1] === "-" || x[1] === "y:-" ? " warn" : "") + '" aria-pressed="' + (S.yardFilter === x[1]) + '"><span>' + esc(x[0]) + '</span><b class="num">' + x[2] + "</b></button>";
+    };
+    var yardCells = cells.filter(function (x) { return String(x[1]).slice(0, 2) === "y:"; });
+    $("tally").innerHTML = cells.filter(function (x) { return String(x[1]).slice(0, 2) !== "y:"; }).map(cellHtml).join("") +
+      (yardCells.length ? '<div class="tyards">' + yardCells.map(cellHtml).join("") + "</div>" : "");
+    $("tally").classList.toggle("has-yards", !!yardCells.length);
     renderCatStrip(picks);
     renderTallyFold(cells);
     var cardsWords = pro && !isPremium();
@@ -798,7 +807,7 @@
     $("q").placeholder = pro ? "Search reg or name" : "Search reg, name, number or note";
     show("qClear", !!S.q);
     $("colHead").innerHTML = '<span class="hl">' + (picks ? "CAR · CUSTOMER" : "CAR · FLIGHT") + '</span><span class="hr">' +
-      (picks ? "<span>COLL</span><span>NO SHOW</span><span>RTC</span><span>PT</span>" : swipeOnly() ? "<span>DONE</span>" : "<span>SENT</span><span>CALLED</span><span>CLEAR</span>") + "</span>";
+      (picks ? "<span>COLL</span><span>" + (picksYard() ? "YARD" : "NO SHOW") + "</span><span>RTC</span><span>PT</span>" : swipeOnly() ? "<span>DONE</span>" : "<span>SENT</span><span>CALLED</span><span>CLEAR</span>") + "</span>";
   }
 
   // Premium look: the day's numbers fold away to one line, so the list starts
@@ -1166,6 +1175,16 @@
     return d ? '<span class="cat was">WAS ' + dayWord(d) + "</span>" : "";
   }
   function catTag(r) { var c = r.kind === "drops" ? dropCat(r) : catOf(r); return c ? '<span class="cat ' + c + '">' + c.toUpperCase() + "</span>" : ""; }
+  // Location on PICKS (Clients → Edit, brand.picks_yard): the row's NO SHOW
+  // button becomes the car's location (the company's yards); NO SHOW is in
+  // the car's panel. Anyone who takes cars in can set it (database part 67).
+  function picksYard() { return !!(S.company && S.company.brand && S.company.brand.picks_yard); }
+  function pickYardBtn(r) {
+    var on = !!r.yard, lab = on ? esc(YARD_LABEL[r.yard] || r.yard) : "YARD";
+    if (!can("intake")) return '<button type="button" class="pyard' + (on ? " on y-" + esc(r.yard) : "") + '" disabled>' + lab + "</button>";
+    return '<label class="pyard' + (on ? " on y-" + esc(r.yard) : "") + '"><span>' + lab + '</span><select data-yard aria-label="Location of ' + esc(r.reg) + '"><option value="">' + (on ? "— none" : "Choose") + "</option>" +
+      (S.company.yards || []).map(function (y) { return "<option" + (y === r.yard ? " selected" : "") + ' value="' + esc(y) + '">' + esc(YARD_LABEL[y] || y) + "</option>"; }).join("") + "</select></label>";
+  }
   function pickRow(r) {
     var bang = /^!/.test(r.note);
     var cls = r.intake === "Collected" ? " coll" : r.intake === "No Show" ? " nosh" : r.intake === "RTC" ? " rtc" : bang ? " cmpl" : "";
@@ -1178,7 +1197,7 @@
       // Just the make on the row; the full car and booking ref are in the car's panel.
       '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(niceMake(makeOnly(r.make))) + "</span>" : "") + '<span class="dp">' + (makeOnly(r.make) ? " · " : "") + "drop " + esc(hhmm(r.drop_at) || "—") + "</span>" + (S.ptUnsaved[r.id] && r.pt_at ? ' · <span class="tag due">PT NOT SAVED</span>' : "") + (r.pick_called ? ' · <span class="tag' + (r.pick_called === "New Booking" ? ' nb">NEW BOOKING' : '">' + esc(r.pick_called)) + "</span> " + esc(hhmm(r.pick_called_at)) : "") + "</span></div>" +
       noteLine(r) + "</div>") +
-      '<div class="acts">' + b("Collected", "k", "COLL") + b("No Show", "n", "NO SHOW") + b("RTC", "r", "RTC", "rtc") +
+      '<div class="acts">' + b("Collected", "k", "COLL") + (picksYard() ? pickYardBtn(r) : b("No Show", "n", "NO SHOW")) + b("RTC", "r", "RTC", "rtc") +
       actBtn(r, "data-pt", "p", "PT", !!r.pt_at, r.pt_at, can("intake"), r.pt_by) + "</div></div>";
   }
 
@@ -2301,8 +2320,8 @@
       var rp = r.return_at ? londonParts(new Date(r.return_at)) : { key: "", time: "" };
       h += '<label for="retD">BACK DATE AND TIME</label><div class="when2"><input id="retD" type="date" value="' + esc(rp.key) + '">' + timeBox("retT", rp.time) + "</div>";
     }
-    if (drops && can("yard")) {
-      h += '<label>YARD</label><div class="pseg yard">' + (S.company.yards || []).map(function (y) {
+    if (drops ? can("yard") : picksYard() && can("intake")) {
+      h += '<label>' + (drops ? "YARD" : "LOCATION") + '</label><div class="pseg yard">' + (S.company.yards || []).map(function (y) {
         return '<button type="button" data-setyard="' + esc(y) + '" class="' + (r.yard === y ? "on y-" + esc(y) : "") + '">' + esc(YARD_LABEL[y] || y) + "</button>";
       }).join("") + "</div>";
     }
@@ -2319,6 +2338,7 @@
     } else if (can("intake")) {
       extra += '<button type="button" data-pcall="Called" class="' + (r.pick_called === "Called" ? "on" : "") + '">CALLED</button>';
       extra += '<button type="button" data-pcall="New Booking" class="' + (r.pick_called === "New Booking" ? "on nb" : "") + '">NEW BOOKING</button>';
+      if (picksYard()) extra += '<button type="button" data-pnoshow class="' + (r.intake === "No Show" ? "on n" : "") + '">NO SHOW</button>';
     }
     if (extra) h += '<label>MARK AS</label><div class="pseg">' + extra + "</div>";
     if (drops) h += chargePanelHtml(r);
@@ -2427,6 +2447,7 @@
     }
     if (t.dataset.word) { var p = t.dataset.word.split(":"); tapDrop(r, p[0], p[1]); return $("panel").close(); }
     if (t.dataset.pcall) { tapPick(r, "called", t.dataset.pcall); return $("panel").close(); }
+    if (t.dataset.pnoshow !== undefined) { tapPick(r, "intake", "No Show"); return $("panel").close(); }
     if (t.dataset.ptcam !== undefined) return ptCamera(r);
     if (t.dataset.shutter !== undefined) return ptShoot(r);
     if (t.dataset.camtorch !== undefined) return camToggleTorch();
@@ -3070,6 +3091,81 @@
     if (S.view === "summary") render();
   }
 
+  // ── dashboard (owner and managers) ───────
+  // Over the last 24 hours, 7 or 30 days: cars added at the desk (Add a car,
+  // and PICKS cars marked NEW BOOKING by hand), money taken and waived, money
+  // still owed (cars here now, and cars that left with no payment recorded),
+  // removed cars and complaints. One read: owner_dashboard() (setup part 66).
+  var DASH_PERIODS = [["1", "24 hours"], ["7", "7 days"], ["30", "30 days"]];
+  async function loadDash() {
+    var days = +(S.dashDays || "7"), want = S.dashDays || "7";
+    var r = await sb.rpc("owner_dashboard", { p_since: new Date(Date.now() - days * 86400000).toISOString() });
+    if ((S.dashDays || "7") !== want) return;
+    if (r.error) { S.dash = { error: r.error.message }; } else S.dash = r.data || {};
+    if (S.view === "dashboard") render();
+  }
+  function owedNow(r) {
+    if (r.charge_agreed != null) return { amount: +r.charge_agreed, days: 0 };
+    return overstayDue(r) || { amount: 0, days: 0 };
+  }
+  function renderDashboard() {
+    if (!can("settings")) return '<div class="empty">Nothing to show for your role.</div>';
+    var f = S.dashDays || "7";
+    var h = '<div class="dchips" role="group" aria-label="Period">' + DASH_PERIODS.map(function (x) {
+      return '<button type="button" data-dashp="' + x[0] + '" class="' + (f === x[0] ? "on" : "") + '" aria-pressed="' + (f === x[0]) + '">' + x[1] + "</button>";
+    }).join("") + "</div>";
+    if (!S.dash) { loadDash(); return h + '<div class="empty">Loading…</div>'; }
+    if (S.dash.error) return h + '<div class="alert">' + esc(S.dash.error) + "</div>";
+    var D = S.dash, sum = function (a, k) { return a.reduce(function (t, x) { return t + (+x[k] || 0); }, 0); };
+    var added = D.added || [], paid = D.paid || [], removed = D.removed || [], complaints = D.complaints || [];
+    var taken = paid.filter(function (x) { return x.charge_method !== "waived"; }), waived = paid.filter(function (x) { return x.charge_method === "waived"; });
+    var cash = sum(taken.filter(function (x) { return x.charge_method === "cash"; }), "charge_amount"), card = sum(taken.filter(function (x) { return x.charge_method === "card"; }), "charge_amount");
+    var owed = (D.owed || []).map(function (r) { var o = owedNow(r); return Object.assign({}, r, { due: o.amount, days: o.days }); }).filter(function (r) { return r.due > 0; });
+    var here = owed.filter(function (r) { return !r.cleared_at; }), left = owed.filter(function (r) { return r.cleared_at; });
+    var when = function (ts) { return esc(dayShort(ts)) + " " + esc(hhmm(ts)); };
+    var tile = function (label, big, small, cls) { return '<div class="stat' + (cls ? " " + cls : "") + '"><span>' + label + '</span><strong class="num">' + big + "</strong>" + (small ? "<small>" + small + "</small>" : "") + "</div>"; };
+    var PK = D.parked || { total: 0, late: 0, days: [] }, todayKey = londonParts(new Date()).key;
+    var dayName = function (k) { return k === todayKey ? "Today" : k === addDaysKey(todayKey, 1) ? "Tomorrow" : longDay(k); };
+    h += '<div class="stats dstats">' +
+      tile("Parked now", +PK.total || 0, (+PK.late ? PK.late + " past their return · " : "") + "right now, whatever the period", "wide") +
+      tile("Added at the desk", added.length, added.filter(function (a) { return a.action === "ADDED"; }).length + " added · " + added.filter(function (a) { return a.action !== "ADDED"; }).length + " NEW BOOKING") +
+      tile("Money taken", money(cash + card), "cash " + money(cash) + " · card " + money(card)) +
+      tile("Owed now", money(sum(here, "due")), here.length + (here.length === 1 ? " car" : " cars") + " here") +
+      tile("Left unpaid", money(sum(left, "due")), left.length + (left.length === 1 ? " car" : " cars"), left.length ? "warn" : "") +
+      tile("Waived", money(sum(waived, "charge_amount")), waived.length + (waived.length === 1 ? " car" : " cars")) +
+      tile("Removed", removed.length, ["No show", "Cancelled", "Duplicate"].map(function (k) { var n = removed.filter(function (x) { return x.removed_reason === k; }).length; return n ? n + " " + k.toLowerCase() : ""; }).filter(Boolean).join(" · ")) +
+      tile("Complaints", complaints.length, "") +
+      tile("Early returns", +D.early || 0, (+D.changed || 0) + " return changes") + "</div>";
+    var list = function (title, rows, line) { return '<div class="section-label">' + title + " (" + rows.length + ')</div><div class="box dlist">' + (rows.length ? rows.map(line).join("") : '<div class="empty">None.</div>') + "</div>"; };
+    var pdays = (PK.late ? [{ late: true, n: PK.late }] : []).concat(PK.days || []);
+    h += '<div class="section-label">Parked now, by return day</div><div class="box dlist dpark">' + (pdays.length ? pdays.map(function (d) {
+      return '<div class="rowline' + (d.late ? " late" : "") + '"><div class="grow"><strong>' + (d.late ? "Past their return" : esc(dayName(d.day))) + "</strong>" + (d.late ? '<div class="note">Return time gone, not handed back yet</div>' : "") + '</div><strong class="num">' + d.n + "</strong></div>";
+    }).join("") : '<div class="empty">No cars in.</div>') + "</div>";
+    if (left.length) h += list("Left with no payment recorded", left, function (r) {
+      return '<div class="rowline"><div class="grow"><strong>' + esc(r.reg) + "</strong> · " + esc(r.name) + '<div class="note">Cleared ' + when(r.cleared_at) + (r.charge_reason ? " · " + esc(r.charge_reason) : r.days ? " · " + r.days + (r.days === 1 ? " day" : " days") + " over" : "") + '</div></div><strong class="num due">' + money(r.due) + "</strong></div>";
+    });
+    h += list("Added at the desk", added, function (a) {
+      return '<div class="rowline"><span class="num note">' + when(a.at) + '</span><div class="grow"><strong>' + esc(a.reg || "NO REG") + "</strong>" + (a.customer ? " · " + esc(a.customer) : "") +
+        '<div class="note">' + (a.action === "ADDED" ? "Added to " + esc(String(a.kind || "").toUpperCase() || "the sheet") : "Marked NEW BOOKING") + " · " + esc(a.staff_name || "—") + "</div></div></div>";
+    });
+    h += list("Money taken", taken, function (x) {
+      return '<div class="rowline"><span class="num note">' + when(x.charge_at) + '</span><div class="grow"><strong>' + esc(x.reg) + "</strong> · " + esc(x.name) + '<div class="note">' + esc(String(x.charge_method).toUpperCase()) + (x.charge_reason ? " · " + esc(x.charge_reason) : "") + " · " + esc(x.by_name || "—") + '</div></div><strong class="num">' + money(x.charge_amount) + "</strong></div>";
+    });
+    h += list("Owed now", here, function (r) {
+      return '<div class="rowline"><div class="grow"><strong>' + esc(r.reg) + "</strong> · " + esc(r.name) + '<div class="note">Due back ' + when(r.orig_return_at || r.return_at) + (r.charge_reason ? " · " + esc(r.charge_reason) : r.days ? " · " + r.days + (r.days === 1 ? " day" : " days") + " over" : "") + '</div></div><strong class="num">' + money(r.due) + "</strong></div>";
+    });
+    if (waived.length) h += list("Waived", waived, function (x) {
+      return '<div class="rowline"><span class="num note">' + when(x.charge_at) + '</span><div class="grow"><strong>' + esc(x.reg) + "</strong> · " + esc(x.name) + '<div class="note">' + esc(x.by_name || "—") + '</div></div><strong class="num">' + money(x.charge_amount) + "</strong></div>";
+    });
+    h += list("Removed", removed, function (x) {
+      return '<div class="rowline"><span class="num note">' + when(x.removed_at) + '</span><div class="grow"><strong>' + esc(x.reg || "NO REG") + "</strong> · " + esc(x.name) + '<div class="note">' + esc(x.removed_reason) + " · " + esc(String(x.kind || "").toUpperCase()) + " · " + esc(x.by_name || "—") + "</div></div></div>";
+    });
+    if (complaints.length) h += list("Complaints", complaints, function (a) {
+      return '<div class="rowline"><span class="num note">' + when(a.at) + '</span><div class="grow"><strong>' + esc(a.reg) + "</strong>" + (a.customer ? " · " + esc(a.customer) : "") + '<div class="note">' + esc(a.staff_name || "—") + "</div></div></div>";
+    });
+    return h + '<div class="row-actions"><button type="button" class="btn ghost small" data-dashreload>Refresh</button></div>';
+  }
+
   // ── import ────────────────────────────────
   // ── whose app this is ─────────────────────────────────────────────────────
   // One codebase, several parking companies. Each carries its own name, colour
@@ -3454,6 +3550,7 @@
       '<label for="clColour">COLOUR</label><div class="when2"><input id="clColour" type="color" value="' + esc(b.colour || "#334155") + '"><select id="clInk"><option value="#FFFFFF"' + (b.ink !== "#16181D" ? " selected" : "") + '>White text on it</option><option value="#16181D"' + (b.ink === "#16181D" ? " selected" : "") + ">Dark text on it</option></select></div>" +
       '<label for="clLook">LOOK</label><select id="clLook">' + LOOKS.map(function (l) { return '<option value="' + l[0] + '"' + ((b.theme || "") === l[0] ? " selected" : "") + ">" + l[1] + "</option>"; }).join("") + "</select>" +
       '<p class="hint">How their app looks to their team. Their phones change the next time the app refreshes.</p>' +
+      '<label class="check"><input type="checkbox" id="clPicksYard"' + (b.picks_yard ? " checked" : "") + "> Location on PICKS (instead of NO SHOW)</label>" +
       f("clHost", "WEB ADDRESS", b.host, 'autocapitalize="off" placeholder="e.g. clientname-ops.vercel.app"', "Add the same address in Vercel (Settings, Domains) or it won't open.") +
       '<div class="pbtns"><button type="button" data-close>Cancel</button><button class="save" id="clGo">' + (c ? "Save" : "Add client") + "</button></div></form>";
     if (!$("panel").open) $("panel").showModal();
@@ -3469,7 +3566,7 @@
     var was = id ? ((S.clients || []).filter(function (x) { return x.id === id; })[0] || {}).brand || {} : {};
     var p = { id: id, name: $("clName").value, slug: $("clSlug") ? $("clSlug").value.trim() : "", drops_day_end: $("clEnd").value,
       yards: $("clYards").value.split(/[\s,]+/).filter(Boolean),
-      brand: { short: $("clShort").value, colour: colour, ink: $("clInk").value, soft: hexMix(colour, "#FFFFFF", 0.88), text: hexMix(colour, "#000000", 0.35), host: $("clHost").value.trim().toLowerCase(), theme: $("clLook").value } };
+      brand: { short: $("clShort").value, colour: colour, ink: $("clInk").value, soft: hexMix(colour, "#FFFFFF", 0.88), text: hexMix(colour, "#000000", 0.35), host: $("clHost").value.trim().toLowerCase(), theme: $("clLook").value, picks_yard: $("clPicksYard").checked } };
     // Same colour as before: keep their hand-picked tints rather than recalculating.
     if (was.colour && was.colour.toUpperCase() === colour) { p.brand.soft = was.soft || p.brand.soft; p.brand.text = was.text || p.brand.text; }
     $("clGo").disabled = true;
@@ -4135,6 +4232,8 @@
     if (t.dataset.restart !== undefined) { S.imp = newImport(S.imp.kind); render(); return; }
     if (t.dataset.create !== undefined) return createSheet();
     if (t.dataset.reloadlog !== undefined) { S.activity = null; render(); return; }
+    if (t.dataset.dashp) { S.dashDays = t.dataset.dashp; S.dash = null; render(); return; }
+    if (t.dataset.dashreload !== undefined) { S.dash = null; render(); return; }
     if (t.dataset.reset) {
       var p = S.staff[t.dataset.reset];
       if (!confirm("Give " + p.name + " a new link and PIN? Their old link stops working.")) return;
@@ -4219,7 +4318,7 @@
         '</div><div class="pbtns"><button type="button" data-closemenu>Close</button></div>';
       return $("menu").showModal();
     }
-    var items = [["board", "Board", true], ["flights", "Flights", true], ["summary", "Summary and activity", can("summary") || can("log")], ["archive", "Archive: older days and search", can("log")],
+    var items = [["board", "Board", true], ["flights", "Flights", true], ["summary", "Summary and activity", can("summary") || can("log")], ["archive", "Archive: older days and search", can("log")], ["dashboard", "Dashboard", can("settings")],
       ["import", "Import bookings", can("import")], ["staff", "Staff", can("staff")], ["settings", "Settings", can("settings")], ["me", "Me · sign out", true]];
     var sh = sheet();
     var sheetTools = sh && can("import") ? '<label>THIS SHEET · ' + esc(sheetLabel(sh)) + '</label><div class="menu-list">' +
@@ -4250,6 +4349,7 @@
     removed: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
     box: '<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/>',
     bin: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+    dashboard: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
     play: '<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l6-3.5z"/>'
   };
   function menuIcon(k) { return '<svg class="mi" viewBox="0 0 24 24" aria-hidden="true">' + (MENU_ICON[k] || "") + "</svg>"; }
@@ -4258,7 +4358,7 @@
     var btn = function (k) { return '<button type="button" data-view="' + k + '"' + (S.view === k ? ' aria-current="page"' : "") + ">" + menuIcon(k) + "<span>" + esc(have[k]) + "</span></button>"; };
     var group = function (title, keys) { keys = keys.filter(function (k) { return have[k]; }); return keys.length ? "<label>" + title + '</label><div class="menu-list">' + keys.map(btn).join("") + "</div>" : ""; };
     var h = "<h2>" + esc(S.company.name) + '</h2><p class="sub">' + esc(S.me.name) + " · " + esc(ROLE_LABEL[S.me.role] || S.me.role) + "</p>" +
-      group("TODAY", ["board", "flights", "summary"]) + group("OFFICE", ["archive", "import", "staff", "settings"]);
+      group("TODAY", ["board", "flights", "summary"]) + group("OFFICE", ["dashboard", "archive", "import", "staff", "settings"]);
     if (sh && can("import")) {
       h += "<label>THIS SHEET · " + esc(sheetLabel(sh)) + '</label><div class="menu-list">' +
         '<button type="button" data-addcar>' + menuIcon("add") + "<span>Add a car</span></button>" +

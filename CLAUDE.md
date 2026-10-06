@@ -9,7 +9,7 @@ owner; also the platform admin, "Parking Ops").
   one IIFE), `app.css` (Standard), look stylesheets (below), `reader.js` (booking
   PDF/Excel reader), `pt.html/pt.js` (PT photo link page), `sw.js` (offline cache;
   **bump `CACHE` when adding a file to `FILES`**).
-- `setup/NN-*.sql` — database parts, applied in order to the live DB. Latest: **65**.
+- `setup/NN-*.sql` — database parts, applied in order to the live DB. Latest: **67** (66 owner_dashboard, 67 picks location; both applied 6 Oct).
 - `supabase/functions/` — edge functions (flights, manage-staff, pt-photos, pt-r2,
   send-alerts, staff-login, takeoff-bookings).
 - `checks/` — tests (see `checks/README.md`).
@@ -54,6 +54,8 @@ The user wants looks kept **separate** (a change to one must not change another)
 - Menu in sections with icons; Delete this sheet alone at the bottom (it confirms).
 - Summary: progress bar, activity by day with chips/search/coloured dots, picks
   "Cars in by hour" bars.
+- Location on PICKS (per client, Clients → Edit, `brand.picks_yard`): picks rows get a YARD button instead of NO SHOW (NO SHOW in the car panel), yard counts under the numbers. Anyone who takes cars in can set it (setup 67).
+- Dashboard (owner/manager, Menu → OFFICE): parked now by return day, desk adds, money taken/owed/left unpaid, removed, complaints (`owner_dashboard`, setup 66).
 - Every look: menu bottom shows "App version <etag> · up to date" or
   "New version ready · Update now".
 
@@ -70,7 +72,7 @@ The user wants looks kept **separate** (a change to one must not change another)
   force-push it (it only carries merged history).
 - Keep UI text short; the user removed explanatory notes in the menu (keep only
   the Display note).
-- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **348 passing** as of 6 Oct
+- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **390 passing** as of 6 Oct
   2026. Add tests for every change. Write output to a file and grep `FAIL|passed`.
   The mock Supabase lives in run.mjs (`rpc()` cases, REST routes).
 - New DB part: copy the previous `admin_save_client` part, change only what's
