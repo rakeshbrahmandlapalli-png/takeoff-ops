@@ -4058,6 +4058,7 @@
     if (t.id === "rtBtn") return openReturns();
     if (t.id === "psBtn") return (sheet() || {}).kind === "drops" ? openDropsStats() : openPicksStats();
     if (t.id === "refreshBtn") return refreshAll(t);
+    if (t.dataset.appupdate !== undefined) { location.reload(); return; }
     if (t.dataset.checkflights !== undefined) return checkFlights(t);
     if (t.dataset.filltimes !== undefined) return fillTimes(t);
     if (t.dataset.savesettings !== undefined) return saveSettings(t);
@@ -4200,12 +4201,13 @@
       '<button type="button" data-removedlist>Removed cars' + ((S.removed || []).length ? " (" + S.removed.length + ")" : "") + "</button>" +
       (sh.archived_at ? '<button type="button" data-unarchive="' + sh.id + '">Bring back to the list</button>' : '<button type="button" data-archivesheet="' + sh.id + '">Archive this sheet</button>') +
       '<button type="button" class="danger" data-deletesheet="' + sh.id + '">Delete this sheet</button></div>' : "";
-    if (hasFeatures()) { $("menuBody").innerHTML = premiumMenuHtml(items, sh); if (!$("menu").open) $("menu").showModal(); return; }
+    if (hasFeatures()) { $("menuBody").innerHTML = premiumMenuHtml(items, sh); if (!$("menu").open) $("menu").showModal(); menuVersionCheck(); return; }
     $("menuBody").innerHTML = "<h2>" + esc(S.company.name) + '</h2><p class="sub">' + esc(S.me.name) + " · " + esc(ROLE_LABEL[S.me.role] || S.me.role) + "</p>" +
       '<div class="menu-list">' + items.filter(function (x) { return x[2]; }).map(function (x) {
         return '<button type="button" data-view="' + x[0] + '"' + (S.view === x[0] ? ' aria-current="page"' : "") + ">" + x[1] + "</button>";
-      }).join("") + "</div>" + sheetTools + modeHtml() + '<div class="pbtns"><button type="button" data-closemenu>Close</button></div>';
+      }).join("") + "</div>" + sheetTools + modeHtml() + '<div class="pbtns"><button type="button" data-closemenu>Close</button></div>' + appVersionHtml();
     if (!$("menu").open) $("menu").showModal();
+    menuVersionCheck();
   }
   // Premium looks: the menu in sections with icons (Today, Office, This sheet,
   // Display, You), and "Delete this sheet" alone at the bottom, in red.
@@ -4239,7 +4241,7 @@
     }
     h += modeHtml() + swipeMenuHtml() + group("YOU", ["me"]);
     if (sh && can("import")) h += '<div class="menu-danger"><button type="button" class="danger" data-deletesheet="' + sh.id + '">' + menuIcon("bin") + "<span>Delete this sheet</span></button></div>";
-    return h + '<div class="pbtns"><button type="button" data-closemenu>Close</button></div>';
+    return h + '<div class="pbtns"><button type="button" data-closemenu>Close</button></div>' + appVersionHtml();
   }
   // Refresh: the button, and (Premium looks) pulling the board down from the top.
   async function refreshAll(btn) {
@@ -4407,6 +4409,17 @@
       !(document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName));
   }
   function updateIfSafe() { if (S.updateReady && updateSafeNow()) location.reload(); }
+  // Bottom of the menu: which version this phone runs, and whether a newer one is out.
+  function appVersionHtml() {
+    var short = String(appTag || "").replace(/[^0-9a-f]/gi, "").slice(0, 7).toLowerCase();
+    return '<p class="appver">' + (S.updateReady ? '<button type="button" class="link" data-appupdate>New version ready · Update now</button>'
+      : short ? "App version " + esc(short) + " · up to date" : "App version not checked yet (no signal?)") + "</p>";
+  }
+  // Opening the menu checks for a newer version straight away.
+  function menuVersionCheck() {
+    appTagAt = 0;
+    checkForUpdate().then(function () { var el = document.querySelector("#menuBody .appver"); if (el) el.outerHTML = appVersionHtml(); });
+  }
   appVersion().then(function (t) { appTag = t; appTagAt = Date.now(); });
   setInterval(function () { checkForUpdate(); updateIfSafe(); }, 60000);
   document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") { appTagAt = 0; checkForUpdate(); } });
