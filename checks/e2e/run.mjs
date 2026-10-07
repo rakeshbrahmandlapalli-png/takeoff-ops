@@ -1361,7 +1361,7 @@ const dashData = () => {
   };
 };
 for (const theme of ["", "stdplus"]) await scenario(async () => {
-  const db = theme ? apbDb(theme) : makeDb(); db.company.overstay_rate = 30; db.dash = dashData();
+  const db = makeDb(); if (theme) db.company.brand = { theme, colour: "#F9A01B", ink: "#172536", short: "TakeOff" }; db.company.overstay_rate = 30; db.dash = dashData();
   const page = await phone(browser, db);
   await open(page); await sleep(400);
   const look = theme || "standard";
@@ -1370,21 +1370,61 @@ for (const theme of ["", "stdplus"]) await scenario(async () => {
   await page.click('#menuBody [data-view="dashboard"]'); await sleep(700);
   const tiles = await page.locator("#main .dstats .stat").evaluateAll((els) => els.map((e) => e.innerText.replace(/\s+/g, " ").trim()));
   const tile = (name) => tiles.find((t) => t.startsWith(name)) || "";
+  if (theme === "stdplus") {
+    check("Dashboard: compact layout fits a phone", await noSideScroll(page));
+    check("Dashboard: occupancy and payments stack on a phone", await page.locator('.ops-topgrid').evaluate((e) => {
+      const occupancy = e.children[0].getBoundingClientRect(), payments = e.children[1].getBoundingClientRect();
+      return payments.top >= occupancy.bottom && Math.abs(payments.left - occupancy.left) < 2;
+    }));
+    check("Dashboard: enterprise heading and navy occupancy panel", await page.locator(".dash-heading h1").isVisible() && await page.locator(".k-parked").evaluate((e) => getComputedStyle(e).backgroundColor === "rgb(15, 28, 46)"));
+    if (process.env.SHOT_DIR) {
+      await page.screenshot({ path: process.env.SHOT_DIR + "/dashboard-mobile.png", fullPage: false });
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      check("Dashboard: compact layout fits desktop", await noSideScroll(page));
+      await page.screenshot({ path: process.env.SHOT_DIR + "/dashboard-desktop.png", fullPage: false });
+    }
+  }
   check("Dashboard (" + look + "): cars added at the desk, by hand and NEW BOOKING", /^Added at the desk 2 1 added · 1 NEW BOOKING/.test(tile("Added at the desk")), tile("Added at the desk"));
   check("Dashboard (" + look + "): money taken, cash and card", /Money taken £70 cash £20 · card £50/.test(tile("Money taken")), tile("Money taken"));
   check("Dashboard (" + look + "): owed now only counts cars still here that owe something", /Owed now £40 1 car here/.test(tile("Owed now")), tile("Owed now"));
   check("Dashboard (" + look + "): a car that left with no payment recorded shows red", /^Left unpaid £(\d+) 1 car/.test(tile("Left unpaid")) && +tile("Left unpaid").match(/£(\d+)/)[1] >= 60 && await page.locator("#main .dstats .stat.warn").count() === 1, tile("Left unpaid"));
   check("Dashboard (" + look + "): waived, removed, complaints, early returns", /Waived £30 1 car/.test(tile("Waived")) && /Removed 1 1 no show/.test(tile("Removed")) && /Complaints 1/.test(tile("Complaints")) && /Early returns 2 3 return changes/.test(tile("Early returns")), tiles.join(" | "));
+  if (theme === "stdplus") await page.locator('.ops-record').evaluateAll((els) => els.forEach((e) => { e.open = true; }));
   const body = await page.locator("#main").innerText();
   check("Dashboard (" + look + "): the lists name the cars and who did it", /Left with no payment recorded \(1\)[\s\S]*LEFT01/i.test(body) && /AB12CDE[\s\S]*Added to DROPS · SUGU/.test(body) && /XY34ZZZ[\s\S]*Marked NEW BOOKING · TERRY/.test(body) && /CARD01[\s\S]*CARD · return date changed · SUGU/.test(body) && !/ZERO01/.test(body), body.slice(0, 400));
   check("Dashboard (" + look + "): Parked now counts the cars in, with those past their return", /^Parked now 30 2 past their return/.test(tile("Parked now")), tile("Parked now"));
-  check("Dashboard (" + look + "): parked cars by yard, yards first, no yard last", /Parked now, by yard\s*NB\s*\S*\s*\w{3}, \d+ \w{3} 18\s*18\s*No yard yet\s*past return 2 · Today 10\s*12/i.test(body), (body.match(/Parked now, by yard[\s\S]{0,160}/i) || [""])[0]);
-  check("Dashboard (" + look + "): parked cars by return day, past return first", /Parked now, by return day\s*Past their return[\s\S]*?2\s*Today\s*8\s*\w{3}, \d+ \w{3}\s*20/i.test(body), (body.match(/Parked now, by return day[\s\S]{0,160}/i) || [""])[0]);
+  check("Dashboard (" + look + "): parked cars by yard, yards first, no yard last", /Parked now, by yard\s*NB\s*\S*\s*\w{3},? \d+ \w{3} 18\s*18\s*No yard yet\s*past return 2 · Today 10\s*12/i.test(body), (body.match(/Parked now, by yard[\s\S]{0,160}/i) || [""])[0]);
+  check("Dashboard (" + look + "): parked cars by return day, past return first", theme === "stdplus" ? /Past their return[\s\S]*?2\s*Today\s*8\s*\w{3},? \d+ \w{3}\s*20/i.test(await page.locator('#dash-returns').innerText()) : /Parked now, by return day\s*Past their return[\s\S]*?2\s*Today\s*8\s*\w{3},? \d+ \w{3}\s*20/i.test(body), body.slice(0, 160));
   const first = new Date(db.dashCalls[0]).getTime();
   check("Dashboard (" + look + "): opens on the last 7 days", Math.abs(Date.now() - first - 7 * 86400000) < 600000);
   await page.click('#main [data-dashp="30"]'); await sleep(600);
   const last = new Date(db.dashCalls[db.dashCalls.length - 1]).getTime();
   check("Dashboard (" + look + "): 30 days reads again from 30 days back", Math.abs(Date.now() - last - 30 * 86400000) < 600000 && await page.locator('#main [data-dashp="30"].on').count() === 1);
+  if (theme === "stdplus") {
+    check("Dashboard: period label follows the filter", /Last 30 days/.test(await page.locator('.ops-topgrid').innerText()));
+    const calls = db.dashCalls.length;
+    await page.click('[data-dashjump="owed"]');
+    check("Dashboard: owed metric opens the correct records and focuses them", await page.locator('#dash-owed').getAttribute('open') !== null && /OWE001/.test(await page.locator('#dash-owed').innerText()) && await page.locator('#dash-owed summary').evaluate((e) => e === document.activeElement));
+    await page.click('.ops-attention [data-dashjump="unpaid"]');
+    check("Dashboard: unpaid alert opens its matching records", await page.locator('#dash-unpaid').getAttribute('open') !== null && /LEFT01/.test(await page.locator('#dash-unpaid').innerText()) && db.dashCalls.length === calls);
+    await page.click('.ops-attention [data-dashjump="returns"]');
+    check("Dashboard: overdue alert focuses the return breakdown", await page.locator('#dash-returns').evaluate((e) => e === document.activeElement));
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+    const laterDay = addDays(today, 7);
+    db.dash.parked.days.push({ day: laterDay, n: 9 }); db.dash.parked.total += 9;
+    await page.click('[data-dashreload]'); await sleep(650);
+    check("Dashboard: refresh reloads and shows a genuine update time", db.dashCalls.length === calls + 1 && /Updated at \d{2}:\d{2}/.test(await page.locator('.ops-updated').innerText()));
+    check("Dashboard: seven-day schedule hides later dates and counts them", await page.locator('.ops-returnrow').count() === 3 && /9 cars returning later/.test(await page.locator('.ops-tablefoot').innerText()));
+    await page.click('[data-dashdates]');
+    check("Dashboard: view all dates reveals later returns without a new request", await page.locator('.ops-returnrow').count() === 4 && await page.locator('[data-dashdates]').getAttribute('aria-expanded') === 'true' && db.dashCalls.length === calls + 1);
+    await page.click('[data-dashdates]');
+    check("Dashboard: dates collapse again and keyboard focus remains on the control", await page.locator('.ops-returnrow').count() === 3 && await page.locator('[data-dashdates]').evaluate((e) => e === document.activeElement));
+    db.dash = { parked: { total: 0, late: 0, days: [], yards: [] } };
+    await page.click('[data-dashreload]'); await sleep(650);
+    check("Dashboard: empty data has no false alerts or dead date controls", await page.locator('.ops-attention').count() === 0 && await page.locator('[data-dashdates]').count() === 0 && /No upcoming returns/.test(await page.locator('#dash-returns').innerText()));
+    await page.setViewportSize({ width: 360, height: 800 });
+    check("Dashboard: smallest phone fits the interactive layout", await noSideScroll(page));
+  }
 });
 await scenario(async () => {
   const db = makeDb(); db.me.role = "office";
