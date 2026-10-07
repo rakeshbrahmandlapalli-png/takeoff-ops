@@ -80,6 +80,10 @@ function rpc(db, fn, a) {
   const row = (id) => db.bookings.find((x) => x.id === id);
   switch (fn) {
     case "me": return db.me;
+    case "set_capacity": {
+      const yc = {}; for (const [k, v] of Object.entries(a.p_yards || {})) { if (!db.company.yards.includes(k)) throw new Error("Not a valid yard: " + k); if (+v) yc[k] = +v; }
+      db.company.capacity = +a.p_total || null; db.company.yard_capacity = yc; return { capacity: db.company.capacity, yard_capacity: yc };
+    }
     case "set_swipe_only": db.company.swipe_only = !!a.p_on; return !!a.p_on;
     case "admin_clients": return [{ id: "c1", name: "TAKEOFF", slug: "takeoff", yards: ["NB", "S"], brand: { colour: "#F59E0B", host: "takeoff-ops.vercel.app" }, staff: 14, has_owner: true, sheets_7d: 18, cars_7d: 2074, last_activity: now() }];
     case "admin_usage": return { db_bytes: 25709715, store_bytes: 0, store_files: 0, clients: [{ id: "c1", name: "TAKEOFF", cars_30d: 2074, sheets_30d: 18, pt_sets_30d: 134, pt_photos_30d: 4277, fr24_calls_30d: 209, fr24_calls_today: 46, timetable_runs_30d: 148, timetable_last_ok: now(), timetable_last_error: "", activity_30d: 5805 }] };
@@ -1023,6 +1027,15 @@ await scenario(async () => {
   await page.selectOption('[data-ptmethod="ios"]', "link"); await sleep(500);
   check("the iPhone choice saves on its own", db.company.pt_method_ios === "link" && db.company.pt_method === "pdf" && db.calls.some((c) => c.fn === "set_pt_method_ios"));
   check("no sideways scrolling in Settings", await noSideScroll(page));
+  check("Settings: capacity first, with a field per yard", /Car park capacity[\s\S]*not set/.test(await page.locator("#main .box").first().innerText()) && await page.locator("[data-capyard]").count() === 2);
+  await page.fill("#capTotal", "40"); await page.fill('[data-capyard="NB"]', "20");
+  await page.click("[data-savecap]"); await sleep(500);
+  check("Settings: capacity saves in all and per yard", db.company.capacity === 40 && JSON.stringify(db.company.yard_capacity) === '{"NB":20}' && /Now: 40 cars/.test(await page.locator("#main .box").first().innerText()));
+  if (process.env.SHOT_DIR) await page.screenshot({ path: process.env.SHOT_DIR + "/capacity-settings.png" });
+  await page.fill("#capTotal", "-5"); await page.click("[data-savecap]"); await sleep(300);
+  check("Settings: capacity refuses a negative number", db.company.capacity === 40);
+  await page.fill("#capTotal", ""); await page.fill('[data-capyard="NB"]', ""); await page.click("[data-savecap]"); await sleep(500);
+  check("Settings: clearing capacity switches it off", db.company.capacity === null && JSON.stringify(db.company.yard_capacity) === "{}");
 });
 
 // 9. Supabase down
@@ -1394,6 +1407,7 @@ for (const theme of ["", "stdplus"]) await scenario(async () => {
   check("Dashboard (" + look + "): the lists name the cars and who did it", /Left with no payment recorded \(1\)[\s\S]*LEFT01/i.test(body) && /AB12CDE[\s\S]*Added to DROPS · SUGU/.test(body) && /XY34ZZZ[\s\S]*Marked NEW BOOKING · TERRY/.test(body) && /CARD01[\s\S]*CARD · return date changed · SUGU/.test(body) && !/ZERO01/.test(body), body.slice(0, 400));
   check("Dashboard (" + look + "): Parked now counts the cars in, with those past their return", /^Parked now 30 2 past their return/.test(tile("Parked now")), tile("Parked now"));
   check("Dashboard (" + look + "): parked cars by yard, yards first, no yard last", /Parked now, by yard\s*NB\s*\S*\s*\w{3},? \d+ \w{3} 18\s*18\s*No yard yet\s*past return 2 · Today 10\s*12/i.test(body), (body.match(/Parked now, by yard[\s\S]{0,160}/i) || [""])[0]);
+  check("Dashboard (" + look + "): no capacity set, no spaces shown", !/ free|\/ \d/.test(tile("Parked now")) && await page.locator(".ops-capbar").count() === 0);
   check("Dashboard (" + look + "): parked cars by return day, past return first", theme === "stdplus" ? /Past their return[\s\S]*?2\s*Today\s*8\s*\w{3},? \d+ \w{3}\s*20/i.test(await page.locator('#dash-returns').innerText()) : /Parked now, by return day\s*Past their return[\s\S]*?2\s*Today\s*8\s*\w{3},? \d+ \w{3}\s*20/i.test(body), body.slice(0, 160));
   const first = new Date(db.dashCalls[0]).getTime();
   check("Dashboard (" + look + "): opens on the last 7 days", Math.abs(Date.now() - first - 7 * 86400000) < 600000);
@@ -1425,6 +1439,26 @@ for (const theme of ["", "stdplus"]) await scenario(async () => {
     await page.setViewportSize({ width: 360, height: 800 });
     check("Dashboard: smallest phone fits the interactive layout", await noSideScroll(page));
   }
+});
+// Capacity (Settings, part 71) against Parked now: spaces free or over, per yard too
+for (const theme of ["", "stdplus"]) await scenario(async () => {
+  const db = makeDb(); if (theme) db.company.brand = { theme, colour: "#F9A01B", ink: "#172536", short: "TakeOff" }; db.dash = dashData();
+  db.company.capacity = 40; db.company.yard_capacity = { NB: 15 };
+  const page = await phone(browser, db);
+  await open(page); await sleep(400);
+  const look = theme || "standard";
+  await page.evaluate(() => (document.querySelector("#cHead:not(.hidden)") || document.getElementById("menuBtn")).click()); await page.waitForSelector("#menu[open]"); await sleep(300);
+  await page.click('#menuBody [data-view="dashboard"]'); await sleep(700);
+  const parked = (await page.locator("#main .dstats .k-parked").innerText()).replace(/\s+/g, " ");
+  check("Capacity (" + look + "): Parked now shows the spaces free", /30 of 40 · 10 free/.test(parked), parked);
+  const yard = (await page.locator("#main").innerText()).match(/NB[\s\S]{0,80}/)[0].replace(/\s+/g, " ");
+  check("Capacity (" + look + "): a yard over its spaces shows red", /18 \/ 15/.test(yard) && await page.locator("#main strong.num.late").count() === 1, yard);
+  if (process.env.SHOT_DIR) await page.screenshot({ path: process.env.SHOT_DIR + "/capacity-dashboard-" + look + ".png", fullPage: true });
+  if (theme === "stdplus") check("Capacity: occupancy bar three quarters full", await page.locator(".ops-capbar i").evaluate((e) => e.style.width) === "75%");
+  db.dash.parked.total = 45; await page.click("[data-dashreload]"); await sleep(650);
+  const over = (await page.locator("#main .dstats .k-parked").innerText()).replace(/\s+/g, " ");
+  check("Capacity (" + look + "): over capacity says how many", /45 of 40 · 5 over/.test(over), over);
+  check("Capacity (" + look + "): fits a phone", await noSideScroll(page));
 });
 await scenario(async () => {
   const db = makeDb(); db.me.role = "office";

@@ -3264,6 +3264,12 @@
     if (r.charge_agreed != null) return { amount: +r.charge_agreed, days: 0 };
     return overstayDue(r) || { amount: 0, days: 0 };
   }
+  // Capacity (Settings, database part 71): "of 400 · 370 free", or how many over.
+  function capLine(n, cap) { return "of " + cap + " · " + (n > cap ? '<b class="late">' + (n - cap) + " over</b>" : cap - n + " free"); }
+  function yardNum(y) {
+    var c = y.yard && +((S.company.yard_capacity || {})[y.yard]) || 0;
+    return '<strong class="num' + (c && y.n > c ? " late" : "") + '">' + y.n + (c ? '<small class="note"> / ' + c + "</small>" : "") + "</strong>";
+  }
   function renderDashboard() {
     if (!can("settings")) return '<div class="empty">Nothing to show for your role.</div>';
     var f = S.dashDays || "7";
@@ -3283,8 +3289,9 @@
     var tile = function (label, big, small, cls) { return kstat(TK[label] || "x", label, big, small ? "<small>" + small + "</small>" : "", cls); };
     var PK = D.parked || { total: 0, late: 0, days: [] }, todayKey = londonParts(new Date()).key;
     var dayName = function (k) { return k === todayKey ? "Today" : k === addDaysKey(todayKey, 1) ? "Tomorrow" : longDay(k); };
+    var cap = +S.company.capacity || 0;
     h += '<div class="stats dstats">' +
-      tile("Parked now", +PK.total || 0, (+PK.late ? PK.late + " past their return · " : "") + "right now, whatever the period", "wide") +
+      tile("Parked now", +PK.total || 0, (cap ? capLine(+PK.total || 0, cap) + " · " : "") + (+PK.late ? PK.late + " past their return · " : "") + "right now, whatever the period", "wide" + (cap && +PK.total > cap ? " warn" : "")) +
       tile("Added at the desk", added.length, added.filter(function (a) { return a.action === "ADDED"; }).length + " added · " + added.filter(function (a) { return a.action !== "ADDED"; }).length + " NEW BOOKING") +
       tile("Money taken", money(cash + card), "cash " + money(cash) + " · card " + money(card)) +
       tile("Owed now", money(sum(here, "due")), here.length + (here.length === 1 ? " car" : " cars") + " here") +
@@ -3307,7 +3314,7 @@
       h += '<div class="section-label">Parked now, by yard</div><div class="box dlist dyard">' + yards.map(function (y) {
         var ds = y.days || [], shown = ds.slice(0, 4), rest = ds.slice(4).reduce(function (t, d) { return t + d.n; }, 0);
         var line = shown.map(function (d) { return (d.day ? esc(dayName(d.day)) : '<b class="late">past return</b>') + " " + d.n; }).join(" · ") + (rest ? " · later " + rest : "");
-        return '<div class="rowline"><div class="grow"><strong>' + (y.yard ? esc(YARD_LABEL[y.yard] || y.yard) : "No yard yet") + '</strong><div class="note">' + line + '</div></div><strong class="num">' + y.n + "</strong></div>";
+        return '<div class="rowline"><div class="grow"><strong>' + (y.yard ? esc(YARD_LABEL[y.yard] || y.yard) : "No yard yet") + '</strong><div class="note">' + line + '</div></div>' + yardNum(y) + "</div>";
       }).join("") + "</div>";
     }
     var pdays = (PK.late ? [{ late: true, n: PK.late }] : []).concat(PK.days || []);
@@ -3342,7 +3349,7 @@
 
   // Standard with features: compact overview, with the same underlying records.
   function renderOpsDashboard(x) {
-    var PK = x.PK, period = DASH_PERIODS.filter(function (p) { return p[0] === (S.dashDays || "7"); })[0][1];
+    var cap = +S.company.capacity || 0, PK = x.PK, period = DASH_PERIODS.filter(function (p) { return p[0] === (S.dashDays || "7"); })[0][1];
     var link = function (target, label) { return '<button type="button" class="ops-link" data-dashjump="' + target + '">' + label + ' <span aria-hidden="true">→</span></button>'; };
     var metric = function (key, label, value, note, target, warn) {
       var tag = target ? "button" : "div";
@@ -3364,7 +3371,7 @@
       if (x.left.length) h += '<div class="ops-alertitem"><div><strong>' + money(x.sum(x.left, 'due')) + ' left unpaid</strong><small>' + x.left.length + (x.left.length === 1 ? ' car' : ' cars') + ' · no payment recorded</small></div>' + link('unpaid', 'Review') + '</div>';
       h += '</section>';
     }
-    h += '<div class="ops-topgrid dstats"><section class="ops-occupancy stat k-parked"><span>Parked now</span><strong class="num">' + (+PK.total || 0) + '</strong><small>' + (+PK.late ? PK.late + ' past their return' : 'Current parking status') + '</small><div class="ops-occfoot"><span>' + countOn(x.today) + ' returning today</span><span>' + countOn(addDaysKey(x.today, 1)) + ' tomorrow</span></div></section><section class="ops-panel">' + panelHead('Payments', 'Last ' + period) + '<div class="ops-paymentgrid">' +
+    h += '<div class="ops-topgrid dstats"><section class="ops-occupancy stat k-parked"><span>Parked now</span><strong class="num">' + (+PK.total || 0) + '</strong><small>' + (cap ? capLine(+PK.total || 0, cap) + (+PK.late ? ' · ' + PK.late + ' past their return' : '') : +PK.late ? PK.late + ' past their return' : 'Current parking status') + '</small>' + (cap ? '<div class="ops-capbar' + (+PK.total > cap ? ' over' : '') + '" role="img" aria-label="' + Math.round((+PK.total || 0) / cap * 100) + '% full"><i style="width:' + Math.min(100, Math.round((+PK.total || 0) / cap * 100)) + '%"></i></div>' : '') + '<div class="ops-occfoot"><span>' + countOn(x.today) + ' returning today</span><span>' + countOn(addDaysKey(x.today, 1)) + ' tomorrow</span></div></section><section class="ops-panel">' + panelHead('Payments', 'Last ' + period) + '<div class="ops-paymentgrid">' +
       metric('money', 'Money taken', money(x.cash + x.card), 'cash ' + money(x.cash) + ' · card ' + money(x.card), 'money') +
       metric('owed', 'Owed now', money(x.sum(x.here, 'due')), x.here.length + (x.here.length === 1 ? ' car' : ' cars') + ' here', 'owed') +
       metric('unpaid', 'Left unpaid', money(x.sum(x.left, 'due')), x.left.length + (x.left.length === 1 ? ' car' : ' cars'), 'unpaid', x.left.length > 0) +
@@ -3385,7 +3392,7 @@
     if (x.yards.length) h += '<section class="ops-panel ops-yards">' + panelHead('Parked now, by yard') + '<div class="dlist">' + x.yards.map(function (y) {
       var ds = y.days || [], shown = ds.slice(0, 4), rest = ds.slice(4).reduce(function (n, d) { return n + d.n; }, 0);
       var line = shown.map(function (d) { return (d.day ? esc(x.dayName(d.day)) : '<b class="late">past return</b>') + ' ' + d.n; }).join(' · ') + (rest ? ' · later ' + rest : '');
-      return '<div class="rowline"><div class="grow"><strong>' + (y.yard ? esc(YARD_LABEL[y.yard] || y.yard) : 'No yard yet') + '</strong><div class="note">' + line + '</div></div><strong class="num">' + y.n + '</strong></div>';
+      return '<div class="rowline"><div class="grow"><strong>' + (y.yard ? esc(YARD_LABEL[y.yard] || y.yard) : 'No yard yet') + '</strong><div class="note">' + line + '</div></div>' + yardNum(y) + '</div>';
     }).join('') + '</div></section>';
     return h + '</div>';
   }
@@ -4099,7 +4106,7 @@
     }
     var hrs = []; for (var h = 0; h <= 24; h++) hrs.push([h, hourName(h)]);
     var perDay = creditGuess(T);
-    return '<div class="box" style="padding:14px;max-width:560px"><strong>Flight checks</strong>' +
+    return capacityHtml() + '<div class="box" style="padding:14px;margin-top:14px;max-width:560px"><strong>Flight checks</strong>' +
       sel("enabled", [["true", "On"], ["false", "Off: no automatic checks"]], "Automatic checks") +
       (String(T.enabled) === "false" ? "" :
         '<div class="section-label">Live landing times (FlightRadar24)</div>' +
@@ -4113,6 +4120,30 @@
         (perDay > 1900 ? '<div class="alert">About ' + (perDay * 30).toLocaleString("en-GB") + " FlightRadar24 credits a month: more than the 60,000 plan.</div>" : "")) +
       '<div class="row-actions"><button type="button" class="btn ghost" data-resetsettings>Back to defaults</button><button type="button" class="btn brand" data-savesettings>Save</button></div></div>' +
       discordHtml() + ptNumberHtml() + overstayRateHtml() + backupHtml();
+  }
+  // Car park capacity (database part 71): how many cars fit, in all and per
+  // yard. The dashboard shows Parked now against it.
+  function capacityHtml() {
+    var C = S.company || {}, cap = +C.capacity || 0, yc = C.yard_capacity || {}, ys = C.yards || [];
+    return '<div class="box" style="padding:14px;max-width:560px"><strong>Car park capacity</strong>' +
+      '<p class="note">How many cars you can park. Now: <b>' + (cap ? cap + " cars" : "not set") + "</b>.</p>" +
+      '<label class="field">Total spaces<input id="capTotal" type="number" inputmode="numeric" min="0" step="1" placeholder="e.g. 400" value="' + (cap || "") + '"></label>' +
+      (ys.length ? '<div class="section-label">Per yard (optional)</div><div class="capyards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0 10px">' + ys.map(function (y) {
+        return '<label class="field">' + esc(YARD_LABEL[y] || y) + '<input data-capyard="' + esc(y) + '" type="number" inputmode="numeric" min="0" step="1" value="' + (+yc[y] || "") + '"></label>';
+      }).join("") + "</div>" : "") +
+      '<div class="row-actions"><button type="button" class="btn brand" data-savecap>Save capacity</button></div></div>';
+  }
+  async function saveCapacity(btn) {
+    var yards = {}, bad = "";
+    document.querySelectorAll("[data-capyard]").forEach(function (i) { var v = i.value.trim(); if (v && !/^\d+$/.test(v)) bad = i.dataset.capyard; yards[i.dataset.capyard] = v; });
+    var t = $("capTotal").value.trim();
+    if (bad || (t && !/^\d+$/.test(t))) return toast("Enter whole numbers of spaces.", true);
+    btn.disabled = true;
+    var r = await sb.rpc("set_capacity", { p_total: t ? +t : null, p_yards: yards });
+    btn.disabled = false;
+    if (r.error) return toast(r.error.message, true);
+    S.company.capacity = r.data.capacity; S.company.yard_capacity = r.data.yard_capacity || {}; S.dash = null;
+    toast(r.data.capacity ? "Saved: " + r.data.capacity + " spaces" : "Capacity cleared"); render();
   }
   function overstayRateHtml() {
     var rate = +(S.company && S.company.overstay_rate) || 0;
@@ -4395,6 +4426,7 @@
     if (t.dataset.savept !== undefined) return savePtNumber(t);
     if (t.dataset.backup !== undefined) return downloadBackup(t);
     if (t.dataset.saverate !== undefined) return saveOverstayRate(t);
+    if (t.dataset.savecap !== undefined) return saveCapacity(t);
     if (t.dataset.swipestep) { setSwipeChoice(t.dataset.swipestep); render(); return openMenu(); }
     if (t.dataset.swipeleft) { setSwipeLeftChoice(t.dataset.swipeleft); render(); return openMenu(); }
     if (t.closest("[data-swipeonlyme]")) { setSwipeOnlyChoice(!swipeOnlyChoice()); render(); return openMenu(); }
