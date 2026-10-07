@@ -1372,6 +1372,10 @@ for (const theme of ["", "stdplus"]) await scenario(async () => {
   const tile = (name) => tiles.find((t) => t.startsWith(name)) || "";
   if (theme === "stdplus") {
     check("Dashboard: compact layout fits a phone", await noSideScroll(page));
+    check("Dashboard: occupancy and payments stack on a phone", await page.locator('.ops-topgrid').evaluate((e) => {
+      const occupancy = e.children[0].getBoundingClientRect(), payments = e.children[1].getBoundingClientRect();
+      return payments.top >= occupancy.bottom && Math.abs(payments.left - occupancy.left) < 2;
+    }));
     check("Dashboard: enterprise heading and navy occupancy panel", await page.locator(".dash-heading h1").isVisible() && await page.locator(".k-parked").evaluate((e) => getComputedStyle(e).backgroundColor === "rgb(15, 28, 46)"));
     if (process.env.SHOT_DIR) {
       await page.screenshot({ path: process.env.SHOT_DIR + "/dashboard-mobile.png", fullPage: false });
