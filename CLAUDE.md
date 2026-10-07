@@ -73,7 +73,7 @@ The user wants looks kept **separate** (a change to one must not change another)
   force-push it (it only carries merged history).
 - Keep UI text short; the user removed explanatory notes in the menu (keep only
   the Display note).
-- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **407 passing** as of 6 Oct
+- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **411 passing** as of 7 Oct
   2026. Add tests for every change. Write output to a file and grep `FAIL|passed`.
   The mock Supabase lives in run.mjs (`rpc()` cases, REST routes).
   Stress: `STRESS=1 node run.mjs` (36 checks) and `node checks/stress-joblist.cjs`. The board

@@ -1468,6 +1468,22 @@ await scenario(async () => {
   check("Desk booking: view-only staff don't get the button", await page.locator("[data-deskbook]").count() === 0);
 });
 
+// 18a3f. Me → Copy my link: this phone's own personal link
+for (const theme of ["", "stdplus"]) await scenario(async () => {
+  const db = theme ? apbDb(theme) : makeDb();
+  const page = await phone(browser, db);
+  await open(page); await sleep(300);
+  await page.evaluate(() => { window.__copied = []; navigator.clipboard.writeText = async (x) => { window.__copied.push(x); }; });
+  await page.evaluate(() => (document.querySelector("#cHead:not(.hidden)") || document.getElementById("menuBtn")).click()); await page.waitForSelector("#menu[open]"); await sleep(200);
+  await page.click('#menuBody [data-view="me"]'); await sleep(400);
+  const look = theme || "standard";
+  check("Copy my link (" + look + "): Me has the button", await page.locator(".mylink [data-copy]").count() === 1);
+  await page.click(".mylink [data-copy]"); await sleep(300);
+  const want = await page.evaluate(() => location.origin + "/#t=" + localStorage.getItem("takeoff_link"));
+  const got = await page.evaluate(() => window.__copied[0]);
+  check("Copy my link (" + look + "): copies this phone's link", got === want && /#t=[A-Za-z0-9_-]{32,64}$/.test(got), { got, want });
+});
+
 // 18a4. a new version of the app is picked up without anyone reloading
 await scenario(async () => {
   const db = makeDb();
