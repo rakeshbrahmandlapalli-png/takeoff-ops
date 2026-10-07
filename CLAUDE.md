@@ -9,7 +9,7 @@ owner; also the platform admin, "Parking Ops").
   one IIFE), `app.css` (Standard), look stylesheets (below), `reader.js` (booking
   PDF/Excel reader), `pt.html/pt.js` (PT photo link page), `sw.js` (offline cache;
   **bump `CACHE` when adding a file to `FILES`**).
-- `setup/NN-*.sql` — database parts, applied in order to the live DB. Latest: **69** (66, 67 applied 6 Oct. 68 carry PICKS yard/note/£ to DROPS and 69 desk bookings + docket photos: NOT applied yet — the user runs these SQL files themselves in the Supabase SQL editor; DB checks: checks/carry-from-picks.mjs, checks/desk-booking.mjs).
+- `setup/NN-*.sql` — database parts, applied in order to the live DB. Latest: **69** (all applied; 68 and 69 run by the user in the SQL editor on 7 Oct — they prefer running SQL themselves; DB checks: checks/carry-from-picks.mjs, checks/desk-booking.mjs).
 - `supabase/functions/` — edge functions (flights, manage-staff, pt-photos, pt-r2,
   send-alerts, staff-login, takeoff-bookings).
 - `checks/` — tests (see `checks/README.md`).
