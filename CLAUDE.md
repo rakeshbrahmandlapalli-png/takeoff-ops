@@ -76,6 +76,8 @@ The user wants looks kept **separate** (a change to one must not change another)
 - Tests: `cd checks/e2e && timeout 580 node run.mjs` — **407 passing** as of 6 Oct
   2026. Add tests for every change. Write output to a file and grep `FAIL|passed`.
   The mock Supabase lives in run.mjs (`rpc()` cases, REST routes).
+  Stress: `STRESS=1 node run.mjs` (36 checks) and `node checks/stress-joblist.cjs`. The board
+  re-renders only changed rows (`setMain` + `boardChunks`); keep row HTML one element per row.
 - New DB part: copy the previous `admin_save_client` part, change only what's
   needed, check the live definition matches the previous part first, apply with
   the Supabase MCP, keep the file in `setup/`.
