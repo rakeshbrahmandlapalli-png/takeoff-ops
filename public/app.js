@@ -3251,11 +3251,13 @@
   // still owed (cars here now, and cars that left with no payment recorded),
   // removed cars and complaints. One read: owner_dashboard() (setup part 66).
   var DASH_PERIODS = [["1", "24 hours"], ["7", "7 days"], ["30", "30 days"]];
+  var dashRequest = 0;
   async function loadDash() {
-    var days = +(S.dashDays || "7"), want = S.dashDays || "7";
+    var days = +(S.dashDays || "7"), want = S.dashDays || "7", request = ++dashRequest;
     var r = await sb.rpc("owner_dashboard", { p_since: new Date(Date.now() - days * 86400000).toISOString() });
-    if ((S.dashDays || "7") !== want) return;
+    if ((S.dashDays || "7") !== want || request !== dashRequest) return;
     if (r.error) { S.dash = { error: r.error.message }; } else S.dash = r.data || {};
+    S.dashUpdated = r.error ? null : new Date().toISOString();
     if (S.view === "dashboard") render();
   }
   function owedNow(r) {
@@ -3269,7 +3271,7 @@
       return '<button type="button" data-dashp="' + x[0] + '" class="' + (f === x[0] ? "on" : "") + '" aria-pressed="' + (f === x[0]) + '">' + x[1] + "</button>";
     }).join("") + "</div></div>";
     if (!S.dash) { loadDash(); return h + '<div class="empty">Loading…</div></div>'; }
-    if (S.dash.error) return h + '<div class="alert">' + esc(S.dash.error) + "</div></div>";
+    if (S.dash.error) return h + '<div class="alert">' + esc(S.dash.error) + '</div><button type="button" class="btn ghost small" data-dashreload>Try again</button></div>';
     var D = S.dash, sum = function (a, k) { return a.reduce(function (t, x) { return t + (+x[k] || 0); }, 0); };
     var added = D.added || [], paid = D.paid || [], removed = D.removed || [], complaints = D.complaints || [];
     var taken = paid.filter(function (x) { return x.charge_method !== "waived"; }), waived = paid.filter(function (x) { return x.charge_method === "waived"; });
@@ -3291,7 +3293,12 @@
       tile("Removed", removed.length, ["No show", "Cancelled", "Duplicate"].map(function (k) { var n = removed.filter(function (x) { return x.removed_reason === k; }).length; return n ? n + " " + k.toLowerCase() : ""; }).filter(Boolean).join(" · ")) +
       tile("Complaints", complaints.length, "") +
       tile("Early returns", +D.early || 0, (+D.changed || 0) + " return changes") + "</div>";
-    var list = function (title, rows, line) { return '<div class="section-label">' + title + " (" + rows.length + ')</div><div class="box dlist">' + (rows.length ? rows.map(line).join("") : '<div class="empty">None.</div>') + "</div>"; };
+    var records = {};
+    var list = function (title, rows, line) {
+      var body = rows.length ? rows.map(line).join("") : '<div class="empty">None.</div>';
+      records[title] = { count: rows.length, body: body };
+      return '<div class="section-label">' + title + " (" + rows.length + ')</div><div class="box dlist">' + body + "</div>";
+    };
     // Parked now, by yard (database part 70): each yard's count, then its next return days.
     var yards = PK.yards || [];
     if (yards.length) {
@@ -3329,7 +3336,58 @@
     if (complaints.length) h += list("Complaints", complaints, function (a) {
       return '<div class="rowline"><span class="num note">' + when(a.at) + '</span><div class="grow"><strong>' + esc(a.reg) + "</strong>" + (a.customer ? " · " + esc(a.customer) : "") + '<div class="note">' + esc(a.staff_name || "—") + "</div></div></div>";
     });
+    if (isStdPlus()) return renderOpsDashboard({ D: D, PK: PK, records: records, yards: yards, added: added, cash: cash, card: card, here: here, left: left, waived: waived, removed: removed, complaints: complaints, sum: sum, dayName: dayName, today: todayKey });
     return h + '<div class="row-actions"><button type="button" class="btn ghost small" data-dashreload>Refresh</button></div></div>';
+  }
+
+  // Standard with features: compact overview, with the same underlying records.
+  function renderOpsDashboard(x) {
+    var PK = x.PK, period = DASH_PERIODS.filter(function (p) { return p[0] === (S.dashDays || "7"); })[0][1];
+    var link = function (target, label) { return '<button type="button" class="ops-link" data-dashjump="' + target + '">' + label + ' <span aria-hidden="true">→</span></button>'; };
+    var metric = function (key, label, value, note, target, warn) {
+      var tag = target ? "button" : "div";
+      return '<' + tag + (target ? ' type="button" data-dashjump="' + target + '"' : '') + ' class="stat ops-metric k-' + key + (warn ? ' warn' : '') + '"><span>' + label + '</span><strong class="num">' + value + '</strong><small>' + note + '</small>' + (target ? '<i class="ops-arrow" aria-hidden="true">↗</i>' : '') + '</' + tag + '>';
+    };
+    var panelHead = function (title, note) { return '<div class="ops-panelhead"><strong>' + title + '</strong>' + (note ? '<small>' + note + '</small>' : '') + '</div>'; };
+    var detail = function (id, title) {
+      var r = x.records[title] || { count: 0, body: '<div class="empty">None.</div>' };
+      return '<details id="dash-' + id + '" class="ops-record"><summary>' + title + ' <small>(' + r.count + ')</small></summary><div class="dlist">' + r.body + '</div></details>';
+    };
+    var countOn = function (day) { return (PK.days || []).reduce(function (n, d) { return n + (d.day === day ? +d.n : 0); }, 0); };
+    var h = '<div class="ops-dashboard ops-v2"><div class="dash-toolbar"><div class="dash-heading"><span class="dash-eyebrow">OFFICE / OVERVIEW</span><h1>Operations dashboard</h1></div><div class="ops-tools"><span class="ops-updated">Updated at ' + esc(hhmm(S.dashUpdated)) + '</span><div class="dchips" role="group" aria-label="Period">' + DASH_PERIODS.map(function (p) {
+      var active = p[0] === (S.dashDays || "7");
+      return '<button type="button" data-dashp="' + p[0] + '" class="' + (active ? 'on' : '') + '" aria-pressed="' + active + '">' + p[1] + '</button>';
+    }).join('') + '</div><button type="button" class="ops-refresh" data-dashreload>Refresh</button></div></div>';
+    if (+PK.late || x.left.length) {
+      h += '<section class="ops-attention" aria-label="Needs attention"><strong class="ops-alerttitle">Needs attention</strong>';
+      if (+PK.late) h += '<div class="ops-alertitem"><div><strong>' + PK.late + ' overdue ' + (+PK.late === 1 ? 'car' : 'cars') + '</strong><small>Return time has passed</small></div>' + link('returns', 'View breakdown') + '</div>';
+      if (x.left.length) h += '<div class="ops-alertitem"><div><strong>' + money(x.sum(x.left, 'due')) + ' left unpaid</strong><small>' + x.left.length + (x.left.length === 1 ? ' car' : ' cars') + ' · no payment recorded</small></div>' + link('unpaid', 'Review') + '</div>';
+      h += '</section>';
+    }
+    h += '<div class="ops-topgrid dstats"><section class="ops-occupancy stat k-parked"><span>Parked now</span><strong class="num">' + (+PK.total || 0) + '</strong><small>' + (+PK.late ? PK.late + ' past their return' : 'Current parking status') + '</small><div class="ops-occfoot"><span>' + countOn(x.today) + ' returning today</span><span>' + countOn(addDaysKey(x.today, 1)) + ' tomorrow</span></div></section><section class="ops-panel">' + panelHead('Payments', 'Last ' + period) + '<div class="ops-paymentgrid">' +
+      metric('money', 'Money taken', money(x.cash + x.card), 'cash ' + money(x.cash) + ' · card ' + money(x.card), 'money') +
+      metric('owed', 'Owed now', money(x.sum(x.here, 'due')), x.here.length + (x.here.length === 1 ? ' car' : ' cars') + ' here', 'owed') +
+      metric('unpaid', 'Left unpaid', money(x.sum(x.left, 'due')), x.left.length + (x.left.length === 1 ? ' car' : ' cars'), 'unpaid', x.left.length > 0) +
+      metric('waived', 'Waived', money(x.sum(x.waived, 'charge_amount')), x.waived.length + (x.waived.length === 1 ? ' car' : ' cars'), 'waived') + '</div><div class="ops-moneyfoot">Money taken and waived cover the selected period. Owed now is the current balance.</div></section></div>';
+    var days = (PK.days || []).slice().sort(function (a, b) { return a.day.localeCompare(b.day); });
+    var cutoff = addDaysKey(x.today, 7), soon = days.filter(function (d) { return d.day < cutoff; }), later = days.filter(function (d) { return d.day >= cutoff; });
+    var shown = S.dashAllDates ? days : soon, max = Math.max.apply(null, [1].concat(days.map(function (d) { return +d.n || 0; })));
+    h += '<div class="ops-lowergrid"><section class="ops-panel" id="dash-returns" tabindex="-1">' + panelHead('Upcoming returns', S.dashAllDates ? 'All dates' : 'Next 7 days') + '<div class="ops-tablehead"><span>RETURN DAY</span><span>VOLUME</span><span>CARS</span></div>';
+    if (+PK.late) h += '<div class="ops-returnrow ops-late"><span>Past their return</span><span class="ops-returnnote">Not handed back</span><strong class="num">' + PK.late + '</strong></div>';
+    h += shown.map(function (d) { return '<div class="ops-returnrow' + (d.day === x.today ? ' ops-today' : '') + '"><span>' + esc(x.dayName(d.day)) + '</span><span class="ops-volume" aria-hidden="true"><i style="width:' + Math.round(+d.n / max * 100) + '%"></i></span><strong class="num">' + d.n + '</strong></div>'; }).join('') || '<div class="empty">No upcoming returns' + (days.length ? ' in the next 7 days.' : '.') + '</div>';
+    if (later.length) h += '<div class="ops-tablefoot"><span>' + x.sum(later, 'n') + ' cars returning later</span><button type="button" class="ops-link" data-dashdates aria-expanded="' + !!S.dashAllDates + '">' + (S.dashAllDates ? 'Show next 7 days' : 'View all dates') + '</button></div>';
+    h += '</section><div><section class="ops-panel dstats">' + panelHead('Desk activity', 'Last ' + period) + '<div class="ops-activitygrid">' +
+      metric('added', 'Added at the desk', x.added.length, x.added.filter(function (a) { return a.action === 'ADDED'; }).length + ' added · ' + x.added.filter(function (a) { return a.action !== 'ADDED'; }).length + ' NEW BOOKING', 'added') +
+      metric('removed', 'Removed', x.removed.length, ['No show', 'Cancelled', 'Duplicate'].map(function (k) { var n = x.removed.filter(function (r) { return r.removed_reason === k; }).length; return n ? n + ' ' + k.toLowerCase() : ''; }).filter(Boolean).join(' · '), 'removed') +
+      metric('comp', 'Complaints', x.complaints.length, 'Recorded in this period', 'complaints') +
+      metric('early', 'Early returns', +x.D.early || 0, (+x.D.changed || 0) + ' return changes', null) + '</div></section><section class="ops-panel ops-details">' + panelHead('Detailed records') +
+      detail('unpaid', 'Left with no payment recorded') + detail('added', 'Added at the desk') + detail('money', 'Money taken') + detail('owed', 'Owed now') + detail('waived', 'Waived') + detail('removed', 'Removed') + detail('complaints', 'Complaints') + '</section></div></div>';
+    if (x.yards.length) h += '<section class="ops-panel ops-yards">' + panelHead('Parked now, by yard') + '<div class="dlist">' + x.yards.map(function (y) {
+      var ds = y.days || [], shown = ds.slice(0, 4), rest = ds.slice(4).reduce(function (n, d) { return n + d.n; }, 0);
+      var line = shown.map(function (d) { return (d.day ? esc(x.dayName(d.day)) : '<b class="late">past return</b>') + ' ' + d.n; }).join(' · ') + (rest ? ' · later ' + rest : '');
+      return '<div class="rowline"><div class="grow"><strong>' + (y.yard ? esc(YARD_LABEL[y.yard] || y.yard) : 'No yard yet') + '</strong><div class="note">' + line + '</div></div><strong class="num">' + y.n + '</strong></div>';
+    }).join('') + '</div></section>';
+    return h + '</div>';
   }
 
   // ── import ────────────────────────────────
@@ -4408,6 +4466,21 @@
     if (t.dataset.restart !== undefined) { S.imp = newImport(S.imp.kind); render(); return; }
     if (t.dataset.create !== undefined) return createSheet();
     if (t.dataset.reloadlog !== undefined) { S.activity = null; render(); return; }
+    if (t.dataset.dashjump) {
+      var target = document.getElementById('dash-' + t.dataset.dashjump);
+      if (target) {
+        if (target.tagName === 'DETAILS') target.open = true;
+        var focus = target.querySelector('summary') || target;
+        focus.focus({ preventScroll: true }); target.scrollIntoView({ block: 'start', behavior: 'auto' });
+      }
+      return;
+    }
+    if (t.dataset.dashdates !== undefined) {
+      S.dashAllDates = !S.dashAllDates; render();
+      var datesBtn = document.querySelector('[data-dashdates]');
+      if (datesBtn) { datesBtn.focus({ preventScroll: true }); datesBtn.scrollIntoView({ block: 'nearest' }); }
+      return;
+    }
     if (t.dataset.dashp) { S.dashDays = t.dataset.dashp; S.dash = null; render(); return; }
     if (t.dataset.dashreload !== undefined) { S.dash = null; render(); return; }
     if (t.dataset.reset) {
