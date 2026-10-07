@@ -4262,9 +4262,17 @@
     ["pinOld", "pinNew", "pinNew2"].forEach(function (id) { $(id).value = ""; });
     toast("PIN changed. Use the new one next time you sign in.");
   }
+  // Me → Copy my link: this phone's own personal link (the PIN is never kept).
+  function myLinkHtml() {
+    var t = storedLink(); if (!t) return "";
+    var link = location.origin + "/#t=" + t;
+    return '<div class="box pinbox mylink"><strong>My link</strong><p class="note">Private: with your PIN it opens the app as you.</p>' +
+      '<button type="button" class="btn ghost" data-copy="' + esc(link) + '">Copy my link</button></div>';
+  }
   function renderMe() {
     return '<h2 class="title">' + esc(S.me.name) + '</h2><p class="note">' + esc(ROLE_LABEL[S.me.role] || S.me.role) + " · " + esc(S.company.name) + "</p>" +
       (S.platform ? "" : notifyHtml() + discordSwitchHtml()) +
+      myLinkHtml() +
       '<form class="box pinbox" id="pinChange" novalidate><strong>Change my PIN</strong><p class="note">Your link stays the same.</p>' +
       '<label>Current PIN<input id="pinOld" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password"></label>' +
       '<label>New PIN<input id="pinNew" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password"></label>' +
