@@ -9,7 +9,7 @@ owner; also the platform admin, "Parking Ops").
   one IIFE), `app.css` (Standard), look stylesheets (below), `reader.js` (booking
   PDF/Excel reader), `pt.html/pt.js` (PT photo link page), `sw.js` (offline cache;
   **bump `CACHE` when adding a file to `FILES`**).
-- `setup/NN-*.sql` — database parts, applied in order to the live DB. Latest: **69** (all applied; 68 and 69 run by the user in the SQL editor on 7 Oct — they prefer running SQL themselves; DB checks: checks/carry-from-picks.mjs, checks/desk-booking.mjs).
+- `setup/NN-*.sql` — database parts, applied in order to the live DB. Latest: **70** (all applied; 70 by Claude on 7 Oct at the user's request; 68 and 69 run by the user in the SQL editor on 7 Oct — they prefer running SQL themselves; DB checks: checks/carry-from-picks.mjs, checks/desk-booking.mjs).
 - `supabase/functions/` — edge functions (flights, manage-staff, pt-photos, pt-r2,
   send-alerts, staff-login, takeoff-bookings).
 - `checks/` — tests (see `checks/README.md`).
@@ -73,7 +73,7 @@ The user wants looks kept **separate** (a change to one must not change another)
   force-push it (it only carries merged history).
 - Keep UI text short; the user removed explanatory notes in the menu (keep only
   the Display note).
-- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **411 passing** as of 7 Oct
+- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **413 passing** as of 7 Oct
   2026. Add tests for every change. Write output to a file and grep `FAIL|passed`.
   The mock Supabase lives in run.mjs (`rpc()` cases, REST routes).
   Stress: `STRESS=1 node run.mjs` (36 checks) and `node checks/stress-joblist.cjs`. The board
