@@ -36,7 +36,7 @@ setup part).
 | Cards (light and dark) | `cards` | `cards` | `cards.css` |
 | Premium UI | `premium` | `premium` | `premium.css` (big cards) |
 | Premium Board | `board` | `premium` + `pboard` | `premium.css` + `board.css` (rows exactly like Standard) |
-| Standard with features | `stdplus` | `stdplus` | `app.css` + `stdplus.css` |
+| Standard with features | `stdplus` | `stdplus` | `app.css` + `stdplus.css` (operations look: navy/grey chrome; job rows stay exactly Standard's, checked by a test) |
 JS helpers: `isCards()` (cards or premium = card layout), `isPremium()`,
 `isBoard()`, `isStdPlus()`, `hasFeatures()` (= Premium looks or stdplus).
 The user wants looks kept **separate** (a change to one must not change another).
@@ -73,9 +73,10 @@ The user wants looks kept **separate** (a change to one must not change another)
   force-push it (it only carries merged history).
 - Keep UI text short; the user removed explanatory notes in the menu (keep only
   the Display note).
-- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **413 passing** as of 7 Oct
+- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **449 passing** as of 7 Oct
   2026. Add tests for every change. Write output to a file and grep `FAIL|passed`.
   The mock Supabase lives in run.mjs (`rpc()` cases, REST routes).
+  Previews: `SHOTS=<dir> node run.mjs` screenshots TakeOff's look (phone and desktop).
   Stress: `STRESS=1 node run.mjs` (36 checks) and `node checks/stress-joblist.cjs`. The board
   re-renders only changed rows (`setMain` + `boardChunks`); keep row HTML one element per row.
 - New DB part: copy the previous `admin_save_client` part, change only what's

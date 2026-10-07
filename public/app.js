@@ -547,7 +547,7 @@
     var sh = sheet(), picks = !!(sh && sh.kind === "picks"), board = S.view === "board";
     document.body.classList.toggle("picks", picks);
     document.body.classList.toggle("on-board", board);
-    $("who").textContent = S.me.name.toUpperCase();
+    $("who").textContent = S.me.name.toUpperCase(); $("who").setAttribute("data-role", ROLE_LABEL[S.me.role] || "");
     show("homeBtn", !S.platform && !!homeSaved());
     $("clock").textContent = londonParts(new Date()).time;
     var shift = currentShiftKey();

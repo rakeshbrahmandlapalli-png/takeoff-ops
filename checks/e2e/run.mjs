@@ -288,6 +288,8 @@ async function scenario(fn) {
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined, args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] });
 // STRESS=1 node run.mjs: only the stress tests (big sheets on a slow phone, bad
 // signal, big imports), at the bottom of this file. The normal run skips them.
+// SHOTS=dir node run.mjs: only screenshots of TakeOff's look (Standard with features), for previews.
+if (process.env.SHOTS) { await shots(process.env.SHOTS); await browser.close(); server.close(); process.exit(0); }
 if (process.env.STRESS) { await stressTests(); await browser.close(); server.close(); console.log("\n" + passed + " passed, " + failed + " failed"); process.exit(failed ? 1 : 0); }
 
 // 1. first open, sign-in states
@@ -592,6 +594,36 @@ await scenario(async () => {
   await page.click("#bnBoard"); await sleep(300);
   check("Standard with features: Board brings the board back", await page.isVisible("#boardHead"));
   check("Standard with features: no errors", page.__errors.length === 0, page.__errors);
+});
+// Standard with features, the operations look: new chrome, the job rows exactly as Standard's.
+await scenario(async () => {
+  const rowLook = async (page, kind) => {
+    if (kind === "picks") { await page.selectOption("#sheetPick", "p0"); await page.waitForSelector("#main .row"); await sleep(200); }
+    return page.evaluate(() => {
+      const pick = (el, keys) => { const cs = getComputedStyle(el); return keys.map((k) => cs[k]).join("|"); };
+      const rows = [...document.querySelectorAll("#main .row")].map((r) => [r.getBoundingClientRect().width, r.getBoundingClientRect().height,
+        pick(r, ["backgroundColor", "fontSize", "padding", "borderBottom", "display"]), pick(r.querySelector(".reg"), ["fontSize", "fontWeight", "color"]),
+        [...r.querySelectorAll(".acts button")].map((b) => { const q = b.getBoundingClientRect(); return [q.width, q.height, pick(b, ["backgroundColor", "color", "fontSize", "borderRadius", "border"])].join("/"); }).join(";")].join(" "));
+      const sec = document.querySelector("#main .sec"), head = document.getElementById("colHead");
+      return { rows, sec: sec ? pick(sec, ["backgroundColor", "fontSize", "padding"]) + sec.getBoundingClientRect().width : "", head: pick(head, ["backgroundColor", "fontSize"]) + head.getBoundingClientRect().width };
+    });
+  };
+  const td = () => { const db = makeDb(); db.company.brand = { colour: "#F9A01B", ink: "#1A1A1A", short: "TakeOff", theme: "stdplus" }; return db; };
+  const std = await phone(browser, makeDb()), plus = await phone(browser, td());
+  await open(std); await open(plus); await sleep(300);
+  for (const kind of ["drops", "picks"]) {
+    const a = await rowLook(std, kind), b = await rowLook(plus, kind);
+    check("Operations look: " + kind + " rows exactly as Standard's (size, colours, buttons)", a.rows.length > 2 && JSON.stringify(a.rows) === JSON.stringify(b.rows), { std: a.rows[0], plus: b.rows[0] });
+    check("Operations look: " + kind + " group bar and column head as Standard's", a.sec === b.sec && a.head === b.head, { a, b });
+  }
+  const chrome = await plus.evaluate(() => ({ tab: getComputedStyle(document.querySelector("#boardHead .tabs button.on")).backgroundColor, bg: getComputedStyle(document.body).backgroundColor,
+    who: getComputedStyle(document.getElementById("who"), "::after").content, tally: getComputedStyle(document.getElementById("tally")).borderRadius }));
+  check("Operations look: navy TO DO, grey page, numbers in a panel", chrome.tab === "rgb(24, 40, 59)" && chrome.bg === "rgb(245, 247, 250)" && chrome.tally === "6px", chrome);
+  check("Operations look: Standard itself keeps its own chrome", await std.evaluate(() => getComputedStyle(document.body).backgroundColor === "rgb(255, 255, 255)" && getComputedStyle(document.querySelector(".tabs button.on")).backgroundColor === "rgb(255, 255, 255)"));
+  await plus.setViewportSize({ width: 1280, height: 900 }); await sleep(200);
+  check("Operations look: wide screen, board centred at 1120 px", await plus.evaluate(() => Math.round(document.getElementById("main").getBoundingClientRect().width) === 1120));
+  check("Operations look: no errors", plus.__errors.length === 0, plus.__errors);
+  await std.context().close(); await plus.context().close();
 });
 await scenario(async () => {
   const page = await phone(browser, makeDb(), { width: 360 }); await open(page);
@@ -1977,3 +2009,22 @@ check("the security policy blocked nothing the app needs", cspBlocked.length ===
 await browser.close(); server.close();
 console.log("\n" + passed + " passed, " + failed + " failed");
 process.exit(failed ? 1 : 0);
+
+// ── previews (SHOTS=dir) ─────────────────────────────────────────────────
+async function shots(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  const toDb = () => { const db = makeDb(); db.company.brand = { colour: "#F9A01B", ink: "#1A1A1A", short: "TakeOff", theme: "stdplus" }; return db; };
+  for (const width of [390, 1280]) {
+    const page = await phone(browser, toDb(), { width });
+    await page.setViewportSize({ width, height: width > 600 ? 900 : 844 });
+    const snap = async (name) => { await sleep(350); await page.screenshot({ path: path.join(dir, name + "-" + width + ".png"), fullPage: true }); };
+    await open(page); await snap("drops");
+    await page.selectOption("#sheetPick", "p0"); await page.waitForSelector("#main .row"); await snap("picks");
+    await page.selectOption("#sheetPick", "d0"); await page.waitForSelector("#main .row");
+    await page.locator("#main .row .reg").first().click(); await sleep(300); await page.screenshot({ path: path.join(dir, "car-" + width + ".png") }); await page.keyboard.press("Escape"); await sleep(200);
+    for (const [bn, name] of [["logBtn", "summary"], ["flBtn", "flights"], ["psBtn", "stats"]]) { await page.click('#bnav [data-bn="' + bn + '"]'); await snap(name); await page.keyboard.press("Escape"); await sleep(150); }
+    await page.click('#bnav [data-bn="menuBtn"]'); await sleep(300); await page.screenshot({ path: path.join(dir, "menu-" + width + ".png") });
+    for (const v of ["settings", "staff", "dashboard"]) { if (!(await page.locator("#menu").evaluate((m) => m.open))) await page.click('#bnav [data-bn="menuBtn"]'); await sleep(200); await page.click('#menuBody [data-view="' + v + '"]'); await snap(v); }
+    await page.context().close();
+  }
+}
