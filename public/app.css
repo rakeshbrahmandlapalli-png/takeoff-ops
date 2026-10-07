@@ -478,3 +478,17 @@ html.premium:not(.pboard) .acts .pyard{min-height:52px;border-radius:12px;font-s
 .dpark .rowline.late strong{color:var(--bad-tx,#b42318);}
 /* number-box icons, ring and mini bars: only Standard with features shows them (stdplus.css) */
 .stat .ki,.pring,.mbar{display:none;}
+
+/* PICKS: new booking at the desk (database part 69) */
+.deskbtn{position:fixed;z-index:30;right:16px;bottom:calc(20px + env(safe-area-inset-bottom));display:flex;align-items:center;gap:6px;height:50px;padding:0 20px 0 16px;border:0;border-radius:99px;background:var(--brand,#334155);color:var(--brand-ink,#fff);font-size:15px;font-weight:700;box-shadow:0 4px 14px rgb(0 0 0 / .22),0 1px 3px rgb(0 0 0 / .18);}
+.deskbtn b{font-size:24px;font-weight:600;line-height:1;margin-top:-2px;}
+.deskbtn:active{transform:scale(.97);}
+body:has(#bnav:not(.hidden)) .deskbtn{bottom:calc(76px + env(safe-area-inset-bottom));}
+dialog[open] ~ * .deskbtn,body:has(dialog[open]) .deskbtn{display:none;}
+.docshot{display:flex;align-items:center;justify-content:center;gap:10px;margin:4px 0 6px;padding:18px 12px;border:2px dashed #c4c7cc;border-radius:12px;background:#f8f9fa;font-size:16px;font-weight:700;color:#3c4043;cursor:pointer;}
+.docshot .docshot-ico{font-size:24px;}
+.docshot.done{border-style:solid;border-color:#8fbc7a;background:#eef7ea;color:#274e13;}
+.docbox{display:flex;flex-direction:column;gap:8px;align-items:flex-start;}
+.docbox .docimg img{display:block;max-width:100%;max-height:260px;border-radius:10px;border:1px solid var(--line,#dadce0);}
+.docbox .docadd{cursor:pointer;}
+body:has(.deskbtn) main{padding-bottom:calc(150px + env(safe-area-inset-bottom)) !important;}
