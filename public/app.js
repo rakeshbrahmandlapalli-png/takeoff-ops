@@ -3465,7 +3465,9 @@
     document.documentElement.classList.toggle("premium", premium);
     document.documentElement.classList.toggle("pboard", board);
     // Standard with features: Standard plus the bottom bar (stdplus.css).
-    document.documentElement.classList.toggle("stdplus", b.theme === "stdplus");
+    // Operations is Standard with features plus its own chrome (ops.css): html.stdplus + html.ops.
+    document.documentElement.classList.toggle("stdplus", b.theme === "stdplus" || b.theme === "ops");
+    document.documentElement.classList.toggle("ops", b.theme === "ops");
     var mark = String(b.mark || short.charAt(0) || "P").slice(0, 2);
     // Only the wordmark and the board button. NOT ".brand" on its own: the
     Array.prototype.forEach.call(document.querySelectorAll("span.brand, .tobrand"), function (el) {
@@ -3733,7 +3735,7 @@
   // ── Clients (product owner only, database part 19) ──
   // Counts only: this page never sees a client's customers.
   // The looks a client's app can wear (brand.theme): "pro" is pro.css, "cards" is cards.css, "premium" is premium.css, "board" is premium.css + board.css.
-  var LOOKS = [["", "Standard"], ["pro", "Airport Parking Bay UI"], ["cards", "Cards (light and dark)"], ["premium", "Premium UI"], ["board", "Premium Board"], ["stdplus", "Standard with features"]];
+  var LOOKS = [["", "Standard"], ["pro", "Airport Parking Bay UI"], ["cards", "Cards (light and dark)"], ["premium", "Premium UI"], ["board", "Premium Board"], ["stdplus", "Standard with features"], ["ops", "Operations"]];
   function lookName(b) { var l = LOOKS.filter(function (x) { return x[0] === ((b && b.theme) || ""); })[0]; return l ? l[1] : "Standard"; }
   function renderClients() {
     if (S.clients === undefined) { S.clients = null; loadClients(); }

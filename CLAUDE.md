@@ -9,7 +9,7 @@ owner; also the platform admin, "Parking Ops").
   one IIFE), `app.css` (Standard), look stylesheets (below), `reader.js` (booking
   PDF/Excel reader), `pt.html/pt.js` (PT photo link page), `sw.js` (offline cache;
   **bump `CACHE` when adding a file to `FILES`**).
-- `setup/NN-*.sql` — database parts, applied in order to the live DB. Latest: **71** (all applied; 70 and 71 (capacity) by Claude on 7 Oct at the user's request; 68 and 69 run by the user in the SQL editor on 7 Oct — they prefer running SQL themselves; DB checks: checks/carry-from-picks.mjs, checks/desk-booking.mjs).
+- `setup/NN-*.sql` — database parts, applied in order to the live DB. Latest: **72** (72, the Operations look, not yet applied; up to 71 applied: 70 and 71 (capacity) by Claude on 7 Oct at the user's request; 68 and 69 run by the user in the SQL editor on 7 Oct — they prefer running SQL themselves; DB checks: checks/carry-from-picks.mjs, checks/desk-booking.mjs).
 - `supabase/functions/` — edge functions (flights, manage-staff, pt-photos, pt-r2,
   send-alerts, staff-login, takeoff-bookings).
 - `checks/` — tests (see `checks/README.md`).
@@ -28,7 +28,7 @@ Looks are switched on the platform page: Clients → Edit → LOOK
 (`admin_save_client` validates the allowed list — add new themes there via a new
 setup part).
 
-## The six looks — each its own stylesheet, never sharing styles
+## The seven looks — each its own stylesheet, never sharing styles
 | Label | theme | html class | CSS |
 |---|---|---|---|
 | Standard | (none) | — | `app.css` |
@@ -36,12 +36,13 @@ setup part).
 | Cards (light and dark) | `cards` | `cards` | `cards.css` |
 | Premium UI | `premium` | `premium` | `premium.css` (big cards) |
 | Premium Board | `board` | `premium` + `pboard` | `premium.css` + `board.css` (rows exactly like Standard) |
-| Standard with features | `stdplus` | `stdplus` | `app.css` + `stdplus.css` (operations look: navy/grey chrome; job rows stay exactly Standard's, checked by a test) |
+| Standard with features | `stdplus` | `stdplus` | `app.css` + `stdplus.css` |
+| Operations | `ops` | `stdplus` + `ops` | `app.css` + `stdplus.css` + `ops.css` (navy/grey chrome from the 7 Oct TakeOff preview; job rows stay exactly Standard's, a test checks) |
 JS helpers: `isCards()` (cards or premium = card layout), `isPremium()`,
-`isBoard()`, `isStdPlus()`, `hasFeatures()` (= Premium looks or stdplus).
+`isBoard()`, `isStdPlus()` (stdplus or ops), `hasFeatures()` (= Premium looks or stdplus/ops).
 The user wants looks kept **separate** (a change to one must not change another).
 
-## Features (gated by `hasFeatures()`: Premium, Premium Board, Standard with features)
+## Features (gated by `hasFeatures()`: Premium, Premium Board, Standard with features, Operations)
 - Bottom nav bar (Board, Flights/Returns, Stats, Summary, Menu).
 - Swipe on **drops** only: right and left, each person's own choice on their phone
   (Menu → "Swipe right/left on drops": Off/Sent/Called/Clear). localStorage keys
@@ -73,7 +74,7 @@ The user wants looks kept **separate** (a change to one must not change another)
   force-push it (it only carries merged history).
 - Keep UI text short; the user removed explanatory notes in the menu (keep only
   the Display note).
-- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **449 passing** as of 7 Oct
+- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **452 passing** as of 7 Oct
   2026. Add tests for every change. Write output to a file and grep `FAIL|passed`.
   The mock Supabase lives in run.mjs (`rpc()` cases, REST routes).
   Previews: `SHOTS=<dir> node run.mjs` screenshots TakeOff's look (phone and desktop).

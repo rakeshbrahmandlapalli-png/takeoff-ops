@@ -288,7 +288,7 @@ async function scenario(fn) {
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined, args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] });
 // STRESS=1 node run.mjs: only the stress tests (big sheets on a slow phone, bad
 // signal, big imports), at the bottom of this file. The normal run skips them.
-// SHOTS=dir node run.mjs: only screenshots of TakeOff's look (Standard with features), for previews.
+// SHOTS=dir node run.mjs: only screenshots of the Operations look (SHOTS_THEME=stdplus for another), for previews.
 if (process.env.SHOTS) { await shots(process.env.SHOTS); await browser.close(); server.close(); process.exit(0); }
 if (process.env.STRESS) { await stressTests(); await browser.close(); server.close(); console.log("\n" + passed + " passed, " + failed + " failed"); process.exit(failed ? 1 : 0); }
 
@@ -595,7 +595,7 @@ await scenario(async () => {
   check("Standard with features: Board brings the board back", await page.isVisible("#boardHead"));
   check("Standard with features: no errors", page.__errors.length === 0, page.__errors);
 });
-// Standard with features, the operations look: new chrome, the job rows exactly as Standard's.
+// Operations (theme ops): Standard with features in new chrome, the job rows exactly as Standard's.
 await scenario(async () => {
   const rowLook = async (page, kind) => {
     if (kind === "picks") { await page.selectOption("#sheetPick", "p0"); await page.waitForSelector("#main .row"); await sleep(200); }
@@ -608,22 +608,25 @@ await scenario(async () => {
       return { rows, sec: sec ? pick(sec, ["backgroundColor", "fontSize", "padding"]) + sec.getBoundingClientRect().width : "", head: pick(head, ["backgroundColor", "fontSize"]) + head.getBoundingClientRect().width };
     });
   };
-  const td = () => { const db = makeDb(); db.company.brand = { colour: "#F9A01B", ink: "#1A1A1A", short: "TakeOff", theme: "stdplus" }; return db; };
-  const std = await phone(browser, makeDb()), plus = await phone(browser, td());
+  const td = (theme) => { const db = makeDb(); db.company.brand = { colour: "#F9A01B", ink: "#1A1A1A", short: "TakeOff", theme }; return db; };
+  const std = await phone(browser, makeDb()), plus = await phone(browser, td("ops")), feat = await phone(browser, td("stdplus"));
+  await open(feat);
+  check("Standard with features doesn't wear Operations", await feat.evaluate(() => !document.documentElement.classList.contains("ops") && getComputedStyle(document.body).backgroundColor === "rgb(255, 255, 255)"));
   await open(std); await open(plus); await sleep(300);
   for (const kind of ["drops", "picks"]) {
     const a = await rowLook(std, kind), b = await rowLook(plus, kind);
-    check("Operations look: " + kind + " rows exactly as Standard's (size, colours, buttons)", a.rows.length > 2 && JSON.stringify(a.rows) === JSON.stringify(b.rows), { std: a.rows[0], plus: b.rows[0] });
-    check("Operations look: " + kind + " group bar and column head as Standard's", a.sec === b.sec && a.head === b.head, { a, b });
+    check("Operations: " + kind + " rows exactly as Standard's (size, colours, buttons)", a.rows.length > 2 && JSON.stringify(a.rows) === JSON.stringify(b.rows), { std: a.rows[0], plus: b.rows[0] });
+    check("Operations: " + kind + " group bar and column head as Standard's", a.sec === b.sec && a.head === b.head, { a, b });
   }
   const chrome = await plus.evaluate(() => ({ tab: getComputedStyle(document.querySelector("#boardHead .tabs button.on")).backgroundColor, bg: getComputedStyle(document.body).backgroundColor,
     who: getComputedStyle(document.getElementById("who"), "::after").content, tally: getComputedStyle(document.getElementById("tally")).borderRadius }));
-  check("Operations look: navy TO DO, grey page, numbers in a panel", chrome.tab === "rgb(24, 40, 59)" && chrome.bg === "rgb(245, 247, 250)" && chrome.tally === "6px", chrome);
-  check("Operations look: Standard itself keeps its own chrome", await std.evaluate(() => getComputedStyle(document.body).backgroundColor === "rgb(255, 255, 255)" && getComputedStyle(document.querySelector(".tabs button.on")).backgroundColor === "rgb(255, 255, 255)"));
+  check("Operations: navy TO DO, grey page, numbers in a panel", chrome.tab === "rgb(24, 40, 59)" && chrome.bg === "rgb(245, 247, 250)" && chrome.tally === "6px", chrome);
+  check("Operations: Standard itself keeps its own chrome", await std.evaluate(() => getComputedStyle(document.body).backgroundColor === "rgb(255, 255, 255)" && getComputedStyle(document.querySelector(".tabs button.on")).backgroundColor === "rgb(255, 255, 255)"));
   await plus.setViewportSize({ width: 1280, height: 900 }); await sleep(200);
-  check("Operations look: wide screen, board centred at 1120 px", await plus.evaluate(() => Math.round(document.getElementById("main").getBoundingClientRect().width) === 1120));
-  check("Operations look: no errors", plus.__errors.length === 0, plus.__errors);
-  await std.context().close(); await plus.context().close();
+  check("Operations: wide screen, board centred at 1120 px", await plus.evaluate(() => Math.round(document.getElementById("main").getBoundingClientRect().width) === 1120));
+  check("Operations: no errors", plus.__errors.length === 0, plus.__errors);
+  check("Operations: bottom bar and stdplus class on", await plus.evaluate(() => document.documentElement.classList.contains("stdplus") && document.documentElement.classList.contains("ops") && getComputedStyle(document.getElementById("bnav")).display === "flex"));
+  await std.context().close(); await plus.context().close(); await feat.context().close();
 });
 await scenario(async () => {
   const page = await phone(browser, makeDb(), { width: 360 }); await open(page);
@@ -982,7 +985,7 @@ await scenario(async () => {
   await page.click("#panelBody [data-close]");
   check("Parking Ops: each client card says which look it has", /Standard/.test(await text(page, ".client")));
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
-  check("Parking Ops: the client editor offers the six looks", (await page.locator("#clLook option").allInnerTexts()).join("|") === "Standard|Airport Parking Bay UI|Cards (light and dark)|Premium UI|Premium Board|Standard with features");
+  check("Parking Ops: the client editor offers the seven looks", (await page.locator("#clLook option").allInnerTexts()).join("|") === "Standard|Airport Parking Bay UI|Cards (light and dark)|Premium UI|Premium Board|Standard with features|Operations");
   await page.selectOption("#clLook", "premium"); await page.click("#clGo"); await sleep(400);
   check("Parking Ops: choosing Premium UI saves theme premium", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "premium"), db.clientSaves);
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
@@ -991,6 +994,9 @@ await scenario(async () => {
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
   await page.selectOption("#clLook", "stdplus"); await page.click("#clGo"); await sleep(400);
   check("Parking Ops: choosing Standard with features saves theme stdplus", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "stdplus"), db.clientSaves);
+  await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
+  await page.selectOption("#clLook", "ops"); await page.click("#clGo"); await sleep(400);
+  check("Parking Ops: choosing Operations saves theme ops", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "ops"), db.clientSaves);
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
   await page.selectOption("#clLook", "pro"); await page.click("#clGo"); await sleep(400);
   check("Parking Ops: choosing Airport Parking Bay UI saves theme pro", (db.clientSaves || []).some((x) => x.id === "c1" && x.brand.theme === "pro"), db.clientSaves);
@@ -2013,7 +2019,7 @@ process.exit(failed ? 1 : 0);
 // ── previews (SHOTS=dir) ─────────────────────────────────────────────────
 async function shots(dir) {
   fs.mkdirSync(dir, { recursive: true });
-  const toDb = () => { const db = makeDb(); db.company.brand = { colour: "#F9A01B", ink: "#1A1A1A", short: "TakeOff", theme: "stdplus" }; return db; };
+  const toDb = () => { const db = makeDb(); db.company.brand = { colour: "#F9A01B", ink: "#1A1A1A", short: "TakeOff", theme: process.env.SHOTS_THEME || "ops" }; return db; };
   for (const width of [390, 1280]) {
     const page = await phone(browser, toDb(), { width });
     await page.setViewportSize({ width, height: width > 600 ? 900 : 844 });
