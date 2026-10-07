@@ -3292,6 +3292,17 @@
       tile("Complaints", complaints.length, "") +
       tile("Early returns", +D.early || 0, (+D.changed || 0) + " return changes") + "</div>";
     var list = function (title, rows, line) { return '<div class="section-label">' + title + " (" + rows.length + ')</div><div class="box dlist">' + (rows.length ? rows.map(line).join("") : '<div class="empty">None.</div>') + "</div>"; };
+    // Parked now, by yard (database part 70): each yard's count, then its next return days.
+    var yards = PK.yards || [];
+    if (yards.length) {
+      var order = (S.company.yards || []);
+      yards = yards.slice().sort(function (a, b) { return (a.yard ? 0 : 1) - (b.yard ? 0 : 1) || b.n - a.n || order.indexOf(a.yard) - order.indexOf(b.yard); });
+      h += '<div class="section-label">Parked now, by yard</div><div class="box dlist dyard">' + yards.map(function (y) {
+        var ds = y.days || [], shown = ds.slice(0, 4), rest = ds.slice(4).reduce(function (t, d) { return t + d.n; }, 0);
+        var line = shown.map(function (d) { return (d.day ? esc(dayName(d.day)) : '<b class="late">past return</b>') + " " + d.n; }).join(" · ") + (rest ? " · later " + rest : "");
+        return '<div class="rowline"><div class="grow"><strong>' + (y.yard ? esc(YARD_LABEL[y.yard] || y.yard) : "No yard yet") + '</strong><div class="note">' + line + '</div></div><strong class="num">' + y.n + "</strong></div>";
+      }).join("") + "</div>";
+    }
     var pdays = (PK.late ? [{ late: true, n: PK.late }] : []).concat(PK.days || []);
     h += '<div class="section-label">Parked now, by return day</div><div class="box dlist dpark">' + (pdays.length ? pdays.map(function (d) {
       return '<div class="rowline' + (d.late ? " late" : "") + '"><div class="grow"><strong>' + (d.late ? "Past their return" : esc(dayName(d.day))) + "</strong>" + (d.late ? '<div class="note">Return time gone, not handed back yet</div>' : "") + '</div><strong class="num">' + d.n + "</strong></div>";

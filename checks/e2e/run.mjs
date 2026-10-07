@@ -1341,6 +1341,7 @@ for (const [theme, role, want] of [["", "owner", 7], ["stdplus", "terminal", 3],
 });
 
 // 18a3c. Menu → Dashboard (owner, managers): cars added at the desk, money taken and owed, removed cars, complaints
+let db0Yard = "NB";
 const dashData = () => {
   const ago = (h) => new Date(Date.now() - h * 3600000).toISOString();
   return {
@@ -1355,7 +1356,8 @@ const dashData = () => {
     removed: [{ id: "r1", kind: "picks", reg: "NOSHOW1", name: "MR AWAY", removed_reason: "No show", removed_at: ago(7), by_name: "SUGU" }],
     complaints: [{ at: ago(8), reg: "MAD001", customer: "MR CROSS", staff_name: "TERRY" }],
     early: 2, changed: 3,
-    parked: { total: 30, late: 2, days: [{ day: new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 8 }, { day: new Date(Date.now() + 2 * 86400000).toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 20 }] }
+    parked: { total: 30, late: 2, days: [{ day: new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 8 }, { day: new Date(Date.now() + 2 * 86400000).toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 20 }],
+      yards: [{ yard: "", n: 12, days: [{ day: null, n: 2 }, { day: new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 10 }] }, { yard: db0Yard, n: 18, days: [{ day: new Date(Date.now() + 2 * 86400000).toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 18 }] }] }
   };
 };
 for (const theme of ["", "stdplus"]) await scenario(async () => {
@@ -1376,6 +1378,7 @@ for (const theme of ["", "stdplus"]) await scenario(async () => {
   const body = await page.locator("#main").innerText();
   check("Dashboard (" + look + "): the lists name the cars and who did it", /Left with no payment recorded \(1\)[\s\S]*LEFT01/i.test(body) && /AB12CDE[\s\S]*Added to DROPS · SUGU/.test(body) && /XY34ZZZ[\s\S]*Marked NEW BOOKING · TERRY/.test(body) && /CARD01[\s\S]*CARD · return date changed · SUGU/.test(body) && !/ZERO01/.test(body), body.slice(0, 400));
   check("Dashboard (" + look + "): Parked now counts the cars in, with those past their return", /^Parked now 30 2 past their return/.test(tile("Parked now")), tile("Parked now"));
+  check("Dashboard (" + look + "): parked cars by yard, yards first, no yard last", /Parked now, by yard\s*NB\s*\S*\s*\w{3}, \d+ \w{3} 18\s*18\s*No yard yet\s*past return 2 · Today 10\s*12/i.test(body), (body.match(/Parked now, by yard[\s\S]{0,160}/i) || [""])[0]);
   check("Dashboard (" + look + "): parked cars by return day, past return first", /Parked now, by return day\s*Past their return[\s\S]*?2\s*Today\s*8\s*\w{3}, \d+ \w{3}\s*20/i.test(body), (body.match(/Parked now, by return day[\s\S]{0,160}/i) || [""])[0]);
   const first = new Date(db.dashCalls[0]).getTime();
   check("Dashboard (" + look + "): opens on the last 7 days", Math.abs(Date.now() - first - 7 * 86400000) < 600000);

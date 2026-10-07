@@ -492,3 +492,4 @@ dialog[open] ~ * .deskbtn,body:has(dialog[open]) .deskbtn{display:none;}
 .docbox .docimg img{display:block;max-width:100%;max-height:260px;border-radius:10px;border:1px solid var(--line,#dadce0);}
 .docbox .docadd{cursor:pointer;}
 body:has(.deskbtn) main{padding-bottom:calc(150px + env(safe-area-inset-bottom)) !important;}
+.dyard .note b.late{color:var(--bad-tx,#b42318);font-weight:700;}
