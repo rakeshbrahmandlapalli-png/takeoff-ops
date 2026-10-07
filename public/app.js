@@ -3265,11 +3265,11 @@
   function renderDashboard() {
     if (!can("settings")) return '<div class="empty">Nothing to show for your role.</div>';
     var f = S.dashDays || "7";
-    var h = '<div class="dchips" role="group" aria-label="Period">' + DASH_PERIODS.map(function (x) {
+    var h = '<div class="ops-dashboard"><div class="dash-toolbar"><div class="dash-heading"><span class="dash-eyebrow">OFFICE / OVERVIEW</span><h1>Operations dashboard</h1></div><div class="dchips" role="group" aria-label="Period">' + DASH_PERIODS.map(function (x) {
       return '<button type="button" data-dashp="' + x[0] + '" class="' + (f === x[0] ? "on" : "") + '" aria-pressed="' + (f === x[0]) + '">' + x[1] + "</button>";
-    }).join("") + "</div>";
-    if (!S.dash) { loadDash(); return h + '<div class="empty">Loading…</div>'; }
-    if (S.dash.error) return h + '<div class="alert">' + esc(S.dash.error) + "</div>";
+    }).join("") + "</div></div>";
+    if (!S.dash) { loadDash(); return h + '<div class="empty">Loading…</div></div>'; }
+    if (S.dash.error) return h + '<div class="alert">' + esc(S.dash.error) + "</div></div>";
     var D = S.dash, sum = function (a, k) { return a.reduce(function (t, x) { return t + (+x[k] || 0); }, 0); };
     var added = D.added || [], paid = D.paid || [], removed = D.removed || [], complaints = D.complaints || [];
     var taken = paid.filter(function (x) { return x.charge_method !== "waived"; }), waived = paid.filter(function (x) { return x.charge_method === "waived"; });
@@ -3329,7 +3329,7 @@
     if (complaints.length) h += list("Complaints", complaints, function (a) {
       return '<div class="rowline"><span class="num note">' + when(a.at) + '</span><div class="grow"><strong>' + esc(a.reg) + "</strong>" + (a.customer ? " · " + esc(a.customer) : "") + '<div class="note">' + esc(a.staff_name || "—") + "</div></div></div>";
     });
-    return h + '<div class="row-actions"><button type="button" class="btn ghost small" data-dashreload>Refresh</button></div>';
+    return h + '<div class="row-actions"><button type="button" class="btn ghost small" data-dashreload>Refresh</button></div></div>';
   }
 
   // ── import ────────────────────────────────

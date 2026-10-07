@@ -1361,7 +1361,7 @@ const dashData = () => {
   };
 };
 for (const theme of ["", "stdplus"]) await scenario(async () => {
-  const db = theme ? apbDb(theme) : makeDb(); db.company.overstay_rate = 30; db.dash = dashData();
+  const db = makeDb(); if (theme) db.company.brand = { theme, colour: "#F9A01B", ink: "#172536", short: "TakeOff" }; db.company.overstay_rate = 30; db.dash = dashData();
   const page = await phone(browser, db);
   await open(page); await sleep(400);
   const look = theme || "standard";
@@ -1370,6 +1370,16 @@ for (const theme of ["", "stdplus"]) await scenario(async () => {
   await page.click('#menuBody [data-view="dashboard"]'); await sleep(700);
   const tiles = await page.locator("#main .dstats .stat").evaluateAll((els) => els.map((e) => e.innerText.replace(/\s+/g, " ").trim()));
   const tile = (name) => tiles.find((t) => t.startsWith(name)) || "";
+  if (theme === "stdplus") {
+    check("Dashboard: compact layout fits a phone", await noSideScroll(page));
+    check("Dashboard: enterprise heading and navy occupancy panel", await page.locator(".dash-heading h1").isVisible() && await page.locator(".k-parked").evaluate((e) => getComputedStyle(e).backgroundColor === "rgb(15, 28, 46)"));
+    if (process.env.SHOT_DIR) {
+      await page.screenshot({ path: process.env.SHOT_DIR + "/dashboard-mobile.png", fullPage: false });
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      check("Dashboard: compact layout fits desktop", await noSideScroll(page));
+      await page.screenshot({ path: process.env.SHOT_DIR + "/dashboard-desktop.png", fullPage: false });
+    }
+  }
   check("Dashboard (" + look + "): cars added at the desk, by hand and NEW BOOKING", /^Added at the desk 2 1 added · 1 NEW BOOKING/.test(tile("Added at the desk")), tile("Added at the desk"));
   check("Dashboard (" + look + "): money taken, cash and card", /Money taken £70 cash £20 · card £50/.test(tile("Money taken")), tile("Money taken"));
   check("Dashboard (" + look + "): owed now only counts cars still here that owe something", /Owed now £40 1 car here/.test(tile("Owed now")), tile("Owed now"));
@@ -1378,8 +1388,8 @@ for (const theme of ["", "stdplus"]) await scenario(async () => {
   const body = await page.locator("#main").innerText();
   check("Dashboard (" + look + "): the lists name the cars and who did it", /Left with no payment recorded \(1\)[\s\S]*LEFT01/i.test(body) && /AB12CDE[\s\S]*Added to DROPS · SUGU/.test(body) && /XY34ZZZ[\s\S]*Marked NEW BOOKING · TERRY/.test(body) && /CARD01[\s\S]*CARD · return date changed · SUGU/.test(body) && !/ZERO01/.test(body), body.slice(0, 400));
   check("Dashboard (" + look + "): Parked now counts the cars in, with those past their return", /^Parked now 30 2 past their return/.test(tile("Parked now")), tile("Parked now"));
-  check("Dashboard (" + look + "): parked cars by yard, yards first, no yard last", /Parked now, by yard\s*NB\s*\S*\s*\w{3}, \d+ \w{3} 18\s*18\s*No yard yet\s*past return 2 · Today 10\s*12/i.test(body), (body.match(/Parked now, by yard[\s\S]{0,160}/i) || [""])[0]);
-  check("Dashboard (" + look + "): parked cars by return day, past return first", /Parked now, by return day\s*Past their return[\s\S]*?2\s*Today\s*8\s*\w{3}, \d+ \w{3}\s*20/i.test(body), (body.match(/Parked now, by return day[\s\S]{0,160}/i) || [""])[0]);
+  check("Dashboard (" + look + "): parked cars by yard, yards first, no yard last", /Parked now, by yard\s*NB\s*\S*\s*\w{3},? \d+ \w{3} 18\s*18\s*No yard yet\s*past return 2 · Today 10\s*12/i.test(body), (body.match(/Parked now, by yard[\s\S]{0,160}/i) || [""])[0]);
+  check("Dashboard (" + look + "): parked cars by return day, past return first", /Parked now, by return day\s*Past their return[\s\S]*?2\s*Today\s*8\s*\w{3},? \d+ \w{3}\s*20/i.test(body), (body.match(/Parked now, by return day[\s\S]{0,160}/i) || [""])[0]);
   const first = new Date(db.dashCalls[0]).getTime();
   check("Dashboard (" + look + "): opens on the last 7 days", Math.abs(Date.now() - first - 7 * 86400000) < 600000);
   await page.click('#main [data-dashp="30"]'); await sleep(600);

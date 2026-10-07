@@ -493,3 +493,6 @@ dialog[open] ~ * .deskbtn,body:has(dialog[open]) .deskbtn{display:none;}
 .docbox .docadd{cursor:pointer;}
 body:has(.deskbtn) main{padding-bottom:calc(150px + env(safe-area-inset-bottom)) !important;}
 .dyard .note b.late{color:var(--bad-tx,#b42318);font-weight:700;}
+
+/* The enterprise heading belongs to Standard with features only. */
+.dash-heading{display:none;}
