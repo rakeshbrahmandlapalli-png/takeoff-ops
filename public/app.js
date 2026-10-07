@@ -857,7 +857,7 @@
   function deskBtn() {
     var sh = sheet();
     if (!sh || sh.kind !== "picks" || sh.archived_at || S.platform || !can("intake")) return "";
-    return '<button type="button" class="deskbtn" data-deskbook><b>+</b> New booking at the desk</button>';
+    return '<button type="button" class="deskbtn" data-deskbook aria-label="New booking at the desk"><b aria-hidden="true">+</b><span>New booking</span></button>';
   }
   var deskPhoto = null;
   function openDeskBooking() {
