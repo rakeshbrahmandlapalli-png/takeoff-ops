@@ -168,3 +168,113 @@ html.ops .ops-foot{margin:0;padding:11px 14px;border-top:1px solid #e4e9ef;font-
 html.ops .ops-card .box{border:0;border-radius:0;}
 html.ops body:not(.on-board) main .stats:has(.stat.big){display:block;margin-bottom:14px;}
 html.ops .stats .stat.big{display:block;}
+
+/* Menu: a page between the top bar and the bottom bar, its sections in panels */
+html.ops dialog#menu{position:fixed;inset:var(--ops-menu-top,0px) 0 var(--ops-menu-bottom,0px) 0;width:100%;max-width:none;height:auto;max-height:none;margin:0;padding:18px 14px 28px;border:0;border-radius:0;background:var(--op-bg);box-shadow:none;}
+html.ops dialog#menu::backdrop,html.ops #panel.ops-car::backdrop{background:transparent;}
+html.ops #menuBody{max-width:1092px;margin:0 auto;}
+html.ops #menuBody > h2,html.ops #panel.ops-car h2{font-size:23px;font-weight:650;letter-spacing:-.4px;color:var(--op-ink);}
+html.ops #menuBody > h2::before{content:"OPERATIONS / MENU";}
+html.ops #panel.ops-car h2::before{content:"OPERATIONS / BOOKING DETAILS";}
+html.ops #menuBody > h2::before,html.ops #panel.ops-car h2::before{display:block;margin-bottom:6px;font-size:10px;font-weight:650;letter-spacing:1.5px;color:var(--op-mut);}
+html.ops #menuBody > .sub{margin:4px 0 16px;font-size:13px;}
+html.ops #menuBody > label{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:14px 0 0;padding:15px 16px 14px;border:1px solid var(--op-line);border-bottom-color:#e4e9ef;border-radius:6px 6px 0 0;background:#fff;font-size:13.5px;font-weight:650;letter-spacing:0;color:var(--op-ink);}
+html.ops #menuBody > label small{font-size:12px;font-weight:500;color:var(--op-mut);}
+html.ops #menuBody > label + .menu-list{margin:0;border:1px solid var(--op-line);border-top:0;border-radius:0 0 6px 6px;}
+html.ops #menuBody > label + .pseg{margin:0;padding:10px;border:1px solid var(--op-line);border-top:0;border-radius:0 0 6px 6px;background:#fff;}
+html.ops #menuBody .menu-list button{min-height:56px;padding:0 16px 0 28px;border-top-color:#edf0f4;font-size:14.5px;font-weight:600;color:#2a4363;}
+html.ops #menuBody .menu-list button::after{content:"›";margin-left:auto;font-size:18px;font-weight:500;color:var(--op-mut);}
+html.ops #menuBody .menu-list .mi{display:none;}
+html.ops #menuBody .menu-list button[aria-current=page]{box-shadow:inset 3px 0 0 var(--brand);background:#fff;color:var(--op-ink);}
+html.ops #menuBody .menu-danger{border-top-color:var(--op-field);}
+html.ops #menuBody .menu-danger button{border-radius:6px;font-size:14px;font-weight:650;}
+html.ops #menuBody .pbtns{margin-top:18px;}
+
+/* Staff & access: Add person, then the team in one panel, each with an Actions menu */
+html.ops .ops-card:has(.ops-team){overflow:visible;}
+html.ops .ops-team{border:0;border-radius:0;background:none;overflow:visible;}
+html.ops .ops-person{display:flex;align-items:flex-start;gap:12px;padding:16px 14px;border-top:1px solid #edf0f4;}
+html.ops .ops-person:first-child{border-top:0;}
+html.ops .ops-person > i{flex:none;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:5px;background:#eef1f5;color:var(--op-mut);font-size:12px;font-style:normal;font-weight:650;}
+html.ops .ops-person .grow{flex:1;min-width:0;}
+html.ops .ops-person .grow strong{display:block;font-size:14.5px;font-weight:650;color:var(--op-ink);}
+html.ops .ops-person .grow small{display:block;margin-top:2px;font-size:12px;color:var(--op-mut);}
+html.ops .ops-person .grow span{display:block;margin-top:16px;font-size:12.5px;color:var(--op-ink);}
+html.ops .ops-person.off .grow{opacity:.6;}
+html.ops .ops-side{display:flex;flex-direction:column;align-items:flex-end;gap:14px;}
+html.ops .ops-side em,html.ops .ops-badge{display:inline-block;padding:3px 7px;border:1px solid var(--op-field);border-radius:4px;background:#f5f7fa;color:var(--op-mut);font-size:11px;font-style:normal;font-weight:650;white-space:nowrap;}
+html.ops .ops-side em.on,html.ops .ops-badge.ok{border-color:#bfe0c9;background:#e8f5ec;color:#1e6b3a;}
+html.ops .ops-badge.warn{border-color:#f0d9a8;background:#fdf3dc;color:#7a5200;}
+html.ops .ops-badge.bad{border-color:#f1c3bf;background:#fdeceb;color:#b42318;}
+html.ops .ops-dd{position:relative;}
+html.ops .ops-dd summary{display:flex;align-items:center;gap:8px;height:36px;padding:0 14px 0 20px;border:1px solid var(--op-field);border-radius:6px;background:#fff;color:var(--op-ink);font-size:13px;font-weight:600;list-style:none;cursor:pointer;}
+html.ops .ops-dd summary::-webkit-details-marker{display:none;}
+html.ops .ops-dd summary::after{content:"";width:5px;height:5px;margin-top:-3px;border:solid currentColor;border-width:0 1.5px 1.5px 0;transform:rotate(45deg);}
+html.ops .ops-dd > div{position:absolute;right:0;top:calc(100% + 4px);z-index:5;display:flex;flex-direction:column;min-width:170px;padding:4px;border:1px solid var(--op-line);border-radius:6px;background:#fff;box-shadow:0 8px 24px rgb(15 28 46 / .16);}
+html.ops .ops-dd > div button{padding:11px 12px;border:0;border-radius:4px;background:none;color:var(--op-ink);font-size:13.5px;text-align:left;}
+html.ops .ops-dd > div button:hover{background:var(--op-bg);}
+html.ops .ops-add .ops-fields{padding:4px 14px 0;}
+html.ops .ops-btns{display:flex;justify-content:flex-end;padding:4px 14px 14px;}
+html.ops .ops-x{flex:none;display:flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border:1px solid var(--op-field);border-radius:6px;background:#fff;color:var(--op-ink);font-size:20px;line-height:1;}
+
+/* Settings: each box a panel, its title on a line with what it's set to, the buttons in a footer */
+html.ops main[data-view="settings"]{max-width:720px;}
+html.ops main[data-view="settings"] .box{max-width:none !important;padding:0 14px !important;background:#fff;}
+html.ops main[data-view="settings"] .box > strong:first-child{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 -14px 4px;padding:15px 14px 14px;border-bottom:1px solid #e4e9ef;}
+html.ops main[data-view="settings"] .box > strong:first-child small{font-size:12px;font-weight:500;color:var(--op-mut);text-align:right;}
+html.ops main[data-view="settings"] .box > .row-actions{justify-content:flex-end;margin:14px -14px 0;padding:12px 14px;border-top:1px solid #e4e9ef;}
+html.ops main[data-view="settings"] .box > :last-child:not(.row-actions){margin-bottom:14px;}
+html.ops main[data-view="settings"] .box.fchecks{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:12px;}
+html.ops main[data-view="settings"] .box.fchecks > *{grid-column:1 / -1;}
+html.ops main[data-view="settings"] .box.fchecks .field{grid-column:auto;margin:6px 0;}
+html.ops main[data-view="settings"] .box.fchecks .pair{display:contents;}
+html.ops main[data-view="settings"] .box.fchecks .section-label{display:none;}
+html.ops main[data-view="settings"] .box.fchecks select{min-width:0;}
+html.ops .ops-unsaved{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px;padding:12px 14px;border:1px solid #f0d9a8;border-radius:6px;background:#fdf6e7;color:#5c4510;font-size:13px;}
+html.ops .ops-unsaved .btn{flex:none;}
+
+/* Flights: when they were checked, the numbers, then each flight's times and status */
+html.ops .ops-check{align-items:center;justify-content:flex-end;flex-wrap:wrap;}
+html.ops .ops-dot{margin-right:auto;font-size:12.5px;color:var(--op-mut);}
+html.ops .ops-dot::before{content:"";display:inline-block;width:7px;height:7px;margin-right:7px;border-radius:50%;background:#2e9e5b;vertical-align:1px;}
+html.ops .ops-dot.never::before{background:#b9c2cd;}
+html.ops .ops-fl{border-top:1px solid #edf0f4;}
+html.ops .ops-card > header + .ops-fl{border-top:0;}
+html.ops .ops-flin{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px 12px;padding:15px 14px;cursor:pointer;}
+html.ops .ops-flin > b{align-self:center;font-size:15px;font-weight:650;color:var(--op-ink);}
+html.ops .ops-flcar{min-width:0;text-align:right;}
+html.ops .ops-flcar > span{display:block;font-size:14px;font-weight:600;color:var(--op-ink);}
+html.ops .ops-flcar small{display:block;overflow:hidden;font-size:11.5px;color:var(--op-mut);text-overflow:ellipsis;white-space:nowrap;}
+html.ops .ops-flt{margin-top:10px;}
+html.ops .ops-flt small{display:block;font-size:11.5px;color:var(--op-mut);}
+html.ops .ops-flt span{font-size:15px;color:var(--op-ink);}
+html.ops .ops-flin .ops-badge{grid-column:1 / -1;justify-self:start;margin-top:6px;}
+@media(min-width:760px){
+ html.ops .ops-flin{grid-template-columns:110px minmax(0,1fr) 100px 100px 200px;align-items:center;}
+ html.ops .ops-flcar{text-align:left;}
+ html.ops .ops-flt{margin:0;}
+ html.ops .ops-flin .ops-badge{grid-column:auto;margin:0;}
+}
+
+/* Booking details (the car panel): a page like the others, the boxes in one panel, Cancel and Save always in view */
+html.ops #panel.ops-car{position:fixed;inset:var(--ops-menu-top,0px) 0 var(--ops-menu-bottom,0px) 0;width:100%;max-width:none;height:auto;max-height:none;margin:0;padding:0;border:0;border-radius:0;background:var(--op-bg);box-shadow:none;}
+html.ops #panel.ops-car #panelBody{position:relative;max-width:720px;min-height:100%;display:flex;flex-direction:column;margin:0 auto;padding:18px 14px 0;}
+html.ops #panel.ops-car h2{padding-right:46px;}
+html.ops #panel.ops-car .sub{margin:4px 0 14px;font-size:13px;}
+html.ops #panel.ops-car .ops-x{position:absolute;top:18px;right:14px;}
+html.ops .ops-sheet{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:12px;padding:0 14px 16px;border:1px solid var(--op-line);border-radius:6px;background:#fff;}
+html.ops .ops-sheet > *{grid-column:1 / -1;}
+html.ops .ops-sheet > .ops-f:not(.wide){grid-column:auto;}
+html.ops .ops-sheet .tel{margin-top:14px;border-radius:6px;}
+html.ops .ops-psec{margin:14px -14px 2px;padding:15px 14px 14px;border-top:1px solid #e4e9ef;border-bottom:1px solid #e4e9ef;font-size:13.5px;font-weight:650;color:var(--op-ink);}
+html.ops .ops-sheet > .ops-psec:first-child{margin-top:0;border-top:0;}
+html.ops .ops-sheet .det{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin:12px 0 0;border:0;}
+html.ops .ops-sheet .det > div{display:block;padding:0;border:0;}
+html.ops .ops-sheet .det b{display:block;margin-bottom:4px;font-size:12px;font-weight:500;letter-spacing:0;color:var(--op-mut);}
+html.ops .ops-sheet .det span{font-size:14.5px;color:var(--op-ink);overflow-wrap:anywhere;}
+html.ops .ops-f > label{margin:14px 0 6px;font-size:12.5px;font-weight:500;letter-spacing:0;color:var(--op-mut);}
+html.ops .ops-f input,html.ops .ops-f select,html.ops .ops-f textarea{min-height:44px;font-size:15px;}
+html.ops #panel.ops-car #carHist{margin-top:14px;}
+html.ops #panel.ops-car .ops-foot2{position:sticky;bottom:0;z-index:2;display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:auto -14px 0;padding:10px 14px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--op-line);background:#fff;}
+html.ops #panel.ops-car .ops-foot2 small{grid-column:1 / -1;font-size:11.5px;color:var(--op-mut);}
+html.ops #panel.ops-car .ops-foot2 button:only-of-type{grid-column:1 / -1;}
