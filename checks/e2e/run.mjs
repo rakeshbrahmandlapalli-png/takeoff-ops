@@ -276,6 +276,11 @@ const open = async (page) => { await page.goto(BASE + "/"); await page.waitForSe
 const text = (page, sel) => page.locator(sel).first().innerText().catch(() => "");
 const noSideScroll = (page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
 const toast = (page) => page.evaluate(() => [...document.querySelectorAll(".toast")].map((t) => t.textContent).join(" | "));
+// Open the DROPS or PICKS sheet: Operations' Drops | Picks in the bar, else the day picker.
+const pickKind = async (page, kind) => {
+  if (await page.isVisible("#kindBar")) await page.click('#kindBar [data-kind="' + kind + '"]'); else await page.selectOption("#sheetPick", kind === "picks" ? "p0" : "d0");
+  await page.waitForFunction((k) => document.body.classList.contains("picks") === (k === "picks") && document.querySelector("#main .row"), kind);
+};
 
 // Each section stands alone: if one breaks part-way, it's reported and the rest still run.
 async function scenario(fn) {
@@ -598,7 +603,7 @@ await scenario(async () => {
 // Operations (theme ops): Standard with features in new chrome, the job rows exactly as Standard's.
 await scenario(async () => {
   const rowLook = async (page, kind) => {
-    if (kind === "picks") { await page.selectOption("#sheetPick", "p0"); await page.waitForSelector("#main .row"); await sleep(200); }
+    if (kind === "picks") { await pickKind(page, "picks"); await sleep(200); }
     return page.evaluate(() => {
       const pick = (el, keys) => { const cs = getComputedStyle(el); return keys.map((k) => cs[k]).join("|"); };
       const rows = [...document.querySelectorAll("#main .row")].map((r) => [r.getBoundingClientRect().width, r.getBoundingClientRect().height,
@@ -625,6 +630,25 @@ await scenario(async () => {
   await plus.setViewportSize({ width: 1280, height: 900 }); await sleep(200);
   check("Operations: wide screen, board centred at 1120 px", await plus.evaluate(() => Math.round(document.getElementById("main").getBoundingClientRect().width) === 1120));
   check("Operations: no errors", plus.__errors.length === 0, plus.__errors);
+  // As many jobs on the screen as Standard with features: the first row starts no lower.
+  await plus.setViewportSize({ width: 390, height: 844 }); await sleep(150);
+  const firstTop = (page) => page.evaluate(() => Math.round(document.querySelector("#main .row").getBoundingClientRect().top));
+  for (const kind of ["picks", "drops"]) {
+    for (const pg of [plus, feat]) await pickKind(pg, kind);
+    await sleep(250);
+    const [o, f] = [await firstTop(plus), await firstTop(feat)];
+    check("Operations: " + kind + " jobs start no lower than in Standard with features", o <= f, { ops: o, stdplus: f }); console.log("   first row top (" + kind + ") ops " + o + " / stdplus " + f);
+  }
+  for (const pg of [plus, feat]) { await pg.click("#tallyFold"); }
+  await sleep(250);
+  { const [o, f] = [await firstTop(plus), await firstTop(feat)]; check("Operations: numbers folded, jobs still start no lower", o <= f, { ops: o, stdplus: f }); console.log("   first row top (folded) ops " + o + " / stdplus " + f); }
+  for (const pg of [plus, feat]) { await pg.click("#tallyFold"); }
+  check("Operations: Drops | Picks in the top bar, the open one pressed", await plus.evaluate(() => !document.getElementById("kindBar").classList.contains("hidden") && document.querySelector('#kindBar [data-kind="drops"]').getAttribute("aria-pressed") === "true"));
+  await plus.click('#kindBar [data-kind="picks"]'); await plus.waitForSelector("body.picks"); await sleep(200);
+  check("Operations: tapping Picks opens the PICKS sheet", await plus.evaluate(() => document.body.classList.contains("picks") && document.querySelector('#kindBar [data-kind="picks"]').getAttribute("aria-pressed") === "true"));
+  check("Operations: the day picker lists only PICKS days, without the word", await plus.evaluate(() => { const o = [...document.querySelectorAll("#sheetPick option")]; return o.length === 1 && !/PICKS|DROPS/.test(o[0].textContent) && /today/.test(o[0].textContent); }), await plus.evaluate(() => [...document.querySelectorAll("#sheetPick option")].map((x) => x.textContent)));
+  check("Operations: no sideways scrolling on a phone", await noSideScroll(plus));
+  check("Standard with features: no Drops | Picks in the bar", await feat.evaluate(() => getComputedStyle(document.getElementById("kindBar")).display === "none"));
   check("Operations: bottom bar and stdplus class on", await plus.evaluate(() => document.documentElement.classList.contains("stdplus") && document.documentElement.classList.contains("ops") && getComputedStyle(document.getElementById("bnav")).display === "flex"));
   await std.context().close(); await plus.context().close(); await feat.context().close();
 });
@@ -2025,8 +2049,8 @@ async function shots(dir) {
     await page.setViewportSize({ width, height: width > 600 ? 900 : 844 });
     const snap = async (name) => { await sleep(350); await page.screenshot({ path: path.join(dir, name + "-" + width + ".png"), fullPage: true }); };
     await open(page); await snap("drops");
-    await page.selectOption("#sheetPick", "p0"); await page.waitForSelector("#main .row"); await snap("picks");
-    await page.selectOption("#sheetPick", "d0"); await page.waitForSelector("#main .row");
+    await pickKind(page, "picks"); await snap("picks");
+    await pickKind(page, "drops");
     await page.locator("#main .row .reg").first().click(); await sleep(300); await page.screenshot({ path: path.join(dir, "car-" + width + ".png") }); await page.keyboard.press("Escape"); await sleep(200);
     for (const [bn, name] of [["logBtn", "summary"], ["flBtn", "flights"], ["psBtn", "stats"]]) { await page.click('#bnav [data-bn="' + bn + '"]'); await snap(name); await page.keyboard.press("Escape"); await sleep(150); }
     await page.click('#bnav [data-bn="menuBtn"]'); await sleep(300); await page.screenshot({ path: path.join(dir, "menu-" + width + ".png") });

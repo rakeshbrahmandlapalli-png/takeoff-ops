@@ -37,7 +37,7 @@ setup part).
 | Premium UI | `premium` | `premium` | `premium.css` (big cards) |
 | Premium Board | `board` | `premium` + `pboard` | `premium.css` + `board.css` (rows exactly like Standard) |
 | Standard with features | `stdplus` | `stdplus` | `app.css` + `stdplus.css` |
-| Operations | `ops` | `stdplus` + `ops` | `app.css` + `stdplus.css` + `ops.css` (navy/grey chrome from the 7 Oct TakeOff preview; job rows stay exactly Standard's, a test checks) |
+| Operations | `ops` | `stdplus` + `ops` | `app.css` + `stdplus.css` + `ops.css` (navy/grey chrome from the 7 Oct TakeOff preview; Drops | Picks in the top bar, the day picker then lists only that kind; job rows stay exactly Standard's and the first row must start no lower than in Standard with features, tests check both) |
 JS helpers: `isCards()` (cards or premium = card layout), `isPremium()`,
 `isBoard()`, `isStdPlus()` (stdplus or ops), `hasFeatures()` (= Premium looks or stdplus/ops).
 The user wants looks kept **separate** (a change to one must not change another).
@@ -74,7 +74,7 @@ The user wants looks kept **separate** (a change to one must not change another)
   force-push it (it only carries merged history).
 - Keep UI text short; the user removed explanatory notes in the menu (keep only
   the Display note).
-- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **452 passing** as of 7 Oct
+- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **460 passing** as of 7 Oct
   2026. Add tests for every change. Write output to a file and grep `FAIL|passed`.
   The mock Supabase lives in run.mjs (`rpc()` cases, REST routes).
   Previews: `SHOTS=<dir> node run.mjs` screenshots TakeOff's look (phone and desktop).

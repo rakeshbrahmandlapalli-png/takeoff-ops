@@ -9,51 +9,61 @@
    Everything here sits under html.ops, so no other look changes. */
 html.ops{--op-ink:#18283b;--op-deep:#0f1c2e;--op-mut:#526174;--op-line:#dce2e9;--op-field:#d5dde7;--op-bg:#f5f7fa;}
 html.ops,html.ops body{background:var(--op-bg);}
-/* top bar: white, a hairline under it, the wordmark, the day, who */
+/* top bar: white, a hairline under it, the wordmark, Drops | Picks, the day, who */
 html.ops .top{border-bottom:1px solid #e4e9ef;background:var(--op-bg);}
-html.ops .bar{background:#fff;box-shadow:0 1px 0 #e4e9ef,0 0 0 100vmax #fff;clip-path:inset(0 -100vmax -1px);}
-html.ops .bar{gap:10px;padding:9px 14px;}
-html.ops .tobrand{padding:7px 10px;border-radius:6px;font:800 14px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
-html.ops #sheetPick{flex:0 1 auto;width:auto;max-width:100%;height:34px;padding:0 4px;border:0;background:transparent;font-size:13.5px;font-weight:600;letter-spacing:0;color:var(--op-ink);}
+html.ops .bar{gap:8px;padding:7px 12px;background:#fff;box-shadow:0 1px 0 #e4e9ef,0 0 0 100vmax #fff;clip-path:inset(0 -100vmax -1px);}
+html.ops .tobrand{padding:7px 9px;border-radius:6px;font:800 14px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+html.ops .kindbar:not(.hidden){display:flex;flex:none;padding:2px;border:1px solid var(--op-field);border-radius:6px;background:#fff;}
+html.ops .kindbar button{min-height:30px;padding:0 10px;border:0;border-radius:4px;background:none;color:var(--op-mut);font:650 12.5px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+html.ops .kindbar button[aria-pressed="true"]{background:var(--op-ink);color:#fff;}
+html.ops #sheetPick{flex:0 1 auto;width:auto;min-width:0;max-width:100%;height:34px;padding:0 2px;border:0;background:transparent;font-size:13px;font-weight:600;letter-spacing:0;color:var(--op-ink);}
 html.ops .who{margin-left:auto;max-width:150px;font-size:11px;font-weight:600;color:var(--op-mut);}
 html.ops .who[data-role]:not([data-role=""])::after{content:" · " attr(data-role);font-weight:500;}
 html.ops .when{color:var(--op-mut);}
 html.ops .pend{background:#fdf3dc;color:#7a5200;font-weight:600;}
-html.ops .rf{width:36px;height:36px;border-color:var(--op-field);border-radius:6px;color:var(--op-ink);}
-@media(max-width:430px){html.ops .bar{gap:6px;padding:8px 10px;}html.ops .who{max-width:96px;}html.ops .rf{width:34px;}}
+html.ops .rf{width:34px;height:34px;border-color:var(--op-field);border-radius:6px;color:var(--op-ink);}
+/* a phone: the day picker gets the room, who is in the menu */
+@media(max-width:430px){html.ops .bar{gap:6px;padding:6px 8px;}html.ops .tobrand{padding:6px 7px;font-size:13px;}html.ops .kindbar button{padding:0 8px;font-size:12px;}html.ops .who{display:none;}html.ops #sheetPick{min-width:56px;margin-right:auto;font-size:12.5px;}html.ops .rf{width:32px;height:32px;}}
 
-/* board head: the numbers as a panel, then search and TO DO / ALL as one */
-html.ops #boardHead:not(.hidden){display:flex;flex-direction:column;padding:12px 12px 0;background:var(--op-bg);}
-html.ops #tally{order:1;}html.ops #catTally{order:2;}html.ops #tallyFold{order:3;}
-html.ops #boardHead .qwrap{order:4;}html.ops #boardHead .tabs{order:5;}html.ops #colHead{order:6;}
+/* board head: as tight as Standard's, so as many jobs fit on the screen:
+   the numbers in one slim panel, the search box full width, and under it
+   TO DO / ALL sharing a line with "Hide numbers" */
+html.ops #boardHead:not(.hidden){display:flex;flex-wrap:wrap;padding:6px 8px 0;background:var(--op-bg);}
+html.ops #tally,html.ops #catTally,html.ops #colHead,html.ops #boardHead .qwrap{flex:0 0 100%;}
+html.ops #tally{order:1;}html.ops #catTally{order:2;}html.ops #boardHead .qwrap{order:4;}html.ops #boardHead .tabs{order:5;}html.ops #tallyFold{order:6;}html.ops #colHead{order:7;}
 html.ops .tally{gap:1px;border:1px solid var(--op-line);border-radius:6px;background:#e4e9ef;overflow:hidden;}
-html.ops .tally.cats{margin-top:8px;}
-html.ops .tally button{padding:9px 12px 10px;text-align:left;}
-html.ops .tally span{font-size:10px;font-weight:600;letter-spacing:.5px;color:#48596c;}
-html.ops .tally b{display:block;margin-top:2px;font-size:21px;line-height:1.2;font-weight:650;color:var(--op-ink);font-variant-numeric:tabular-nums;}
+html.ops .tally.cats{margin-top:4px;}
+html.ops .tally.cats button span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+html.ops .tally button{padding:4px 8px 5px;text-align:left;}
+html.ops .tally span{font-size:9px;font-weight:600;letter-spacing:.5px;color:#48596c;}
+html.ops .tally b{display:block;font-size:16px;line-height:1.2;font-weight:650;color:var(--op-ink);font-variant-numeric:tabular-nums;}
 html.ops .tally button.on{background:var(--op-ink);}
 html.ops .tally button.on b,html.ops .tally button.on span{color:#fff;}
 html.ops .tally button.warn:not(.on){background:#fff8e6;}
 html.ops .tally .tyards{border-top-color:#e4e9ef;}
-html.ops .tfold:not(.hidden){margin:2px 0 0;padding:7px 4px;background:none;border:0;color:var(--op-mut);}
-html.ops body.tfolded .tfold{padding:8px 12px;margin:0;border:1px solid var(--op-line);border-radius:6px;background:#fff;}
-html.ops #boardHead .qwrap{margin-top:10px;padding:12px 12px 0;border:1px solid var(--op-line);border-bottom:0;border-radius:6px 6px 0 0;background:#fff;}
-html.ops #q{height:42px;padding:0 46px 0 12px;border:1px solid var(--op-field);border-radius:6px;font-size:15px;color:var(--op-ink);}
+html.ops #boardHead .qwrap{min-width:0;margin-top:5px;padding:6px 6px 0;border:1px solid var(--op-line);border-bottom:0;border-radius:6px 6px 0 0;background:#fff;}
+html.ops #q{height:38px;padding:0 40px 0 12px;border:1px solid var(--op-field);border-radius:6px;font-size:15px;color:var(--op-ink);}
 html.ops #q::placeholder{color:#7b8797;}
 html.ops #q:focus{background:#fff;border-color:var(--op-ink);box-shadow:0 0 0 1px var(--op-ink);}
-html.ops .qclear{right:16px;top:calc(50% + 6px);width:30px;height:30px;font-size:18px;}
-html.ops #boardHead .tabs{gap:8px;padding:10px 12px 12px;border:1px solid var(--op-line);border-top:0;border-bottom:0;background:#fff;}
-html.ops #boardHead .tabs button{flex:none;min-width:88px;height:38px;padding:0 14px;border:1px solid var(--op-field);border-radius:6px;background:#fff;color:var(--op-ink);font-size:12px;font-weight:650;letter-spacing:.3px;box-shadow:none;}
+html.ops .qclear{right:10px;top:calc(50% + 3px);width:28px;height:28px;font-size:17px;}
+html.ops #boardHead .tabs{flex:1 1 auto;gap:5px;padding:4px 0 4px 6px;border:0;border-left:1px solid var(--op-line);background:#fff;}
+html.ops #boardHead .tabs button{flex:none;height:32px;padding:0 12px;border:1px solid var(--op-field);border-radius:6px;background:#fff;color:var(--op-ink);font-size:11.5px;font-weight:650;letter-spacing:.2px;box-shadow:none;}
 html.ops #boardHead .tabs button.on{background:var(--op-ink);border-color:var(--op-ink);color:#fff;}
-/* the column head and the rows run edge to edge on a phone, as before */
-html.ops #colHead{margin:0 -12px;}
+/* "Hide numbers" at the end of the TO DO / ALL line */
+html.ops .tfold:not(.hidden){flex:0 1 auto;min-width:0;width:auto;margin:0;padding:0 10px 0 6px;background:#fff;border:0;border-right:1px solid var(--op-line);color:var(--op-mut);font-size:11.5px;}
+html.ops #boardHead:has(#tallyFold.hidden) .tabs{border-right:1px solid var(--op-line);}
+/* numbers folded: their one-line summary takes that place, cut short to fit */
+html.ops body.tfolded .tfold{flex:1 1 0;min-width:0;padding:0 10px 0 4px;}
+html.ops body.tfolded #boardHead .tabs{flex:0 0 auto;}
+html.ops #colHead{flex-basis:calc(100% + 16px);margin:0 -8px;}
 @media(min-width:760px){
- html.ops #boardHead:not(.hidden){padding:18px 16px 0;}
+ html.ops #boardHead:not(.hidden){padding:12px 16px 0;}
  html.ops #boardHead,html.ops body.on-board main{max-width:1120px;margin-left:auto;margin-right:auto;}
- html.ops #colHead{margin:0;border-left:1px solid var(--op-line);border-right:1px solid var(--op-line);}
+ html.ops #colHead{flex-basis:100%;margin:0;border-left:1px solid var(--op-line);border-right:1px solid var(--op-line);}
  html.ops body.on-board main{padding:0 16px 40px;}
  html.ops body.on-board main > *{border-left:1px solid var(--op-line);border-right:1px solid var(--op-line);}
- html.ops .bar{max-width:1120px;margin:0 auto;padding:10px 16px;}
+ html.ops .bar{max-width:1120px;margin:0 auto;padding:9px 16px;}
+ html.ops .tally button{padding:7px 12px 8px;}html.ops .tally b{font-size:19px;}
 }
 
 /* other screens: a page title, then white panels on grey */
@@ -127,4 +137,3 @@ html.ops #menuBody > label{font-size:10.5px;font-weight:650;color:var(--op-mut);
 html.ops .pclose{border-color:var(--op-field);background:#fff;color:var(--op-ink);}
 html.ops .staffbox .rowline{flex-wrap:wrap;}
 html.ops .staffbox .sbtns{display:flex;flex-wrap:wrap;gap:6px;flex-basis:100%;padding-left:46px;}
-@media(max-width:430px){html.ops .who[data-role]::after{content:none;}html.ops .who{max-width:64px;}}
