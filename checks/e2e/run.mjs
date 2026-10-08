@@ -614,7 +614,7 @@ await scenario(async () => {
     });
   };
   const td = (theme) => { const db = makeDb(); db.company.brand = { colour: "#F9A01B", ink: "#1A1A1A", short: "TakeOff", theme }; return db; };
-  const std = await phone(browser, makeDb()), plus = await phone(browser, td("ops")), feat = await phone(browser, td("stdplus"));
+  const opsDb = td("ops"), std = await phone(browser, makeDb()), plus = await phone(browser, opsDb), feat = await phone(browser, td("stdplus"));
   await open(feat);
   check("Standard with features doesn't wear Operations", await feat.evaluate(() => !document.documentElement.classList.contains("ops") && getComputedStyle(document.body).backgroundColor === "rgb(255, 255, 255)"));
   await open(std); await open(plus); await sleep(300);
@@ -670,6 +670,57 @@ await scenario(async () => {
   check("Operations: no errors on the stats and summary pages", plus.__errors.length === 0, plus.__errors);
   await plus.click("#bnBoard"); await sleep(200);
   check("Operations: bottom bar and stdplus class on", await plus.evaluate(() => document.documentElement.classList.contains("stdplus") && document.documentElement.classList.contains("ops") && getComputedStyle(document.getElementById("bnav")).display === "flex"));
+  // Menu, Flights, booking details, Staff & access and Settings: pages in the same design.
+  await pickKind(plus, "drops");
+  await plus.click('#bnav [data-bn="menuBtn"]'); await sleep(300);
+  const menu = await plus.evaluate(() => { const m = document.getElementById("menu"), r = m.getBoundingClientRect(); return { open: m.open, title: m.querySelector("h2").textContent, groups: [...m.querySelectorAll("#menuBody > label")].map((x) => x.childNodes[0].textContent),
+    items: [...m.querySelectorAll(".menu-list [data-view]")].map((x) => x.textContent), top: Math.round(r.top) === Math.round(document.querySelector(".bar").getBoundingClientRect().bottom), bottom: Math.round(r.bottom) === Math.round(document.getElementById("bnav").getBoundingClientRect().top),
+    on: document.querySelector('#bnav [data-bn="menuBtn"]').classList.contains("on"), board: document.getElementById("bnBoard").classList.contains("on") }; });
+  check("Operations: Menu is a page between the top and bottom bars, marked in the bottom bar", menu.open && menu.title === "Menu" && menu.top && menu.bottom && menu.on && !menu.board, menu);
+  check("Operations: Menu sections in plain words", menu.groups.slice(0, 2).join("|") === "Operations|Office" && menu.items.includes("Operations board") && menu.items.includes("Hourly stats") && menu.items.includes("Staff & access"), menu);
+  await plus.mouse.click(Math.round(390 * 0.3), 844 - 20); await sleep(300);
+  const fl = await plus.evaluate(() => ({ menu: document.getElementById("menu").open, title: document.getElementById("viewTitle").textContent, on: document.querySelector('#bnav [data-bn="flBtn"]').classList.contains("on"),
+    strip: [...document.querySelectorAll("#main .ops-strip > div")].map((d) => d.innerText.replace(/\s+/g, " ")).join(" | "), rows: document.querySelectorAll("#main .ops-fl").length, badge: (document.querySelector("#main .ops-fl .ops-badge") || {}).textContent, card: (document.querySelector("#main .ops-card header strong") || {}).textContent }));
+  check("Operations: Flights in the bottom bar works from the Menu page and opens the Flights page", !fl.menu && fl.title === "Flights" && fl.on, fl);
+  check("Operations: Flights page: numbers in a strip, each flight with its status", fl.strip === "Flights 3 | Landed 0 | Delayed 0 | Cancelled 0" && fl.rows === 3 && fl.badge === "Not checked yet" && fl.card === "Flight status", fl);
+  await plus.click("#main .ops-fl [data-open]"); await sleep(300);
+  const car = await plus.evaluate(() => { const p = document.getElementById("panel"), f = p.querySelector(".ops-foot2").getBoundingClientRect(); return { open: p.open, title: p.querySelector("h2").textContent, sub: p.querySelector(".sub").textContent,
+    secs: [...p.querySelectorAll(".ops-psec")].map((x) => x.textContent), reg: (p.querySelector('label[for="regText"]') || {}).textContent, half: (() => { const a = p.querySelector("#flightText").getBoundingClientRect(), b = p.querySelector("#schedText").getBoundingClientRect(); return Math.round(a.top) === Math.round(b.top) && a.right < b.left; })(),
+    foot: f.bottom <= p.getBoundingClientRect().bottom + 1 && f.top < innerHeight, save: p.querySelector("[data-savepanel]").textContent }; });
+  check("Operations: tapping a flight opens Booking details, the reg under the title", car.open && car.title === "Booking details" && /^EK14JPV/.test(car.sub), car);
+  check("Operations: Booking details in sections, flight number and landing side by side, Save always in view", car.secs.join("|") === "Customer & vehicle|Return & parking|Notes & status" && car.reg === "Registration" && car.half && car.foot && car.save === "Save changes", car);
+  await plus.fill("#noteText", "ops note"); await plus.click("[data-savepanel]"); await sleep(300);
+  check("Operations: Save changes saves the note and closes", !(await plus.evaluate(() => document.getElementById("panel").open)) && opsDb.calls.some((c) => c.fn === "set_note" && c.args.p_note === "ops note"));
+  await plus.click('#bnav [data-bn="menuBtn"]'); await sleep(200); await plus.click('#menuBody [data-view="staff"]'); await sleep(300);
+  const st = await plus.evaluate(() => ({ title: document.getElementById("viewTitle").textContent, head: document.querySelector("#main .ops-card header").innerText.replace(/\s+/g, " "), people: document.querySelectorAll("#main .ops-person").length,
+    badges: [...document.querySelectorAll("#main .ops-person em")].map((x) => x.textContent).join("|"), you: document.querySelector("#main .ops-person small").textContent }));
+  check("Operations: Staff & access page: team in one panel, each Active or Inactive", st.title === "Staff & access" && /^Team members \d+ people$/.test(st.head) && st.people >= 2 && /Active/.test(st.badges) && st.you === "Your account", st);
+  await plus.click("#main .ops-dd summary"); await sleep(150);
+  check("Operations: a person's Actions menu holds PIN and access, New link, Switch off", (await plus.locator("#main .ops-dd[open] button").allInnerTexts()).join("|") === "PIN and access|New link|Switch off", await plus.locator("#main .ops-dd[open] button").allInnerTexts());
+  await plus.click("#main .ops-dd[open] [data-manage]"); await sleep(300);
+  check("Operations: PIN and access from the Actions menu opens the person", await plus.evaluate(() => document.getElementById("panel").open && !document.querySelector("#main .ops-dd[open]")));
+  await plus.keyboard.press("Escape"); await sleep(200);
+  await plus.click("#main [data-addperson]"); await sleep(200);
+  check("Operations: Add person opens the form", await plus.evaluate(() => !!document.querySelector("#main form#addStaff #newName") && document.activeElement.id === "newName"));
+  await plus.click('#bnav [data-bn="menuBtn"]'); await sleep(200); await plus.click('#menuBody [data-view="settings"]'); await sleep(300);
+  const se = await plus.evaluate(() => { const a = document.querySelector('[data-setting="enabled"]').getBoundingClientRect(), b = document.querySelector('[data-setting="live_every_min"]').getBoundingClientRect(), h = document.querySelector(".fchecks > strong");
+    return { side: Math.round(a.top) === Math.round(b.top) && a.right < b.left, head: h.innerText.replace(/\s+/g, " "), unsaved: !!document.querySelector(".ops-unsaved") }; });
+  check("Operations: Settings in panels, Flight checks two boxes a line, what it's set to by the title", se.side && se.head === "Flight checks Automatic checks on" && !se.unsaved, se);
+  await plus.selectOption('[data-setting="live_every_min"]', "60"); await sleep(200);
+  check("Operations: Settings says when there are unsaved changes", await plus.evaluate(() => /Unsaved changes/.test((document.querySelector(".ops-unsaved") || {}).textContent || "")));
+  check("Operations: no errors on Menu, Flights, Booking details, Staff and Settings", plus.__errors.length === 0, plus.__errors);
+  check("Operations: no sideways scrolling on Settings", await noSideScroll(plus));
+  // Standard with features keeps its menu sheet, flight rows, car panel and staff buttons.
+  await feat.click('#bnav [data-bn="menuBtn"]'); await sleep(250);
+  const fm = await feat.evaluate(() => ({ title: document.querySelector("#menuBody h2").textContent, items: [...document.querySelectorAll("#menuBody .menu-list [data-view]")].map((x) => x.textContent), bottom: Math.round(document.getElementById("menu").getBoundingClientRect().bottom) === innerHeight }));
+  check("Standard with features: menu still a sheet from the bottom, in its own words", fm.bottom && fm.title !== "Menu" && fm.items.includes("Board") && !fm.items.includes("Operations board"), fm);
+  await feat.click('#menuBody [data-view="staff"]'); await sleep(300);
+  check("Standard with features: Staff unchanged (buttons on each person)", await feat.evaluate(() => !document.querySelector("#main .ops-person") && !!document.querySelector("#main .staffbox .rowline [data-reset]")));
+  await feat.click('#bnav [data-bn="menuBtn"]'); await sleep(200); await feat.click('#menuBody [data-view="flights"]'); await sleep(300);
+  check("Standard with features: Flights unchanged", await feat.evaluate(() => !document.querySelector("#main .ops-fl") && document.querySelectorAll("#main .frow").length === 3));
+  await feat.click("#main .frow [data-open]"); await sleep(300);
+  check("Standard with features: car panel titled by the reg, no sections", await feat.evaluate(() => /^EK14JPV/.test(document.getElementById("panelTitle").textContent) && !document.querySelector("#panel .ops-psec") && !document.getElementById("panel").classList.contains("ops-car")));
+  await feat.keyboard.press("Escape");
   await std.context().close(); await plus.context().close(); await feat.context().close();
 });
 await scenario(async () => {
@@ -2071,10 +2122,11 @@ async function shots(dir) {
     await open(page); await snap("drops");
     await pickKind(page, "picks"); await snap("picks");
     await pickKind(page, "drops");
+    await page.click('#bnav [data-bn="menuBtn"]'); await sleep(300); await page.screenshot({ path: path.join(dir, "menu-board-" + width + ".png") }); await page.click('#bnav [data-bn="menuBtn"]', { force: true }).catch(() => {}); await page.keyboard.press("Escape"); await sleep(200);
     await page.locator("#main .row .reg").first().click(); await sleep(300); await page.screenshot({ path: path.join(dir, "car-" + width + ".png") }); await page.keyboard.press("Escape"); await sleep(200);
     for (const [bn, name] of [["logBtn", "summary"], ["flBtn", "flights"], ["psBtn", "stats"]]) { await page.click('#bnav [data-bn="' + bn + '"]'); await snap(name); await page.keyboard.press("Escape"); await sleep(150); }
     await page.click('#bnav [data-bn="menuBtn"]'); await sleep(300); await page.screenshot({ path: path.join(dir, "menu-" + width + ".png") });
-    for (const v of ["settings", "staff", "dashboard"]) { if (!(await page.locator("#menu").evaluate((m) => m.open))) await page.click('#bnav [data-bn="menuBtn"]'); await sleep(200); await page.click('#menuBody [data-view="' + v + '"]'); await snap(v); }
+    for (const v of ["settings", "staff", "dashboard"]) { if (!(await page.locator("#menu").evaluate((m) => m.open))) await page.click('#bnav [data-bn="menuBtn"]'); await sleep(200); await page.click('#menuBody [data-view="' + v + '"]'); await snap(v); if (v === "staff" && (await page.locator("#main .ops-dd summary").count())) { await page.click("#main .ops-dd summary"); await page.screenshot({ path: path.join(dir, "staff-actions-" + width + ".png") }); await page.keyboard.press("Escape"); } }
     await page.context().close();
   }
 }

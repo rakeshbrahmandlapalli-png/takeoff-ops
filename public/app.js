@@ -534,7 +534,7 @@
   // The header is the one the team already knows from the Sheet app: sheet
   // picker, who is signed in, and a row of icon buttons. The yard tally, TO DO /
   // ALL, search and column captions belong to the board only.
-  var OPS_TITLE = { summary: "Shift summary", stats: "Hourly stats" }, BN_VIEW = { logBtn: "summary", psBtn: "stats", flBtn: "flights" };
+  var OPS_TITLE = { summary: "Shift summary", stats: "Hourly stats", staff: "Staff & access" }, BN_VIEW = { logBtn: "summary", psBtn: "stats", flBtn: "flights" };
   var VIEW_TITLE = { dashboard: "Dashboard", clients: "Clients", flights: "Flights", summary: "Summary and activity", import: "Import bookings", staff: "Staff", settings: "Settings", archive: "Archive", me: "Me" };
   var YARD_LABEL = { Y: "NB", S: "S YARD" };
   // The tally reads left to right as the Sheet's did; any yard not listed follows.
@@ -587,7 +587,7 @@
     show("viewHead", !board);
     if (!board) { var vt = (isOps() && OPS_TITLE[S.view]) || VIEW_TITLE[S.view] || ""; $("viewTitle").textContent = vt; $("viewTitle").setAttribute("data-eyebrow", vt.toUpperCase()); }
     // Operations: the open section is marked in the bottom bar too.
-    Array.prototype.forEach.call(document.querySelectorAll("#bnav [data-bn]"), function (b) { b.classList.toggle("on", isOps() && BN_VIEW[b.dataset.bn] === S.view); });
+    markBnav();
     if (board) renderBoardHead();
     renderSync();
   }
@@ -733,6 +733,11 @@
     setMain(html, S.view);
     snapSave();
     if (flashId) { var el = document.querySelector('[data-id="' + flashId + '"]'); if (el) { el.classList.add("flash"); setTimeout(function () { el.classList.remove("flash"); }, 1500); } flashId = null; }
+  }
+  function markBnav() {
+    var m = isOps() && $("menu").open;
+    Array.prototype.forEach.call(document.querySelectorAll("#bnav [data-bn]"), function (b) { b.classList.toggle("on", isOps() && (m ? b.dataset.bn === "menuBtn" : BN_VIEW[b.dataset.bn] === S.view)); });
+    if (m) $("bnBoard").classList.remove("on");
   }
   function go(view) { if (S.platform && view !== "me") view = "clients"; if (view === "import" && S.updateReady && !S.queue.length && !pt && !camStream && !BK.length) { location.reload(); return; } if (view === "import") S.recentImports = null; S.view = view; S.settingsDraft = null; if (view === "summary") S.activity = null; if (view === "dashboard") S.dash = null; if ($("menu").open) $("menu").close(); render(); window.scrollTo(0, 0); }
 
@@ -2441,35 +2446,43 @@
       det.push(["DROP-OFF", esc(dayShort(r.drop_at) + " " + hhmm(r.drop_at))], ["BACK", esc(dayShort(r.return_at) + " " + hhmm(r.return_at))]);
       if (r.intake) det.push([esc(r.intake.toUpperCase()), by(r.intake_at, r.intake_by)]);
     }
-    var h = '<h2 id="panelTitle">' + esc(r.reg || "NO REG") + (r.num ? " <small>#" + r.num + "</small>" : "") + "</h2>" +
-      '<p class="sub">' + esc(sheetLabel(sheet() || { day: "", kind: r.kind })) + "</p>" +
-      (r.phone ? '<a class="tel" href="tel:' + esc(dialable(r.phone)) + '">Call ' + esc(phoneLabel(r.phone)) + "</a>" : "") +
-      '<div class="det">' + det.map(function (x) { return "<div><b>" + x[0] + "</b><span>" + x[1] + "</span></div>"; }).join("") + "</div>";
+    // Operations: "Booking details" with the reg under it, the details in two
+    // columns, and the boxes in sections, each with a plain name.
+    var o = isOps();
+    var h = o ? '<button type="button" class="ops-x" data-close aria-label="Close">&times;</button><h2 id="panelTitle">Booking details</h2>' +
+        '<p class="sub">' + esc(r.reg || "NO REG") + (r.num ? " #" + r.num : "") + " · " + esc(sheetLabel(sheet() || { day: "", kind: r.kind })) + "</p>"
+      : '<h2 id="panelTitle">' + esc(r.reg || "NO REG") + (r.num ? " <small>#" + r.num + "</small>" : "") + "</h2>" +
+      '<p class="sub">' + esc(sheetLabel(sheet() || { day: "", kind: r.kind })) + "</p>";
+    var headEnd = h.length;
+    h += (r.phone ? '<a class="tel" href="tel:' + esc(dialable(r.phone)) + '">Call ' + esc(phoneLabel(r.phone)) + "</a>" : "") + opsSec("Customer & vehicle") +
+      '<div class="det">' + det.map(function (x) { return "<div><b>" + L(x[0]) + "</b><span>" + x[1] + "</span></div>"; }).join("") + "</div>";
     // A booking can come with no reg: the office can type or correct it, a
     // driver can fill in a missing one when the car comes in.
     var canReg = can("import") || (can("intake") && !r.reg);
     // Swipe instead of buttons: the buttons live here, to undo or fix a swipe.
-    if (drops && swipeOnly()) h += '<label>STEPS</label>' + dropButtons(r, r.called_word === "Overstay", r.clear_word === "COMPLAINT", " pacts");
-    if (canReg) h += '<label for="regText">REG</label><input id="regText" value="' + esc(r.reg) + '" autocomplete="off" autocapitalize="characters" maxlength="12" placeholder="Type the reg">';
+    if (drops && swipeOnly()) h += '<label>' + L("STEPS") + '</label>' + dropButtons(r, r.called_word === "Overstay", r.clear_word === "COMPLAINT", " pacts");
+    var parking = canReg || (drops && canReturn(r)) || (drops ? can("yard") : picksYard() && can("intake")) || (drops && can("flights"));
+    if (parking) h += opsSec(drops ? "Return & parking" : "Parking");
+    if (canReg) h += fld('<label for="regText">' + L("REG") + '</label><input id="regText" value="' + esc(r.reg) + '" autocomplete="off" autocapitalize="characters" maxlength="12" placeholder="Type the reg">', true);
     // A customer rang to come back another day: the office changes it here too.
     // The first booked return is kept (WAS tag, charge), and the new day's file
     // finds this car rather than adding it again (database part 48).
     if (drops && canReturn(r)) {
       var rp = r.return_at ? londonParts(new Date(r.return_at)) : { key: "", time: "" };
-      h += '<label for="retD">BACK DATE AND TIME</label><div class="when2"><input id="retD" type="date" value="' + esc(rp.key) + '">' + timeBox("retT", rp.time) + "</div>";
+      h += fld('<label for="retD">' + L("BACK DATE AND TIME") + '</label><div class="when2"><input id="retD" type="date" value="' + esc(rp.key) + '">' + timeBox("retT", rp.time) + "</div>", true);
     }
     if (drops ? can("yard") : picksYard() && can("intake")) {
-      h += '<label>' + (drops ? "YARD" : "LOCATION") + '</label><div class="pseg yard">' + (S.company.yards || []).map(function (y) {
+      h += fld('<label>' + L(drops ? "YARD" : "LOCATION") + '</label><div class="pseg yard">' + (S.company.yards || []).map(function (y) {
         return '<button type="button" data-setyard="' + esc(y) + '" class="' + (r.yard === y ? "on y-" + esc(y) : "") + '">' + esc(YARD_LABEL[y] || y) + "</button>";
-      }).join("") + "</div>";
+      }).join("") + "</div>", true);
     }
     if (drops && can("flights")) {
-      h += '<label for="flightText">FLIGHT NUMBER</label><input id="flightText" value="' + esc(r.flight) + '" autocomplete="off" autocapitalize="characters" maxlength="12" placeholder="or NO FLIGHT">';
-      if (r.flight === "NO FLIGHT") h += '<label for="collectText">COLLECTION TIME</label>' + timeBox("collectText", /^\d{2}:\d{2}$/.test(r.est_time) ? r.est_time : "");
-      else h += '<label for="schedText">SCHEDULED LANDING</label>' + timeBox("schedText", /^\d{2}:\d{2}$/.test(r.sched_time) ? r.sched_time : "");
+      h += fld('<label for="flightText">' + L("FLIGHT NUMBER") + '</label><input id="flightText" value="' + esc(r.flight) + '" autocomplete="off" autocapitalize="characters" maxlength="12" placeholder="or NO FLIGHT">');
+      if (r.flight === "NO FLIGHT") h += fld('<label for="collectText">' + L("COLLECTION TIME") + '</label>' + timeBox("collectText", /^\d{2}:\d{2}$/.test(r.est_time) ? r.est_time : ""));
+      else h += fld('<label for="schedText">' + L("SCHEDULED LANDING") + '</label>' + timeBox("schedText", /^\d{2}:\d{2}$/.test(r.sched_time) ? r.sched_time : ""));
     }
     h += docBlockHtml(r);
-    if (can("note")) h += '<label for="noteText">NOTE</label><textarea id="noteText" maxlength="500">' + esc(r.note) + '</textarea>';
+    if (can("note")) h += opsSec("Notes & status") + fld('<label for="noteText">' + L("NOTE") + '</label><textarea id="noteText" maxlength="500">' + esc(r.note) + '</textarea>', true);
     var extra = "";
     if (drops) {
       if (can("called")) extra += '<button type="button" data-word="called:Overstay" class="' + (r.called_word === "Overstay" ? "on nb" : "") + '">OVERSTAY</button>';
@@ -2479,20 +2492,33 @@
       extra += '<button type="button" data-pcall="New Booking" class="' + (r.pick_called === "New Booking" ? "on nb" : "") + '">NEW BOOKING</button>';
       if (picksYard()) extra += '<button type="button" data-pnoshow class="' + (r.intake === "No Show" ? "on n" : "") + '">NO SHOW</button>';
     }
-    if (extra) h += '<label>MARK AS</label><div class="pseg">' + extra + "</div>";
+    if (extra) h += (can("note") ? "" : opsSec("Status")) + fld('<label>' + L("MARK AS") + '</label><div class="pseg">' + extra + "</div>", true);
     if (drops) h += chargePanelHtml(r);
     if (drops) h += earlyHtml(r);
     // PT photos from when the car came in (PICKS), also on its DROPS row: same booking ref.
     h += '<div id="ptPhotos"></div>';
     if (can("import")) h += '<button type="button" class="link rmcar" data-removecar>Remove this car (no show, cancelled)</button>';
-    h += '<div class="pbtns"><button type="button" data-close>Close</button>' + (can("note") || can("flights") || canReg || (drops && canReturn(r)) ? '<button type="button" class="save" data-savepanel>Save</button>' : "") + "</div>";
-    if (can("log")) h += '<div id="carHist"></div>';
+    var saves = can("note") || can("flights") || canReg || (drops && canReturn(r));
+    var foot = '<div class="pbtns' + (o ? " ops-foot2" : "") + '">' + (o && saves ? "<small>Changes saved only when confirmed</small>" : "") + '<button type="button" data-close>' + (o && saves ? "Cancel" : "Close") + "</button>" + (saves ? '<button type="button" class="save" data-savepanel>' + (o ? "Save changes" : "Save") + "</button>" : "") + "</div>";
+    var hist = can("log") ? '<div id="carHist"></div>' : "";
+    // Operations: the boxes in one white panel, the history under it, Cancel and Save always in view.
+    h = o ? h.slice(0, headEnd) + '<div class="ops-sheet">' + h.slice(headEnd) + "</div>" + hist + foot : h + foot + hist;
     $("panelBody").innerHTML = h;
+    $("panel").classList.toggle("ops-car", o);
+    if (o) opsMenuPlace();
     if (!$("panel").open) $("panel").showModal();
     ptPhotosList(r);
     carHistory(r);
     if ($("docBox")) fillDoc(r);
   }
+  // Operations' words, sections and two-column boxes for the car panel; the
+  // other looks get exactly what they had.
+  var OPS_LABEL = { NAME: "Customer name", CAR: "Car", REF: "Booking reference", MEET: "Meet", BACK: "Back", FLIGHT: "Flight", ARRIVAL: "Arrival", SENT: "Sent", CALLED: "Called", OVERSTAY: "Overstay", CLEAR: "Clear", COMPLAINT: "Complaint",
+    "DROP-OFF": "Drop-off", REG: "Registration", "BACK DATE AND TIME": "Return date and time", YARD: "Yard", LOCATION: "Location", "FLIGHT NUMBER": "Flight number", "COLLECTION TIME": "Collection time",
+    "SCHEDULED LANDING": "Scheduled landing", NOTE: "Note", "MARK AS": "Mark as", STEPS: "Steps" };
+  function L(t) { return isOps() && OPS_LABEL[t] || t; }
+  function opsSec(t) { return isOps() ? '<div class="ops-psec">' + esc(t) + "</div>" : ""; }
+  function fld(html, wide) { return isOps() ? '<div class="ops-f' + (wide ? " wide" : "") + '">' + html + "</div>" : html; }
   // Everything done to this car, who and when: this row and its other half
   // (the PICKS and DROPS rows of one booking share the ref). Office only,
   // like the activity log. "OFFICE" is the shared office login.
@@ -2524,7 +2550,7 @@
       return '<a class="ptset" href="/p/' + esc(x.token) + '" target="_blank" rel="noopener"><span><b>' + x.n + " photo" + (x.n === 1 ? "" : "s") + "</b> · " + esc(dayShort(x.at) + " " + hhmm(x.at)) + (x.by ? " · " + esc(x.by) : "") + "</span><i>View ›</i></a>";
     }).join("");
   }
-  $("panel").addEventListener("close", function () { var tv = document.querySelector("#panelBody video"); if (tv) tv.pause(); camStop(); panelRow = null; quick = null; staffEdit = null; render(); setTimeout(bkPump, 500); });
+  $("panel").addEventListener("close", function () { $("panel").classList.remove("ops-car"); var tv = document.querySelector("#panelBody video"); if (tv) tv.pause(); camStop(); panelRow = null; quick = null; staffEdit = null; render(); setTimeout(bkPump, 500); });
   // Closes on a tap outside only when the press started outside too: selecting
   // text in a box and letting go past the edge must not close it.
   var downOn = {};
@@ -3079,6 +3105,7 @@
       var res = run0.result || {};
       return esc(dayShort(run0.at) + " " + hhmm(run0.at)) + (res.error ? ' · <span class="bad">' + esc(res.error) + "</span>" : "");
     }
+    if (isOps()) return opsFlights(sh, all, rows, manual, n);
     var h = '<div class="pad"><h2 class="title">' + esc(sheetLabel(sh)) + "</h2>" +
       '<div class="stats"><div class="stat"><span>Flights</span><strong class="num">' + all.length + '</strong></div><div class="stat"><span>Landed</span><strong class="num">' + n("landed") +
       '</strong></div><div class="stat"><span>Delayed or late</span><strong class="num">' + (n("delayed") + n("expected")) + '</strong></div><div class="stat"><span>Cancelled</span><strong class="num">' + n("cancelled") +
@@ -3090,6 +3117,28 @@
         '<div class="l2 num"><span class="l2a">' + esc(FLIGHT_WORD[r.flight_status] || r.flight_status) + (r.flight_note ? " · " + esc(r.flight_note) : "") + '</span><span class="l2b">' + (isPremium() ? "" : " · ") + esc(r.sched_time || hhmm(r.return_at)) +
         (r.est_time ? ' &rarr; <span class="eta' + (r.est_time === "DELAY" ? " dly" : "") + '">' + esc(r.est_time) + "</span>" : "") + "</span></div></div></div>";
     }).join("") : '<div class="msg">No flight numbers on this sheet.</div>');
+  }
+  // Operations: the numbers in a strip, then each flight with its times and a status badge.
+  function opsFlights(sh, all, rows, manual, n) {
+    function run(src) { return (S.runs || []).filter(function (x) { return !src || x.source === src; })[0]; }
+    var lastRun = run(), tt = run("schedule");
+    var h = opsSub(sh) + '<div class="ops-acts ops-check"><span class="ops-dot' + (lastRun ? "" : " never") + '">' + (lastRun ? "Checked at " + esc(hhmm(lastRun.at)) : "Not checked yet") + "</span>" +
+      (can("flights") ? '<button type="button" class="btn ghost small" data-filltimes>Fill times</button><button type="button" class="btn small" data-checkflights>Check flights</button>' : "") + "</div>" +
+      opsStrip([["Flights", all.length], ["Landed", n("landed")], ["Delayed", n("delayed") + n("expected")], ["Cancelled", n("cancelled")]]) +
+      missingHtml() + manualHtml(manual);
+    function mins(t) { return /^\d{2}:\d{2}$/.test(t || "") ? +t.slice(0, 2) * 60 + +t.slice(3) : null; }
+    var list = rows.map(function (r) {
+      var st = r.flight_status || "", sched = r.sched_time || hhmm(r.return_at), est = r.est_time || "";
+      var late = mins(est) !== null && mins(sched) !== null ? (mins(est) - mins(sched) + 1440 + 720) % 1440 - 720 : 0;
+      var word = st === "landed" ? "Landed" : st === "cancelled" ? "Cancelled" : (st === "delayed" || st === "expected") && late > 0 ? "Delayed +" + late + " min" : st === "delayed" ? "Delayed" : FLIGHT_WORD[st] || st;
+      var tone = st === "landed" ? "ok" : st === "cancelled" ? "bad" : st === "delayed" || st === "expected" ? "warn" : "";
+      return '<div class="ops-fl fs-' + esc(st || "none") + '" data-id="' + r.id + '"><div class="ops-flin" data-open>' +
+        '<b class="num">' + esc(r.flight) + '</b><span class="ops-flcar"><span class="num">' + esc(r.reg) + "</span><small>" + esc(nice(r.name)) + "</small></span>" +
+        '<span class="ops-flt"><small>Scheduled</small><span class="num">' + esc(sched || "—") + "</span></span>" +
+        (est ? '<span class="ops-flt"><small>' + (st === "landed" ? "Landed" : "Expected") + '</small><span class="num">' + esc(est === "DELAY" ? "Delayed" : est) + "</span></span>" : "<span></span>") +
+        '<em class="ops-badge ' + tone + '">' + esc(word) + (r.flight_note && st !== "landed" ? " · " + esc(r.flight_note) : "") + "</em></div></div>";
+    }).join("");
+    return h + opsPanel("Flight status", tt ? "Timetable updated at " + hhmm(tt.at) : "", list || '<p class="ops-foot">No flight numbers on this sheet.</p>');
   }
   // Flight numbers the timetable can't find (or TBC): the office checks these by hand.
   function manualHtml(list) {
@@ -4023,6 +4072,7 @@
   }
   function renderStaff() {
     var people = Object.keys(S.staff).map(function (k) { return S.staff[k]; }).filter(function (p) { return !p.removed_at; }).sort(function (a, b) { return (b.active - a.active) || a.name.localeCompare(b.name); });
+    if (isOps()) return opsStaff(people);
     return '<h2 class="title">Staff</h2>' + (S.issued ? issuedHtml(S.issued) + "<br>" : "") +
       '<form class="box" id="addStaff" style="padding:12px;margin-bottom:14px" novalidate><strong>Add a person</strong>' +
       '<label class="field">Name<input id="newName" maxlength="60" autocomplete="off"></label>' +
@@ -4033,6 +4083,25 @@
           (p.id === S.me.id ? '<span class="note">You</span>' : '<div class="sbtns">' + (canManage(p) ? '<button type="button" class="btn ghost small" data-manage="' + p.id + '">PIN and access</button>' : "") +
             (canChange(p) ? '<button type="button" class="btn ghost small" data-reset="' + p.id + '">New link</button><button type="button" class="btn ghost small" data-onoff="' + p.id + '">' + (p.active ? "Switch off" : "Switch on") + "</button>" : "") + "</div>") + "</div>";
       }).join("") + "</div>";
+  }
+  // Operations: Staff & access. "Add person" opens the form; each person's
+  // PIN and access, New link and Switch off sit in one Actions menu.
+  function opsStaff(people) {
+    var roles = ["bongo", "terminal", "office", "view"].concat(S.me.role === "owner" || S.me.role === "manager" ? ["manager"] : [], S.me.role === "owner" ? ["owner"] : []);
+    return '<p class="ops-sub">Manage your team and their permissions</p>' + (S.issued ? issuedHtml(S.issued) + "<br>" : "") +
+      (S.addPerson ? '<form class="ops-card ops-add" id="addStaff" novalidate><header><strong>Add a person</strong><button type="button" class="ops-x" data-addperson aria-label="Close">&times;</button></header>' +
+        '<div class="ops-fields"><label class="field">Name<input id="newName" maxlength="60" autocomplete="off"></label>' +
+        '<label class="field">Role<select id="newRole">' + roles.map(function (r) { return '<option value="' + r + '">' + ROLE_LABEL[r] + "</option>"; }).join("") + "</select></label></div>" +
+        '<div class="ops-btns"><button class="btn" id="addGo">Add and get link</button></div></form>'
+        : '<div class="ops-acts"><button type="button" class="btn" data-addperson>Add person</button></div>') +
+      opsPanel("Team members", people.length + (people.length === 1 ? " person" : " people"), '<div class="staffbox ops-team">' + people.map(function (p) {
+        var acts = p.id === S.me.id ? "" : (canManage(p) ? '<button type="button" data-manage="' + p.id + '">PIN and access</button>' : "") +
+          (canChange(p) ? '<button type="button" data-reset="' + p.id + '">New link</button><button type="button" data-onoff="' + p.id + '">' + (p.active ? "Switch off" : "Switch on") + "</button>" : "");
+        return '<div class="ops-person' + (p.active ? "" : " off") + '"><i>' + esc((p.name || "?").trim().charAt(0).toUpperCase()) + "</i>" +
+          '<div class="grow"><strong>' + esc(p.name) + "</strong><small>" + (p.id === S.me.id ? "Your account" : "Staff member") + "</small><span>" + esc(ROLE_LABEL[p.role] || p.role) + "</span></div>" +
+          '<div class="ops-side"><em class="' + (p.active ? "on" : "") + '">' + (p.active ? "Active" : "Inactive") + "</em>" +
+          (acts ? '<details class="ops-dd"><summary>Actions</summary><div>' + acts + "</div></details>" : "") + "</div></div>";
+      }).join("") + "</div>");
   }
   async function staffAction(body, busyEl) {
     if (busyEl) busyEl.disabled = true;
@@ -4162,28 +4231,35 @@
         return '<option value="' + o[0] + '"' + (String(T[key]) === String(o[0]) ? " selected" : "") + ">" + esc(o[1]) + "</option>";
       }).join("") + "</select></label>";
     }
-    var hrs = []; for (var h = 0; h <= 24; h++) hrs.push([h, hourName(h)]);
+    // Operations: shorter words, so two boxes fit side by side; a note when there are unsaved changes.
+    var o = isOps(), base = timing(), dirty = o && Object.keys(T).some(function (k) { return String(T[k]) !== String(base[k]); });
+    var hrs = []; for (var h = 0; h <= 24; h++) hrs.push([h, o && h === 24 ? "Midnight" : hourName(h)]);
     var perDay = creditGuess(T);
-    return capacityHtml() + '<div class="box" style="padding:14px;margin-top:14px;max-width:560px"><strong>Flight checks</strong>' +
-      sel("enabled", [["true", "On"], ["false", "Off: no automatic checks"]], "Automatic checks") +
+    return (dirty ? '<div class="ops-unsaved"><span>Unsaved changes in Flight checks</span><button type="button" class="btn small" data-savesettings>Save changes</button></div>' : "") +
+      capacityHtml() + '<div class="box fchecks" style="padding:14px;margin-top:14px;max-width:560px"><strong>Flight checks' + (o ? "<small>Automatic checks " + (String(T.enabled) === "false" ? "off" : "on") + "</small>" : "") + "</strong>" +
+      (o ? '<p class="note">Set when to check live landing times.</p>' : "") +
+      sel("enabled", [["true", "On"], ["false", o ? "Off" : "Off: no automatic checks"]], "Automatic checks") +
       (String(T.enabled) === "false" ? "" :
         '<div class="section-label">Live landing times (FlightRadar24)</div>' +
-        sel("live_every_min", [[10, "Every 10 minutes"], [15, "Every 15 minutes"], [20, "Every 20 minutes"], [30, "Every 30 minutes"], [45, "Every 45 minutes"], [60, "Every hour"], [90, "Every 90 minutes"], [120, "Every 2 hours"]], "Check every") +
+        sel("live_every_min", [[10, "Every 10 minutes"], [15, "Every 15 minutes"], [20, "Every 20 minutes"], [30, "Every 30 minutes"], [45, "Every 45 minutes"], [60, "Every hour"], [90, "Every 90 minutes"], [120, "Every 2 hours"]].map(function (x) { return o ? [x[0], x[1].replace("Every ", "").replace("minutes", "min").replace(/^hour$/, "1 hour")] : x; }), "Check every") +
         '<div class="pair">' + sel("active_from", hrs.slice(0, 24), "From") + sel("active_to", hrs.slice(1), "Until") + "</div>" +
-        sel("before_min", [[30, "30 minutes before landing"], [60, "1 hour before"], [90, "90 minutes before"], [120, "2 hours before"], [180, "3 hours before"], [240, "4 hours before"]], "Start watching a flight") +
-        sel("after_hours", [[1, "1 hour after its time"], [2, "2 hours after"], [3, "3 hours after"], [4, "4 hours after"], [5, "5 hours after"], [6, "6 hours after"]], "Give up on a flight not seen") +
+        sel("before_min", o ? [[30, "30 min before"], [60, "1 hour before"], [90, "90 min before"], [120, "2 hours before"], [180, "3 hours before"], [240, "4 hours before"]]
+          : [[30, "30 minutes before landing"], [60, "1 hour before"], [90, "90 minutes before"], [120, "2 hours before"], [180, "3 hours before"], [240, "4 hours before"]], o ? "Start watching" : "Start watching a flight") +
+        sel("after_hours", [[1, "1 hour after its time"], [2, "2 hours after"], [3, "3 hours after"], [4, "4 hours after"], [5, "5 hours after"], [6, "6 hours after"]].map(function (x) { return o && x[0] === 1 ? [1, "1 hour after"] : x; }), o ? "Stop watching" : "Give up on a flight not seen") +
         '<div class="section-label">Timetable and cancellations (AeroDataBox)</div>' +
-        sel("schedule_every_hours", [[1, "Every hour"], [2, "Every 2 hours"], [3, "Every 3 hours"], [4, "Every 4 hours"], [6, "Every 6 hours"], [12, "Every 12 hours"]], "Check every") +
+        sel("schedule_every_hours", [[1, "Every hour"], [2, "Every 2 hours"], [3, "Every 3 hours"], [4, "Every 4 hours"], [6, "Every 6 hours"], [12, "Every 12 hours"]], o ? "Timetable every" : "Check every") +
         // Only speaks up when the settings would run past the monthly plan.
         (perDay > 1900 ? '<div class="alert">About ' + (perDay * 30).toLocaleString("en-GB") + " FlightRadar24 credits a month: more than the 60,000 plan.</div>" : "")) +
-      '<div class="row-actions"><button type="button" class="btn ghost" data-resetsettings>Back to defaults</button><button type="button" class="btn brand" data-savesettings>Save</button></div></div>' +
+      '<div class="row-actions"><button type="button" class="btn ghost" data-resetsettings>' + (o ? "Restore defaults" : "Back to defaults") + '</button><button type="button" class="btn brand" data-savesettings>' + (o ? "Save flight settings" : "Save") + "</button></div></div>" +
       discordHtml() + ptNumberHtml() + overstayRateHtml() + backupHtml();
   }
+  // A settings box's title; Operations adds what it's set to on the right.
+  function boxTitle(t, aside) { return "<strong>" + esc(t) + (isOps() && aside ? "<small>" + esc(aside) + "</small>" : "") + "</strong>"; }
   // Car park capacity (database part 71): how many cars fit, in all and per
   // yard. The dashboard shows Parked now against it.
   function capacityHtml() {
     var C = S.company || {}, cap = +C.capacity || 0, yc = C.yard_capacity || {}, ys = C.yards || [];
-    return '<div class="box" style="padding:14px;max-width:560px"><strong>Car park capacity</strong>' +
+    return '<div class="box" style="padding:14px;max-width:560px">' + boxTitle("Car park capacity", cap ? cap + " spaces" : "Not set") +
       '<p class="note">How many cars you can park. Now: <b>' + (cap ? cap + " cars" : "not set") + "</b>.</p>" +
       '<label class="field">Total spaces<input id="capTotal" type="number" inputmode="numeric" min="0" step="1" placeholder="e.g. 400" value="' + (cap || "") + '"></label>' +
       (ys.length ? '<div class="section-label">Per yard (optional)</div><div class="capyards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0 10px">' + ys.map(function (y) {
@@ -4205,7 +4281,7 @@
   }
   function overstayRateHtml() {
     var rate = +(S.company && S.company.overstay_rate) || 0;
-    return '<div class="box" style="padding:14px;margin-top:14px;max-width:560px"><strong>Overstay charges</strong>' +
+    return '<div class="box" style="padding:14px;margin-top:14px;max-width:560px">' + boxTitle("Overstay charges", rate ? money(rate) + " a day" : "Off") +
       '<p class="note">Booked back before ' + esc(((S.company.drops_day_end) || "06:00").slice(0, 5)) + ": free until 12:00 that day, then one day's rate and one more every midnight. Booked back later: free until " + esc(((S.company.drops_day_end) || "06:00").slice(0, 5)) + " the next morning, then one day's rate and one more every morning at that time. 0 switches charging off." + (rate ? " Now: <b>" + money(rate) + " a day</b>." : " Now: <b>off</b>.") + "</p>" +
       '<label class="field">Daily rate (£)<input id="ovRate" type="number" inputmode="decimal" min="0" step="0.5" value="' + rate + '"></label>' +
       '<div class="row-actions"><button type="button" class="btn brand" data-saverate>Save rate</button></div></div>';
@@ -4240,7 +4316,7 @@
   }
   function ptNumberHtml() {
     var n = (S.company && S.company.pt_whatsapp) || "";
-    return '<div class="box" style="padding:14px;margin-top:14px;max-width:560px"><strong>PT photos: WhatsApp number</strong>' +
+    return '<div class="box" style="padding:14px;margin-top:14px;max-width:560px">' + boxTitle("PT photos: WhatsApp number", n ? "+" + n : "Not set") +
       '<p class="note">PT opens this chat with the reg typed, before the photos are sent.' + (n ? " Now: <b>+" + esc(n) + "</b>" : " Not set.") + "</p>" +
       '<label class="field">Number<input id="ptNumber" type="tel" autocomplete="off" placeholder="07932 029349 or +44 7932 029349" value="' + esc(n ? "+" + n : "") + '"></label>' +
       '<div class="row-actions"><button type="button" class="btn brand" data-savept>Save number</button></div>' +
@@ -4281,7 +4357,7 @@
     function field(key, label) {
       return '<label class="field">' + label + ' <span class="note">' + (S.discord ? (D[key] ? "✓ set" : "not set") : "…") + '</span><input data-discord="' + key + '" type="url" autocomplete="off" placeholder="' + (D[key] ? "Paste a new link to replace it" : "https://discord.com/api/webhooks/…") + '"></label>';
     }
-    return '<div class="box" style="padding:14px;margin-top:14px;max-width:560px"><strong>Discord alerts</strong>' +
+    return '<div class="box" style="padding:14px;margin-top:14px;max-width:560px">' + boxTitle("Discord alerts", !S.discord ? "" : D.drops || D.picks ? [D.drops && "Drops", D.picks && "Picks"].filter(Boolean).join(" and ") + " set" : "Not set") +
       field("drops", "DROPS channel") + field("picks", "PICKS channel") +
       '<div class="row-actions">' + (D.drops || D.picks ? '<button type="button" class="btn ghost small" data-discordtest>Send a test to Discord</button><button type="button" class="btn ghost small" data-discordclear>Remove both</button>' : "") +
       '<button type="button" class="btn brand" data-discordsave>Save links</button></div></div>';
@@ -4495,6 +4571,7 @@
     if (t.dataset.kind) return switchKind(t.dataset.kind);
     if (t.dataset.pickshift) return chooseShift(t.dataset.pickshift);
     if (t.dataset.closeshift !== undefined) return $("shiftPick").close();
+    if (t.dataset.bn && isOps() && t.dataset.bn === "flBtn") return go("flights");
     if (t.dataset.bn) { if (S.view !== "board" && t.dataset.bn !== "menuBtn") go("board"); return $(t.dataset.bn).click(); }
     if (t.dataset.mode) { setMode(t.dataset.mode); return openMenu(); }
     if (t.id === "logBtn") return go("summary");
@@ -4511,6 +4588,8 @@
     if (t.dataset.unarchive) return archiveSheet(t.dataset.unarchive, false);
     if (t.dataset.deletesheet) return deleteSheet(t.dataset.deletesheet);
     if (t.dataset.addcar !== undefined) { $("menu").close(); return openAddCar(); }
+    if (t.dataset.addperson !== undefined) { S.addPerson = !S.addPerson; render(); if (S.addPerson) $("newName").focus(); return; }
+    if (t.closest(".ops-dd")) t.closest(".ops-dd").open = false;
     if (t.dataset.manage) return openStaffPanel(t.dataset.manage);
     if (t.dataset.clientedit && S.platform) return openClient(t.dataset.clientedit);
     if (t.dataset.clientsuspend && S.platform) return suspendClient(t);
@@ -4611,7 +4690,7 @@
     e.preventDefault();
     var name = $("newName").value.trim(); if (!name) { toast("Enter the person's name.", true); return; }
     var got = await staffAction({ action: "add", name: name, role: $("newRole").value }, $("addGo"));
-    if (got) { S.issued = got; render(); window.scrollTo(0, 0); }
+    if (got) { S.issued = got; S.addPerson = false; render(); window.scrollTo(0, 0); }
   });
   document.addEventListener("input", function (e) {
     if (e.target.id === "q") { S.q = e.target.value; show("qClear", !!S.q); searchOtherDays(); setMain(renderBoard(), "board"); }
@@ -4673,7 +4752,7 @@
       '<button type="button" data-removedlist>Removed cars' + ((S.removed || []).length ? " (" + S.removed.length + ")" : "") + "</button>" +
       (sh.archived_at ? '<button type="button" data-unarchive="' + sh.id + '">Bring back to the list</button>' : '<button type="button" data-archivesheet="' + sh.id + '">Archive this sheet</button>') +
       '<button type="button" class="danger" data-deletesheet="' + sh.id + '">Delete this sheet</button></div>' : "";
-    if (hasFeatures()) { $("menuBody").innerHTML = premiumMenuHtml(items, sh); if (!$("menu").open) $("menu").showModal(); menuVersionCheck(); return; }
+    if (hasFeatures()) { $("menuBody").innerHTML = premiumMenuHtml(items, sh); if (!$("menu").open) { opsMenuPlace(); $("menu").showModal(); } markBnav(); menuVersionCheck(); return; }
     $("menuBody").innerHTML = "<h2>" + esc(S.company.name) + '</h2><p class="sub">' + esc(S.me.name) + " · " + esc(ROLE_LABEL[S.me.role] || S.me.role) + "</p>" +
       '<div class="menu-list">' + items.filter(function (x) { return x[2]; }).map(function (x) {
         return (x[0] === "me" ? '<button type="button" data-tutorials>Tutorials</button>' : "") + '<button type="button" data-view="' + x[0] + '"' + (S.view === x[0] ? ' aria-current="page"' : "") + ">" + x[1] + "</button>";
@@ -4701,19 +4780,21 @@
   };
   function menuIcon(k) { return '<svg class="mi" viewBox="0 0 24 24" aria-hidden="true">' + (MENU_ICON[k] || "") + "</svg>"; }
   function premiumMenuHtml(items, sh) {
-    var have = {}; items.forEach(function (x) { if (x[2]) have[x[0]] = x[1]; });
+    var have = {}, o = isOps(); items.forEach(function (x) { if (x[2]) have[x[0]] = x[1]; });
+    // Operations: a Menu page of panels, in the words of its other pages.
+    if (o) { if (have.summary) have.stats = "Hourly stats"; Object.assign(have, { board: "Operations board", summary: have.summary && "Shift summary", archive: have.archive && "Archive", staff: have.staff && "Staff & access", me: "Me and sign out" }); }
     var btn = function (k) { return '<button type="button" data-view="' + k + '"' + (S.view === k ? ' aria-current="page"' : "") + ">" + menuIcon(k) + "<span>" + esc(have[k]) + "</span></button>"; };
     var group = function (title, keys) { keys = keys.filter(function (k) { return have[k]; }); return keys.length ? "<label>" + title + '</label><div class="menu-list">' + keys.map(btn).join("") + "</div>" : ""; };
-    var h = "<h2>" + esc(S.company.name) + '</h2><p class="sub">' + esc(S.me.name) + " · " + esc(ROLE_LABEL[S.me.role] || S.me.role) + "</p>" +
-      group("TODAY", ["board", "flights", "summary"]) + group("OFFICE", ["dashboard", "archive", "import", "staff", "settings"]);
+    var h = (o ? '<h2>Menu</h2><p class="sub">' + esc(S.me.name) + " · " + esc(ROLE_LABEL[S.me.role] || S.me.role) + "</p>" : "<h2>" + esc(S.company.name) + '</h2><p class="sub">' + esc(S.me.name) + " · " + esc(ROLE_LABEL[S.me.role] || S.me.role) + "</p>") +
+      group(o ? "Operations" : "TODAY", ["board", "flights", "summary", "stats"]) + group(o ? "Office" : "OFFICE", ["dashboard", "archive", "import", "staff", "settings"]);
     if (sh && can("import")) {
-      h += "<label>THIS SHEET · " + esc(sheetLabel(sh)) + '</label><div class="menu-list">' +
+      h += "<label>" + (o ? "This sheet<small>" + esc(sheetLabel(sh)) + "</small>" : "THIS SHEET · " + esc(sheetLabel(sh))) + '</label><div class="menu-list">' +
         '<button type="button" data-addcar>' + menuIcon("add") + "<span>Add a car</span></button>" +
         '<button type="button" data-removedlist>' + menuIcon("removed") + "<span>Removed cars" + ((S.removed || []).length ? " (" + S.removed.length + ")" : "") + "</span></button>" +
         (sh.archived_at ? '<button type="button" data-unarchive="' + sh.id + '">' + menuIcon("box") + "<span>Bring back to the list</span></button>"
           : '<button type="button" data-archivesheet="' + sh.id + '">' + menuIcon("box") + "<span>Archive this sheet</span></button>") + "</div>";
     }
-    h += modeHtml() + swipeMenuHtml() + '<label>YOU</label><div class="menu-list"><button type="button" data-tutorials>' + menuIcon("play") + "<span>Tutorials</span></button>" + btn("me") + "</div>";
+    h += modeHtml() + swipeMenuHtml() + '<label>' + (o ? "You" : "YOU") + '</label><div class="menu-list"><button type="button" data-tutorials>' + menuIcon("play") + "<span>Tutorials</span></button>" + btn("me") + "</div>";
     if (sh && can("import")) h += '<div class="menu-danger"><button type="button" class="danger" data-deletesheet="' + sh.id + '">' + menuIcon("bin") + "<span>Delete this sheet</span></button></div>";
     return h + '<div class="pbtns"><button type="button" data-closemenu>Close</button></div>' + appVersionHtml();
   }
@@ -4766,7 +4847,7 @@
         return '<button type="button" ' + attr + '="' + x[0] + '" class="' + (cur === x[0] ? "on" : "") + '" aria-pressed="' + (cur === x[0]) + '">' + x[1] + "</button>";
       }).join("") + "</div>";
     };
-    return seg("SWIPE RIGHT ON DROPS", "data-swipestep", "swipestep", c) + seg("SWIPE LEFT ON DROPS", "data-swipeleft", "swipestep swipeleft", l) +
+    return seg(isOps() ? "Swipe right on drops" : "SWIPE RIGHT ON DROPS", "data-swipestep", "swipestep", c) + seg(isOps() ? "Swipe left on drops" : "SWIPE LEFT ON DROPS", "data-swipeleft", "swipestep swipeleft", l) +
       (!swipeOn() ? "" :
         '<button type="button" class="swtoggle" data-swipeonlyme role="switch" aria-checked="' + shown + '"><span>Show buttons on drops</span><i aria-hidden="true"></i></button>');
   }
@@ -4842,7 +4923,19 @@
     if ($("ptr")) $("ptr").style.height = "0px";
     sw = null;
   });
-  $("menu").addEventListener("click", function (e) { if (outside("menu", e) || e.target.closest("[data-closemenu]")) $("menu").close(); });
+  $("menu").addEventListener("click", function (e) {
+    var out = outside("menu", e);
+    if (out || e.target.closest("[data-closemenu]")) $("menu").close();
+    // Operations: the menu is a page between the top bar and the bottom bar, so a tap on those still works.
+    if (out && isOps()) { var el = document.elementFromPoint(e.clientX, e.clientY), b = el && el.closest("#bnav button, .bar button, .bar select"); if (b && b.dataset.bn !== "menuBtn") b.tagName === "SELECT" ? b.focus() : b.click(); }
+  });
+  $("menu").addEventListener("close", markBnav);
+  function opsMenuPlace() {
+    if (!isOps()) return;
+    var top = document.querySelector(".bar").getBoundingClientRect().bottom, nav = $("bnav").classList.contains("hidden") ? 0 : $("bnav").getBoundingClientRect().height;
+    document.documentElement.style.setProperty("--ops-menu-top", Math.max(0, Math.round(top)) + "px");
+    document.documentElement.style.setProperty("--ops-menu-bottom", Math.round(nav) + "px");
+  }
   $("shiftPick").addEventListener("click", function (e) { if (outside("shiftPick", e)) $("shiftPick").close(); });
   // Activity search (Premium looks): only the list redraws, so the keyboard stays up.
   document.addEventListener("input", function (e) {
