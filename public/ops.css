@@ -137,3 +137,34 @@ html.ops #menuBody > label{font-size:10.5px;font-weight:650;color:var(--op-mut);
 html.ops .pclose{border-color:var(--op-field);background:#fff;color:var(--op-ink);}
 html.ops .staffbox .rowline{flex-wrap:wrap;}
 html.ops .staffbox .sbtns{display:flex;flex-wrap:wrap;gap:6px;flex-basis:100%;padding-left:46px;}
+
+/* page titles: OPERATIONS / NAME above, no back button (Board is in the bottom bar) */
+html.ops .viewhead button[data-view="board"]{display:none;}
+html.ops #viewTitle::before{content:"OPERATIONS / " attr(data-eyebrow);display:block;margin-bottom:5px;font-size:10px;font-weight:650;letter-spacing:1.5px;color:var(--op-mut);}
+html.ops .viewhead strong{font-size:23px;}
+
+/* Hourly stats and Shift summary */
+html.ops .ops-sub{margin:-2px 0 12px;font-size:13px;color:var(--op-mut);}
+html.ops .ops-acts{display:flex;gap:8px;margin:0 0 14px;}
+html.ops .ops-strip{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;margin:0 0 14px;border:1px solid var(--op-line);border-radius:6px;background:#fff;overflow:hidden;}
+html.ops .ops-strip > div{min-width:0;padding:13px 12px 14px;border-left:1px solid #e4e9ef;}
+html.ops .ops-strip > div:first-child{border-left:0;}
+html.ops .ops-strip span{display:block;font-size:11px;color:#48596c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+html.ops .ops-strip strong{display:block;margin-top:8px;font-size:24px;line-height:1.1;font-weight:650;color:var(--op-ink);}
+html.ops .ops-card{margin:0 0 14px;border:1px solid var(--op-line);border-radius:6px;background:#fff;overflow:hidden;}
+html.ops .ops-card > header{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:14px 14px 13px;border-bottom:1px solid #e4e9ef;}
+html.ops .ops-card > header strong{font-size:13.5px;font-weight:650;color:var(--op-ink);}
+html.ops .ops-card > header small{font-size:12px;color:var(--op-mut);}
+html.ops .ops-tr{display:grid;grid-template-columns:minmax(0,1fr) repeat(var(--cols),minmax(52px,auto));align-items:center;gap:10px;min-height:46px;padding:9px 14px;border-top:1px solid #edf0f4;font-size:13.5px;}
+html.ops .ops-card > header + .ops-tr{border-top:0;}
+html.ops .ops-tr b{font-weight:500;color:var(--op-ink);}
+html.ops .ops-tr b small{display:block;margin-top:2px;font-size:11.5px;font-weight:400;color:var(--op-mut);}
+html.ops .ops-tr i{font-style:normal;text-align:right;color:var(--op-ink);}
+html.ops .ops-tr.th{min-height:40px;background:#f8fafc;font-size:11px;color:var(--op-mut);}
+html.ops .ops-tr.th b,html.ops .ops-tr.th i{font-weight:500;color:var(--op-mut);}
+html.ops .ops-tr.tot{background:#f8fafc;font-weight:650;}
+html.ops .ops-tr.tot b,html.ops .ops-tr.tot i{font-weight:650;}
+html.ops .ops-foot{margin:0;padding:11px 14px;border-top:1px solid #e4e9ef;font-size:11.5px;color:var(--op-mut);}
+html.ops .ops-card .box{border:0;border-radius:0;}
+html.ops body:not(.on-board) main .stats:has(.stat.big){display:block;margin-bottom:14px;}
+html.ops .stats .stat.big{display:block;}

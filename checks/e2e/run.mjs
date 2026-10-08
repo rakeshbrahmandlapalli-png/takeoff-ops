@@ -649,6 +649,26 @@ await scenario(async () => {
   check("Operations: the day picker lists only PICKS days, without the word", await plus.evaluate(() => { const o = [...document.querySelectorAll("#sheetPick option")]; return o.length === 1 && !/PICKS|DROPS/.test(o[0].textContent) && /today/.test(o[0].textContent); }), await plus.evaluate(() => [...document.querySelectorAll("#sheetPick option")].map((x) => x.textContent)));
   check("Operations: no sideways scrolling on a phone", await noSideScroll(plus));
   check("Standard with features: no Drops | Picks in the bar", await feat.evaluate(() => getComputedStyle(document.getElementById("kindBar")).display === "none"));
+  // Hourly stats and Shift summary are pages in Operations.
+  await pickKind(plus, "drops");
+  await plus.click('#bnav [data-bn="psBtn"]'); await sleep(300);
+  const stats = await plus.evaluate(() => ({ title: document.getElementById("viewTitle").textContent, panel: document.getElementById("panel").open, on: document.querySelector('#bnav [data-bn="psBtn"]').classList.contains("on"),
+    strip: [...document.querySelectorAll("#main .ops-strip > div")].map((d) => d.innerText.replace(/\s+/g, " ")).join(" | "), cards: [...document.querySelectorAll("#main .ops-card header strong")].map((x) => x.textContent) }));
+  check("Operations: Stats opens the Hourly stats page, marked in the bottom bar", stats.title === "Hourly stats" && !stats.panel && stats.on && stats.cards.includes("Returns by booked hour") && stats.cards.includes("Shift breakdown"), stats);
+  check("Operations: Hourly stats numbers (drops)", stats.strip === "Due back 3 | Sent 1 | Collected 0 | Still to collect 3", stats.strip);
+  await plus.click('#main [data-copy="stats"]'); await sleep(200);
+  check("Operations: Copy stats copies", /Copied/.test(await toast(plus)), await toast(plus));
+  await plus.click('#kindBar [data-kind="picks"]'); await plus.waitForSelector("body.picks"); await sleep(300);
+  const pstats = await plus.evaluate(() => ({ view: document.getElementById("viewTitle").textContent, strip: [...document.querySelectorAll("#main .ops-strip > div")].map((d) => d.innerText.replace(/\s+/g, " ")).join(" | ") }));
+  check("Operations: Picks from Hourly stats stays on Hourly stats", pstats.view === "Hourly stats" && pstats.strip === "Scheduled 4 | Completed 1 | Last 30 min 0 | Last 60 min 0", pstats);
+  await plus.click('#bnav [data-bn="logBtn"]'); await sleep(300);
+  const sum = await plus.evaluate(() => ({ title: document.getElementById("viewTitle").textContent, big: !!document.querySelector("#main .stat.big"), strip: [...document.querySelectorAll("#main .ops-strip span")].map((x) => x.textContent).join("|"), card: (document.querySelector("#main .ops-card header strong") || {}).textContent }));
+  check("Operations: Shift summary page (picks): headline, numbers in a strip, cars in by hour", sum.title === "Shift summary" && sum.big && sum.strip === "Still to come|No shows|RTC" && sum.card === "Cars in by collection hour", sum);
+  await feat.click('#bnav [data-bn="psBtn"]'); await sleep(300);
+  check("Standard with features: Stats still opens the sheet from the bottom", await feat.evaluate(() => document.getElementById("panel").open && !document.querySelector("#main .ops-strip")));
+  await feat.keyboard.press("Escape");
+  check("Operations: no errors on the stats and summary pages", plus.__errors.length === 0, plus.__errors);
+  await plus.click("#bnBoard"); await sleep(200);
   check("Operations: bottom bar and stdplus class on", await plus.evaluate(() => document.documentElement.classList.contains("stdplus") && document.documentElement.classList.contains("ops") && getComputedStyle(document.getElementById("bnav")).display === "flex"));
   await std.context().close(); await plus.context().close(); await feat.context().close();
 });
