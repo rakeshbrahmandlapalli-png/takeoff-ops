@@ -26,13 +26,14 @@ html.ops .rf{width:34px;height:34px;border-color:var(--op-field);border-radius:6
 @media(max-width:430px){html.ops .bar{gap:6px;padding:6px 8px;}html.ops .tobrand{padding:6px 7px;font-size:13px;}html.ops .kindbar button{padding:0 8px;font-size:12px;}html.ops .who{display:none;}html.ops #sheetPick{min-width:56px;margin-right:auto;font-size:12.5px;}html.ops .rf{width:32px;height:32px;}}
 
 /* board head: as tight as Standard's, so as many jobs fit on the screen:
-   the numbers in one slim panel, then search with TO DO / ALL on one line */
+   the numbers in one slim panel, the search box full width, and under it
+   TO DO / ALL sharing a line with "Hide numbers" */
 html.ops #boardHead:not(.hidden){display:flex;flex-wrap:wrap;padding:6px 8px 0;background:var(--op-bg);}
-html.ops #tally,html.ops #catTally,html.ops #tallyFold,html.ops #colHead{flex:0 0 100%;}
-html.ops #tally{order:1;}html.ops #catTally{order:2;}html.ops #tallyFold{order:3;}
-html.ops #boardHead .qwrap{order:4;}html.ops #boardHead .tabs{order:5;}html.ops #colHead{order:6;}
+html.ops #tally,html.ops #catTally,html.ops #colHead,html.ops #boardHead .qwrap{flex:0 0 100%;}
+html.ops #tally{order:1;}html.ops #catTally{order:2;}html.ops #boardHead .qwrap{order:4;}html.ops #boardHead .tabs{order:5;}html.ops #tallyFold{order:6;}html.ops #colHead{order:7;}
 html.ops .tally{gap:1px;border:1px solid var(--op-line);border-radius:6px;background:#e4e9ef;overflow:hidden;}
 html.ops .tally.cats{margin-top:4px;}
+html.ops .tally.cats button span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 html.ops .tally button{padding:4px 8px 5px;text-align:left;}
 html.ops .tally span{font-size:9px;font-weight:600;letter-spacing:.5px;color:#48596c;}
 html.ops .tally b{display:block;font-size:16px;line-height:1.2;font-weight:650;color:var(--op-ink);font-variant-numeric:tabular-nums;}
@@ -40,17 +41,20 @@ html.ops .tally button.on{background:var(--op-ink);}
 html.ops .tally button.on b,html.ops .tally button.on span{color:#fff;}
 html.ops .tally button.warn:not(.on){background:#fff8e6;}
 html.ops .tally .tyards{border-top-color:#e4e9ef;}
-html.ops .tfold:not(.hidden){margin:0;padding:3px 4px 1px;background:none;border:0;color:var(--op-mut);font-size:11.5px;}
-html.ops body.tfolded .tfold{padding:7px 10px;border:1px solid var(--op-line);border-radius:6px;background:#fff;}
-html.ops #boardHead .qwrap{flex:1 1 0;min-width:0;margin-top:5px;padding:6px 0 6px 6px;border:1px solid var(--op-line);border-right:0;border-bottom:0;border-radius:6px 0 0 0;background:#fff;}
-html.ops #q{height:36px;padding:0 40px 0 10px;border:1px solid var(--op-field);border-radius:6px;font-size:15px;color:var(--op-ink);}
+html.ops #boardHead .qwrap{min-width:0;margin-top:5px;padding:6px 6px 0;border:1px solid var(--op-line);border-bottom:0;border-radius:6px 6px 0 0;background:#fff;}
+html.ops #q{height:38px;padding:0 40px 0 12px;border:1px solid var(--op-field);border-radius:6px;font-size:15px;color:var(--op-ink);}
 html.ops #q::placeholder{color:#7b8797;}
 html.ops #q:focus{background:#fff;border-color:var(--op-ink);box-shadow:0 0 0 1px var(--op-ink);}
-html.ops .qclear{right:4px;top:50%;width:28px;height:28px;font-size:17px;}
-html.ops #boardHead .tabs{flex:none;gap:5px;margin-top:5px;padding:6px 6px 6px 5px;border:1px solid var(--op-line);border-left:0;border-bottom:0;border-radius:0 6px 0 0;background:#fff;}
-html.ops #boardHead .tabs button{flex:none;height:36px;padding:0 10px;border:1px solid var(--op-field);border-radius:6px;background:#fff;color:var(--op-ink);font-size:11.5px;font-weight:650;letter-spacing:.2px;box-shadow:none;}
+html.ops .qclear{right:10px;top:calc(50% + 3px);width:28px;height:28px;font-size:17px;}
+html.ops #boardHead .tabs{flex:1 1 auto;gap:5px;padding:4px 0 4px 6px;border:0;border-left:1px solid var(--op-line);background:#fff;}
+html.ops #boardHead .tabs button{flex:none;height:32px;padding:0 12px;border:1px solid var(--op-field);border-radius:6px;background:#fff;color:var(--op-ink);font-size:11.5px;font-weight:650;letter-spacing:.2px;box-shadow:none;}
 html.ops #boardHead .tabs button.on{background:var(--op-ink);border-color:var(--op-ink);color:#fff;}
-/* the column head and the rows run edge to edge on a phone, as before */
+/* "Hide numbers" at the end of the TO DO / ALL line */
+html.ops .tfold:not(.hidden){flex:0 1 auto;min-width:0;width:auto;margin:0;padding:0 10px 0 6px;background:#fff;border:0;border-right:1px solid var(--op-line);color:var(--op-mut);font-size:11.5px;}
+html.ops #boardHead:has(#tallyFold.hidden) .tabs{border-right:1px solid var(--op-line);}
+/* numbers folded: their one-line summary takes that place, cut short to fit */
+html.ops body.tfolded .tfold{flex:1 1 0;min-width:0;padding:0 10px 0 4px;}
+html.ops body.tfolded #boardHead .tabs{flex:0 0 auto;}
 html.ops #colHead{flex-basis:calc(100% + 16px);margin:0 -8px;}
 @media(min-width:760px){
  html.ops #boardHead:not(.hidden){padding:12px 16px 0;}
