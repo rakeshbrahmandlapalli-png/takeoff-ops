@@ -534,6 +534,7 @@
   // The header is the one the team already knows from the Sheet app: sheet
   // picker, who is signed in, and a row of icon buttons. The yard tally, TO DO /
   // ALL, search and column captions belong to the board only.
+  var OPS_TITLE = { summary: "Shift summary", stats: "Hourly stats" }, BN_VIEW = { logBtn: "summary", psBtn: "stats", flBtn: "flights" };
   var VIEW_TITLE = { dashboard: "Dashboard", clients: "Clients", flights: "Flights", summary: "Summary and activity", import: "Import bookings", staff: "Staff", settings: "Settings", archive: "Archive", me: "Me" };
   var YARD_LABEL = { Y: "NB", S: "S YARD" };
   // The tally reads left to right as the Sheet's did; any yard not listed follows.
@@ -584,7 +585,9 @@
     $("bnBoard").classList.toggle("on", board);
     show("boardHead", board);
     show("viewHead", !board);
-    if (!board) $("viewTitle").textContent = VIEW_TITLE[S.view] || "";
+    if (!board) { var vt = (isOps() && OPS_TITLE[S.view]) || VIEW_TITLE[S.view] || ""; $("viewTitle").textContent = vt; $("viewTitle").setAttribute("data-eyebrow", vt.toUpperCase()); }
+    // Operations: the open section is marked in the bottom bar too.
+    Array.prototype.forEach.call(document.querySelectorAll("#bnav [data-bn]"), function (b) { b.classList.toggle("on", isOps() && BN_VIEW[b.dataset.bn] === S.view); });
     if (board) renderBoardHead();
     renderSync();
   }
@@ -668,7 +671,9 @@
   function chooseShift(id) {
     $("shiftPick").close();
     if (id === S.sheetId) return;
-    S.sheetId = id; S.q = ""; S.other = null; S.yardFilter = ""; S.catFilter = ""; S.view = "board"; S.runs = null;
+    // Operations: Drops | Picks on Hourly stats or Shift summary stays on that page.
+    var stay = isOps() && (S.view === "summary" || S.view === "stats");
+    S.sheetId = id; S.q = ""; S.other = null; S.yardFilter = ""; S.catFilter = ""; S.view = stay ? S.view : "board"; S.runs = null; if (stay) S.activity = null;
     try { sessionStorage.setItem(openSheetKey(), id); } catch (e) {}
     loadRows().then(render).then(function () { window.scrollTo(0, 0); });
   }
@@ -717,7 +722,7 @@
   function render() {
     if (!S.me) return;
     try { renderChrome(); } catch (err) { oopsLog(err); }
-    var fn = { clients: renderClients, board: renderBoard, flights: renderFlights, summary: renderSummary, dashboard: renderDashboard, import: renderImport, staff: renderStaff, settings: renderSettings, archive: renderArchive, me: renderMe }[S.view] || renderBoard;
+    var fn = { stats: renderStats, clients: renderClients, board: renderBoard, flights: renderFlights, summary: renderSummary, dashboard: renderDashboard, import: renderImport, staff: renderStaff, settings: renderSettings, archive: renderArchive, me: renderMe }[S.view] || renderBoard;
     var html;
     // One screen going wrong never takes the app down: it says so and offers a way out.
     try { html = fn(); } catch (err) {
@@ -1090,6 +1095,7 @@
   function isPremium() { return document.documentElement.classList.contains("premium"); }
   // Premium Board: Premium with two-line rows (board.css).
   function isBoard() { return document.documentElement.classList.contains("pboard"); }
+  function isOps() { return document.documentElement.classList.contains("ops"); }
   function isStdPlus() { return document.documentElement.classList.contains("stdplus"); }
   // The working features (swipe, pull to refresh, the number fold, the menu in
   // sections, the Summary upgrades): Premium looks and Standard with features.
@@ -2889,6 +2895,42 @@
       '<div class="pbtns"><button type="button" data-close>Close</button><button type="button" class="save" data-copy="stats">Copy</button></div>';
     panelRow = null; if (!$("panel").open) $("panel").showModal();
   }
+  // ── Operations: Hourly stats and Shift summary as pages (ops.css) ──
+  function opsSub(sh) {
+    return '<p class="ops-sub">' + (sh.kind === "drops" ? "Drops" : "Picks") + " · " + esc(new Date(sh.day + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" })) + "</p>";
+  }
+  // Numbers side by side in one panel: [[label, value], …].
+  function opsStrip(items) { return '<div class="ops-strip">' + items.map(function (x) { return "<div><span>" + esc(x[0]) + '</span><strong class="num">' + x[1] + "</strong></div>"; }).join("") + "</div>"; }
+  function opsPanel(title, aside, body, foot) {
+    return '<section class="ops-card"><header><strong>' + esc(title) + "</strong>" + (aside ? "<small>" + esc(aside) + "</small>" : "") + "</header>" + body + (foot ? '<p class="ops-foot">' + esc(foot) + "</p>" : "") + "</section>";
+  }
+  // A table: the first cell is the label (trusted HTML), the rest numbers.
+  function opsTable(head, rows, total) {
+    function line(c, cls) { return '<div class="ops-tr' + (cls ? " " + cls : "") + '" style="--cols:' + (c.length - 1) + '">' + c.map(function (x, i) { return i ? '<i class="num">' + x + "</i>" : "<b>" + x + "</b>"; }).join("") + "</div>"; }
+    return (head ? line(head, "th") : "") + rows.map(function (r) { return line(r); }).join("") + (total ? line(total, "tot") : "");
+  }
+  function renderStats() {
+    var sh = sheet();
+    if (!sh) return '<div class="msg">Choose a sheet first.</div>';
+    var h = opsSub(sh) + '<div class="ops-acts"><button type="button" class="btn ghost small" data-copy="stats">Copy stats</button></div>';
+    if (sh.kind === "drops") {
+      var D = dropsStats(), owed = chargeLines();
+      h += opsStrip([["Due back", D.total.due], ["Sent", D.total.sent], ["Collected", D.total.done], ["Still to collect", D.total.due - D.total.done]]) +
+        opsPanel("Returns by booked hour", "", opsTable(["Hour", "Due", "Sent", "Collected"],
+          D.hours.map(function (x) { return [esc(x.label), x.due, x.sent, x.done]; }).concat(D.over.due ? [["Overstays", D.over.due, D.over.sent, D.over.done]] : []),
+          ["Total", D.total.due, D.total.sent, D.total.done]), D.over.due ? "Overstays are separate from the morning and night shifts." : "") +
+        opsPanel("Shift breakdown", "Collected / due", opsTable(null, [["Morning<small>06:00–17:30</small>", D.morning.done + " / " + D.morning.due], ["Night<small>17:31–05:59</small>", D.night.done + " / " + D.night.due]])) +
+        opsPanel("Collected lately", "", opsTable(null, [["Last 30 minutes", D.last30], ["Last 60 minutes", D.last60]])) +
+        (owed.length ? opsPanel("Overstay money", "", opsTable(null, owed.map(function (x) { return [esc(x[0]), x[1]]; }))) : "");
+    } else {
+      var P = picksStats(), cats = catLines();
+      h += opsStrip([["Scheduled", P.totalSched], ["Completed", P.totalDone], ["Last 30 min", P.last30], ["Last 60 min", P.last60]]) +
+        opsPanel("Arrivals by booked hour", "", opsTable(["Hour", "Scheduled", "Completed"], P.hours.map(function (x) { return [esc(x.label), x.sched, x.done]; }), ["Total", P.totalSched, P.totalDone]),
+          "Completed counts Collected and RTC, by booked arrival hour.") +
+        (cats.length ? opsPanel("Return groups", "", opsTable(null, cats.map(function (x) { return [esc(x[0]), x[1]]; }))) : "");
+    }
+    return h;
+  }
   function copyText(kind) {
     var lines;
     if (kind === "returns") {
@@ -3120,19 +3162,25 @@
         var d = S.rows;
         var due = d.filter(function (r) { return /£/.test(r.note); }), D = dropsStats();
         var back = d.filter(function (r) { return r.cleared_at; }).length;
-        h += '<h2 class="title">' + esc(sheetLabel(sh)) + '</h2><div class="stats">' +
+        if (isOps()) h += opsSub(sh) + '<div class="stats">' + kstat("back", "Cars back", back + " / " + d.length, progressBar(back, d.length), "big") + "</div>" +
+          opsStrip([["On the way", d.filter(function (r) { return r.sent_at && !r.cleared_at; }).length], ["Overstays", d.filter(function (r) { return r.overstay; }).length], ["Complaints", d.filter(function (r) { return r.clear_word === "COMPLAINT" || /^!/.test(r.note); }).length]]) +
+          opsPanel("Shift progress", "Collected / due", opsTable(null, [["Morning<small>06:00–17:30</small>", D.morning.done + " / " + D.morning.due], ["Night<small>17:31–05:59</small>", D.night.done + " / " + D.night.due]]));
+        else h += '<h2 class="title">' + esc(sheetLabel(sh)) + '</h2><div class="stats">' +
           kstat("back", "Cars back", back + " / " + d.length, progressBar(back, d.length), hasFeatures() ? "big" : "") +
           kstat("way", "On the way", d.filter(function (r) { return r.sent_at && !r.cleared_at; }).length) +
           kstat("over", "Overstays", d.filter(function (r) { return r.overstay; }).length) +
           kstat("comp", "Complaints", d.filter(function (r) { return r.clear_word === "COMPLAINT" || /^!/.test(r.note); }).length) +
           kstat("morn", "Morning 06:00–17:30", D.morning.done + " / " + D.morning.due, miniBar(D.morning.done, D.morning.due)) +
-          kstat("night", "Night 17:31–05:59", D.night.done + " / " + D.night.due, miniBar(D.night.done, D.night.due)) + "</div>" +
-          (due.length ? '<div class="section-label">Money due</div><div class="box">' + due.map(function (r) { return '<div class="rowline"><div class="grow"><strong>' + esc(r.reg) + "</strong> · " + esc(r.name) + '<div class="note">' + esc(r.note) + "</div></div></div>"; }).join("") + "</div>" : "");
+          kstat("night", "Night 17:31–05:59", D.night.done + " / " + D.night.due, miniBar(D.night.done, D.night.due)) + "</div>";
+        h += (due.length ? '<div class="section-label">Money due</div><div class="box">' + due.map(function (r) { return '<div class="rowline"><div class="grow"><strong>' + esc(r.reg) + "</strong> · " + esc(r.name) + '<div class="note">' + esc(r.note) + "</div></div></div>"; }).join("") + "</div>" : "");
       } else {
         var p = S.rows, hours = {};
         p.filter(function (r) { return r.intake === "Collected"; }).forEach(function (r) { var k = hhmm(r.intake_at).slice(0, 2); hours[k] = (hours[k] || 0) + 1; });
         var cin = p.filter(function (r) { return r.intake === "Collected"; }).length;
-        h += '<h2 class="title">' + esc(sheetLabel(sh)) + '</h2><div class="stats">' +
+        if (isOps()) h += opsSub(sh) + '<div class="stats">' + kstat("back", "Cars in", cin + " / " + p.length, progressBar(cin, p.length), "big") + "</div>" +
+          opsStrip([["Still to come", p.filter(function (r) { return !r.intake; }).length], ["No shows", p.filter(function (r) { return r.intake === "No Show"; }).length], ["RTC", p.filter(function (r) { return r.intake === "RTC"; }).length]]) +
+          opsPanel("Cars in by collection hour", "", hourBars(hours), "By the time each car was taken in. Hourly stats uses the booked arrival time.");
+        else h += '<h2 class="title">' + esc(sheetLabel(sh)) + '</h2><div class="stats">' +
           kstat("back", "Cars in", cin + " / " + p.length, progressBar(cin, p.length), hasFeatures() ? "big" : "") +
           kstat("noshow", "No shows", p.filter(function (r) { return r.intake === "No Show"; }).length) +
           kstat("rtc", "RTC", p.filter(function (r) { return r.intake === "RTC"; }).length) +
@@ -4426,6 +4474,7 @@
     var opener = e.target.closest("[data-addflight]") ? null : e.target.closest("div[data-open]");
     if (opener && S.me && !$("panel").open) { var or = rowOf(opener); if (or) return openPanel(or); }
     var t = e.target.closest("button,a"); if (!t) return;
+    if (t.dataset.copy === "stats") return putOnClipboard(copyText("stats"));
     if (t.dataset.copy) { try { await navigator.clipboard.writeText(t.dataset.copy); toast("Copied"); } catch (err) { toast("Couldn't copy: select the link and copy it", true); } return; }
     if (!S.me) return;
     // The link opens WhatsApp by itself; just remember it was sent.
@@ -4451,7 +4500,7 @@
     if (t.id === "logBtn") return go("summary");
     if (t.id === "flBtn") return checkFlights(t);
     if (t.id === "rtBtn") return openReturns();
-    if (t.id === "psBtn") return (sheet() || {}).kind === "drops" ? openDropsStats() : openPicksStats();
+    if (t.id === "psBtn") return isOps() ? go("stats") : (sheet() || {}).kind === "drops" ? openDropsStats() : openPicksStats();
     if (t.id === "refreshBtn") return refreshAll(t);
     if (t.dataset.appupdate !== undefined) { location.reload(); return; }
     if (t.dataset.checkflights !== undefined) return checkFlights(t);
