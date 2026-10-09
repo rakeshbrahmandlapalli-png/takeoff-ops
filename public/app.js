@@ -1259,7 +1259,7 @@
         : '<div class="l2" data-open>' + mid + (mid && times ? " · " : "") + times + "</div>" + flightLine(r)) +
       rowTags(r, [flightToCheck(r) ? '<span class="tag ck">' + (/^Not in the timetable/.test(r.flight_note) ? "CHECK MANUALLY"
         : /over 6 h from the booked time/.test(r.flight_note) && r.return_at ? "CHECK FLIGHT · BOOKED " + esc(hhmm(r.return_at)) : "CHECK FLIGHT NO.") + "</span>" : "",
-        over ? '<span class="tag ov">OVERSTAY</span>' : "", cmpl ? '<span class="tag cm">COMPLAINT</span>' : "", chargeTag(r).replace(/^ · /, "")]) +
+        over ? '<span class="tag ov">OVERSTAY</span>' : "", cmpl ? '<span class="tag cm">COMPLAINT</span>' : "", chargeTag(r).replace(/^ · /, ""), exitTag(r)]) +
       earlyLine(r) + noteLine(r) + "</div>" + (swipeOnly() ? stepStatus(r) + "</div>" : dropButtons(r, overWord, cmpl) + "</div>");
   }
   function dropButtons(r, overWord, cmpl, extra) {
@@ -1296,7 +1296,7 @@
       // Not in the day's timetable: the flight may still be on, so the office checks by hand.
       rowTags(r, [flightToCheck(r) ? '<span class="tag ck">' + (/^Not in the timetable/.test(r.flight_note) ? "CHECK MANUALLY"
         : /over 6 h from the booked time/.test(r.flight_note) && r.return_at ? "CHECK FLIGHT · BOOKED " + esc(hhmm(r.return_at)) : "CHECK FLIGHT NO.") + "</span>" : "", canc ? '<span class="tag cx">CANCELLED</span>' : "",
-        over ? '<span class="tag ov">OVERSTAY</span>' : "", cmpl ? '<span class="tag cm">COMPLAINT</span>' : "", chargeTag(r).replace(/^ · /, "")]) +
+        over ? '<span class="tag ov">OVERSTAY</span>' : "", cmpl ? '<span class="tag cm">COMPLAINT</span>' : "", chargeTag(r).replace(/^ · /, ""), exitTag(r)]) +
       earlyLine(r) + noteLine(r) + "</div>" +
       // "Show buttons on drops" off (Standard with features): what's done instead of buttons.
       (swipeOnly() ? stepStatus(r) : dropButtons(r, overWord, cmpl)) + "</div>";
@@ -1322,6 +1322,16 @@
   // button becomes the car's location (the company's yards); NO SHOW is in
   // the car's panel. Anyone who takes cars in can set it (database part 67).
   function picksYard() { return !!(S.company && S.company.brand && S.company.brand.picks_yard); }
+  // Exit fee (Clients → Edit, brand.exit_fee / exit_free, database part 75):
+  // the bookings whose reference starts with a listed start don't pay it.
+  // Compared by letters and numbers only, so "Cpd 19660209" starts with CPD.
+  function refKey(s) { return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); }
+  function exitFee() { return +(S.company && S.company.brand && S.company.brand.exit_fee) || 0; }
+  function exitFree(r) {
+    var k = refKey(r.ref), list = (S.company.brand || {}).exit_free || [];
+    return exitFee() > 0 && !!k && list.some(function (x) { return x && k.indexOf(x) === 0; });
+  }
+  function exitTag(r) { return exitFree(r) ? '<span class="tag pd">NO EXIT FEE</span>' : ""; }
   function pickYardBtn(r) {
     var on = !!r.yard, lab = on ? esc(YARD_LABEL[r.yard] || r.yard) : "YARD";
     if (!can("intake")) return '<button type="button" class="pyard' + (on ? " on y-" + esc(r.yard) : "") + '" disabled>' + lab + "</button>";
@@ -2453,6 +2463,7 @@
     var drops = r.kind === "drops";
     function by(at, who) { return at ? esc(hhmm(at)) + (who ? " · " + esc(staffName(who)) : "") : "—"; }
     var det = [["NAME", esc(r.name) || "—"], ["CAR", /^[-\s.]*$/.test(r.make || "") ? "—" : esc(r.make)], ["REF", esc(r.ref) || "—"]];
+    if (exitFee() > 0) det.push(["EXIT FEE", exitFree(r) ? "None for this booking" : money(exitFee())]);
     if (drops) {
       det.push(["MEET", r.drop_at ? esc(dayShort(r.drop_at) + " " + hhmm(r.drop_at)) : "—"]);
       det.push(["BACK", esc(dayShort(r.return_at) + " " + hhmm(r.return_at)) + (r.orig_return_at ? ' <span class="hint">· was ' + esc(dayShort(r.orig_return_at) + " " + hhmm(r.orig_return_at)) + "</span>" : "")]);
@@ -2530,7 +2541,7 @@
   }
   // Operations' words, sections and two-column boxes for the car panel; the
   // other looks get exactly what they had.
-  var OPS_LABEL = { NAME: "Customer name", CAR: "Car", REF: "Booking reference", MEET: "Meet", BACK: "Back", FLIGHT: "Flight", ARRIVAL: "Arrival", SENT: "Sent", CALLED: "Called", OVERSTAY: "Overstay", CLEAR: "Clear", COMPLAINT: "Complaint",
+  var OPS_LABEL = { NAME: "Customer name", CAR: "Car", REF: "Booking reference", "EXIT FEE": "Exit fee", MEET: "Meet", BACK: "Back", FLIGHT: "Flight", ARRIVAL: "Arrival", SENT: "Sent", CALLED: "Called", OVERSTAY: "Overstay", CLEAR: "Clear", COMPLAINT: "Complaint",
     "DROP-OFF": "Drop-off", REG: "Registration", "BACK DATE AND TIME": "Return date and time", YARD: "Yard", LOCATION: "Location", "FLIGHT NUMBER": "Flight number", "COLLECTION TIME": "Collection time",
     "SCHEDULED LANDING": "Scheduled landing", NOTE: "Note", "MARK AS": "Mark as", STEPS: "Steps" };
   function L(t) { return isOps() && OPS_LABEL[t] || t; }
@@ -3907,6 +3918,9 @@
       '<label for="clLook">LOOK</label><select id="clLook">' + LOOKS.map(function (l) { return '<option value="' + l[0] + '"' + ((b.theme || "") === l[0] ? " selected" : "") + ">" + l[1] + "</option>"; }).join("") + "</select>" +
       '<p class="hint">How their app looks to their team. Their phones change the next time the app refreshes.</p>' +
       '<label class="check"><input type="checkbox" id="clPicksYard"' + (b.picks_yard ? " checked" : "") + "> Location on PICKS (instead of NO SHOW)</label>" +
+      f("clExit", "EXIT FEE (£)", b.exit_fee, 'type="number" inputmode="decimal" min="0" max="999" step="0.01" placeholder="None"') +
+      '<label for="clExitFree">NO EXIT FEE FOR REFERENCES STARTING WITH</label><textarea id="clExitFree" autocapitalize="characters" placeholder="e.g. CAP, FHR, VIP APB-1147">' + esc((b.exit_free || []).join(", ")) + "</textarea>" +
+      '<p class="hint">Codes or whole references, separated by commas.</p>' +
       f("clHost", "WEB ADDRESS", b.host, 'autocapitalize="off" placeholder="e.g. clientname-ops.vercel.app"', "Add the same address in Vercel (Settings, Domains) or it won't open.") +
       '<div class="pbtns"><button type="button" data-close>Cancel</button><button class="save" id="clGo">' + (c ? "Save" : "Add client") + "</button></div></form>";
     if (!$("panel").open) $("panel").showModal();
@@ -3922,7 +3936,8 @@
     var was = id ? ((S.clients || []).filter(function (x) { return x.id === id; })[0] || {}).brand || {} : {};
     var p = { id: id, name: $("clName").value, slug: $("clSlug") ? $("clSlug").value.trim() : "", drops_day_end: $("clEnd").value,
       yards: $("clYards").value.split(/[\s,]+/).filter(Boolean),
-      brand: { short: $("clShort").value, colour: colour, ink: $("clInk").value, soft: hexMix(colour, "#FFFFFF", 0.88), text: hexMix(colour, "#000000", 0.35), host: $("clHost").value.trim().toLowerCase(), theme: $("clLook").value, picks_yard: $("clPicksYard").checked } };
+      brand: { short: $("clShort").value, colour: colour, ink: $("clInk").value, soft: hexMix(colour, "#FFFFFF", 0.88), text: hexMix(colour, "#000000", 0.35), host: $("clHost").value.trim().toLowerCase(), theme: $("clLook").value, picks_yard: $("clPicksYard").checked,
+      exit_fee: $("clExit").value.trim(), exit_free: $("clExitFree").value.split(/[,\n]+/).map(function (x) { return x.trim(); }).filter(Boolean) } };
     // Same colour as before: keep their hand-picked tints rather than recalculating.
     if (was.colour && was.colour.toUpperCase() === colour) { p.brand.soft = was.soft || p.brand.soft; p.brand.text = was.text || p.brand.text; }
     $("clGo").disabled = true;

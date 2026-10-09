@@ -1122,6 +1122,11 @@ await scenario(async () => {
   check("Parking Ops: Location on PICKS is off until ticked", !(await page.isChecked("#clPicksYard")));
   await page.check("#clPicksYard"); await page.click("#clGo"); await sleep(400);
   check("Parking Ops: ticking Location on PICKS saves picks_yard on", db.clientSaves[db.clientSaves.length - 1].brand.picks_yard === true, db.clientSaves[db.clientSaves.length - 1]);
+  await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clExit");
+  check("Parking Ops: no exit fee until one is entered", await page.inputValue("#clExit") === "" && await page.inputValue("#clExitFree") === "");
+  await page.fill("#clExit", "10"); await page.fill("#clExitFree", "cap, FHR-\nVIP APB-1147,, "); await page.click("#clGo"); await sleep(400);
+  { const sv = db.clientSaves[db.clientSaves.length - 1].brand;
+    check("Parking Ops: the exit fee and the references without it are saved", sv.exit_fee === "10" && JSON.stringify(sv.exit_free) === JSON.stringify(["cap", "FHR-", "VIP APB-1147"]), sv); }
   await page.click('[data-clientedit="c1"]'); await page.waitForSelector("#clLook");
   await page.selectOption("#clLook", "cards"); await page.click("#clGo"); await sleep(400);
   check("Parking Ops: choosing Cards saves theme cards", (db.clientSaves || []).slice(-1)[0].brand.theme === "cards");
@@ -1663,6 +1668,35 @@ await scenario(async () => {
   check("Location on PICKS: switched off, rows keep NO SHOW and no yard counts", await page.locator('.row[data-id="p1"] [data-pick="No Show"]').count() === 1 && await page.locator(".pyard").count() === 0 && await page.locator("#tally .tyards").count() === 0);
 });
 
+// 18a3d2. Exit fee (brand.exit_fee / exit_free, database part 75): exempt references get NO EXIT FEE on DROPS, the car says the fee
+for (const theme of ["", "stdplus", "ops", "premium", "board", "cards", "pro"]) await scenario(async () => {
+  const db = theme ? apbDb(theme) : makeDb(); db.company.brand = { ...db.company.brand, exit_fee: 10, exit_free: ["CPD", "VIPAPB1147"] };
+  const drops = db.bookings.filter((x) => x.kind === "drops" && x.sheet_id === db.bookings[0].sheet_id);
+  drops[0].ref = "Cpd - 19-660374"; drops[1].ref = "CAP-18-554625"; if (drops[2]) drops[2].ref = "vip apb-1147";
+  const page = await phone(browser, db);
+  await open(page); await sleep(300);
+  const look = theme || "standard";
+  const r0 = '.row[data-id="' + drops[0].id + '"]', r1 = '.row[data-id="' + drops[1].id + '"]';
+  await page.waitForSelector(r0);
+  check("Exit fee (" + look + "): a listed reference start shows NO EXIT FEE, any case or spacing", /NO EXIT FEE/.test(await page.locator(r0).innerText()));
+  if (drops[2]) check("Exit fee (" + look + "): a whole listed reference shows NO EXIT FEE", /NO EXIT FEE/.test(await page.locator('.row[data-id="' + drops[2].id + '"]').innerText()));
+  check("Exit fee (" + look + "): other references show no tag", !/EXIT FEE/.test(await page.locator(r1).innerText()));
+  await page.click(r0 + " .reg"); await page.waitForSelector("#panel[open]");
+  check("Exit fee (" + look + "): the car says no exit fee", /EXIT FEE\s*None for this booking/i.test(await page.locator("#panelBody .det").innerText()));
+  await page.click("#panelBody [data-close]"); await sleep(200);
+  await page.click(r1 + " .reg"); await page.waitForSelector("#panel[open]");
+  check("Exit fee (" + look + "): the car says the fee", /EXIT FEE\s*£10\b/i.test(await page.locator("#panelBody .det").innerText()));
+});
+await scenario(async () => {
+  const db = makeDb(); db.company.brand = { ...db.company.brand, exit_free: ["R"] };
+  const page = await phone(browser, db);
+  await open(page); await sleep(300);
+  await page.waitForSelector('.row[data-id="b1"]');
+  check("Exit fee: no fee set, no tag and nothing in the car", !/EXIT FEE/.test(await page.locator("#main").innerText()));
+  await page.click('.row[data-id="b1"] .reg'); await page.waitForSelector("#panel[open]");
+  check("Exit fee: no fee set, the car doesn't mention it", !/EXIT FEE/i.test(await page.locator("#panelBody").innerText()));
+});
+
 // 18a3e. PICKS: a new booking at the desk, with a photo of the docket (database part 69)
 for (const [theme, role] of [["", "office"], ["stdplus", "terminal"]]) await scenario(async () => {
   const db = theme ? apbDb(theme) : makeDb(); db.me = { ...db.me, role }; db.company.brand = { ...db.company.brand, picks_yard: true };
@@ -2137,6 +2171,29 @@ process.exit(failed ? 1 : 0);
 // ── previews (SHOTS=dir) ─────────────────────────────────────────────────
 async function shots(dir) {
   fs.mkdirSync(dir, { recursive: true });
+  // SHOTS_ONLY=exit: the exit fee on Airport Parking Bay's look (part 75).
+  if (process.env.SHOTS_ONLY === "exit") {
+    // apbDb is defined after the SHOTS exit, so it's built here.
+    const apbDb = (theme) => { const d = makeDb(); d.company = { ...d.company, name: "Airport Parking Bay", slug: "airport-parking-bay", yards: ["GS", "MY", "T"],
+      brand: { colour: "#1560BD", ink: "#FFFFFF", soft: "#E8F0FB", text: "#0E3F7E", short: "Parking Bay", theme, chrome: "#0E3F7E", mark: "P" } }; return d; };
+    const db = apbDb(process.env.SHOTS_THEME || "premium"); db.company.brand = { ...db.company.brand, exit_fee: 10, exit_free: ["CAP", "VIPAPB1147"] };
+    db.bookings.find((x) => x.id === "b1").ref = "CAP-18-554625"; db.bookings.find((x) => x.id === "b2").ref = "CPD-19-612731"; db.bookings.find((x) => x.id === "b3").ref = "VIP APB-1147";
+    const page = await phone(browser, db, { width: 390 });
+    const snap = async (name) => { await sleep(400); await page.screenshot({ path: path.join(dir, name + ".png"), fullPage: true }); };
+    await open(page); await snap("exit-drops");
+    await page.click('.row[data-id="b1"] .reg'); await sleep(300); await page.screenshot({ path: path.join(dir, "exit-car-free.png") }); await page.keyboard.press("Escape"); await sleep(200);
+    await page.click('.row[data-id="b2"] .reg'); await sleep(300); await page.screenshot({ path: path.join(dir, "exit-car-pays.png") }); await page.keyboard.press("Escape");
+    await page.context().close();
+    const pdb = makeDb(); pdb.clientCompany = { ...apbDb("premium").company, brand: { ...db.company.brand } };
+    pdb.company = { id: "c0", name: "Parking Ops", slug: "platform", yards: [], drops_day_end: "06:00:00", brand: {}, time_zone: "Europe/London" }; pdb.me = { ...pdb.me, company_id: "c0" };
+    const pp = await phone(browser, pdb, { width: 390 });
+    await pp.setViewportSize({ width: 390, height: 1400 });
+    await pp.goto(BASE + "/"); await pp.waitForSelector("[data-clientedit]", { timeout: 8000 });
+    await pp.click('[data-clientedit="c1"]'); await pp.waitForSelector("#clExit"); await pp.fill("#clExit", "10"); await pp.fill("#clExitFree", "CAP, VIP APB-1147"); await pp.locator("#clExit").scrollIntoViewIfNeeded(); await sleep(300);
+    await pp.screenshot({ path: path.join(dir, "exit-client-edit.png") });
+    await pp.context().close();
+    return;
+  }
   const toDb = () => { const db = makeDb(); db.company.brand = { colour: "#F9A01B", ink: "#1A1A1A", short: "TakeOff", theme: process.env.SHOTS_THEME || "ops" }; return db; };
   for (const width of [390, 1280]) {
     const page = await phone(browser, toDb(), { width });
