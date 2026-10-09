@@ -2430,6 +2430,23 @@
     await loadSheets(); await loadRows(); flashId = x.data.id; render();
     toast((r.reg || "Car") + (undo ? " is back on its booked day." : " moved to tonight's sheet as an early return."));
   }
+  // From the PICKS car (database part 74): its booked day's DROPS sheet may not
+  // be imported yet, so this makes its DROPS car on tonight's sheet, marked EARLY.
+  function pickEarlyHtml(r) {
+    if (r.kind !== "picks" || r.intake !== "Collected" || !can("called") || !(returnDay(r) > currentShiftKey())) return "";
+    return '<button type="button" class="btn ghost ptgo" data-pearly>EARLY RETURN · add to ' + esc(sheetLabel({ kind: "drops", day: currentShiftKey() })) + "</button>";
+  }
+  async function earlyFromPicks(r, btn) {
+    if (!confirm((r.reg || "This car") + " is booked back " + dayShort(r.return_at) + " " + hhmm(r.return_at) + ". Coming back early?\n\nOK adds it to tonight's DROPS sheet as an early return.")) return;
+    btn.disabled = true;
+    var x = await sb.rpc("early_return_from_picks", { p_picks: r.id });
+    btn.disabled = false;
+    if (x.error) return toast(x.error.message, true);
+    $("panel").close();
+    S.sheetId = x.data.sheet_id; S.q = ""; S.yardFilter = "";
+    await loadSheets(); await loadRows(); flashId = x.data.id; render();
+    toast((r.reg || "Car") + " added to tonight's DROPS as an early return.");
+  }
   function canReturn(r) { return can("import") && r.kind === "drops" && !r.early && !r.cleared_at; }
   function openPanel(r) {
     panelRow = r;
@@ -2494,7 +2511,7 @@
     }
     if (extra) h += (can("note") ? "" : opsSec("Status")) + fld('<label>' + L("MARK AS") + '</label><div class="pseg">' + extra + "</div>", true);
     if (drops) h += chargePanelHtml(r);
-    if (drops) h += earlyHtml(r);
+    h += drops ? earlyHtml(r) : pickEarlyHtml(r);
     // PT photos from when the car came in (PICKS), also on its DROPS row: same booking ref.
     h += '<div id="ptPhotos"></div>';
     if (can("import")) h += '<button type="button" class="link rmcar" data-removecar>Remove this car (no show, cancelled)</button>';
@@ -2654,6 +2671,7 @@
     if (t.dataset.removecar !== undefined) return askRemove(r);
     if (t.dataset.early !== undefined) return earlyMove(r, t, false);
     if (t.dataset.undoearly !== undefined) return earlyMove(r, t, true);
+    if (t.dataset.pearly !== undefined) return earlyFromPicks(r, t);
     if (t.dataset.backcar !== undefined) return openPanel(r);
     if (t.dataset.removewhy) return removeCar(r, t.dataset.removewhy, t);
   });

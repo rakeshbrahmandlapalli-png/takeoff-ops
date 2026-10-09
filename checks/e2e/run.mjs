@@ -133,6 +133,7 @@ function rpc(db, fn, a) {
     case "set_flight": { const b = row(a.p_booking); b.flight = a.p_flight; return b; }
     case "set_sched_time": { const b = row(a.p_booking); b.sched_time = a.p_time; return b; }
     case "early_return": { const b = row(a.p_booking); b.moved_from = b.sheet_id; b.sheet_id = "d0"; b.early = true; b.early_at = now(); b.num = 105; return b; }
+    case "early_return_from_picks": { const p = row(a.p_picks); const n = { ...p, id: "de" + db.bookings.length, sheet_id: "d0", kind: "drops", num: 106, early: true, early_at: now(), moved_from: "d1", intake: "", called_at: null, sent_at: null, cleared_at: null }; db.bookings.push(n); return n; }
     case "undo_early_return": { const b = row(a.p_booking); b.sheet_id = b.moved_from; b.moved_from = null; b.early = false; return b; }
     case "pt_link_save": {
       let l = db.ptLinks.find((x) => x.token === a.p_token);
@@ -820,6 +821,28 @@ await scenario(async () => {
   check("the panel offers Undo", await page.locator("[data-undoearly]").count() === 1);
   await page.click("[data-undoearly]"); await sleep(1200);
   check("Undo puts it back on its booked day", db.calls.some((c) => c.fn === "undo_early_return") && (await page.locator("#sheetPick").inputValue()) === "d1");
+});
+
+// 5b. early return from the PICKS car (part 74): no DROPS row for its booked day yet
+await scenario(async () => {
+  const db = makeDb(), page = await phone(browser, db);
+  await open(page);
+  await page.selectOption("#sheetPick", "p0"); await sleep(700);
+  await page.click('.row[data-id="p1"] .reg'); await sleep(300);
+  check("a PICKS car not taken in has no EARLY RETURN", await page.locator("[data-pearly]").count() === 0);
+  await page.click("[data-close]").catch(() => {}); await sleep(200);
+  await page.click('.row[data-id="p4"] .reg'); await sleep(300);
+  check("a PICKS car taken in, booked back later, offers EARLY RETURN to tonight's DROPS", /EARLY RETURN · add to/.test(await page.locator("[data-pearly]").innerText().catch(() => "")));
+  await page.click("[data-pearly]"); await sleep(1500);
+  check("EARLY RETURN on PICKS calls early_return_from_picks", db.calls.some((c) => c.fn === "early_return_from_picks" && c.args.p_picks === "p4"));
+  check("the app follows the car to tonight's DROPS sheet", (await page.locator("#sheetPick").inputValue()) === "d0");
+  const de = db.bookings.find((b) => b.kind === "drops" && b.reg === "HJ12PGK");
+  check("the new DROPS car shows 'EARLY · booked …'", !!de && /EARLY · booked/.test(await text(page, '.row[data-id="' + de.id + '"]')));
+  db.perms = Object.fromEntries(["sent", "clear", "summary", "intake"].map((k) => [k, true]));
+  await open(page);
+  await page.selectOption("#sheetPick", "p0"); await sleep(700);
+  await page.click('.row[data-id="p4"] .reg'); await sleep(300);
+  check("without CALLED rights there is no EARLY RETURN on PICKS", await page.locator("[data-pearly]").count() === 0);
 });
 
 // 6. PICKS board
@@ -2127,6 +2150,10 @@ async function shots(dir) {
     for (const [bn, name] of [["logBtn", "summary"], ["flBtn", "flights"], ["psBtn", "stats"]]) { await page.click('#bnav [data-bn="' + bn + '"]'); await snap(name); await page.keyboard.press("Escape"); await sleep(150); }
     await page.click('#bnav [data-bn="menuBtn"]'); await sleep(300); await page.screenshot({ path: path.join(dir, "menu-" + width + ".png") });
     for (const v of ["settings", "staff", "dashboard"]) { if (!(await page.locator("#menu").evaluate((m) => m.open))) await page.click('#bnav [data-bn="menuBtn"]'); await sleep(200); await page.click('#menuBody [data-view="' + v + '"]'); await snap(v); if (v === "staff" && (await page.locator("#main .ops-dd summary").count())) { await page.click("#main .ops-dd summary"); await page.screenshot({ path: path.join(dir, "staff-actions-" + width + ".png") }); await page.keyboard.press("Escape"); } }
+    // EARLY RETURN from a PICKS car (part 74), then the car on tonight's DROPS.
+    await open(page); await pickKind(page, "picks");
+    await page.click('.row[data-id="p4"] .reg'); await sleep(300); await page.screenshot({ path: path.join(dir, "picks-early-" + width + ".png") });
+    await page.click("[data-pearly]"); await sleep(1500); await snap("drops-early");
     await page.context().close();
   }
 }
