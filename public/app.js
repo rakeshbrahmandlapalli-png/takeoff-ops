@@ -3647,17 +3647,17 @@
     var days = (PK.days || []).slice().sort(function (a, b) { return a.day.localeCompare(b.day); });
     var cutoff = addDaysKey(x.today, 7), soon = days.filter(function (d) { return d.day < cutoff; }), later = days.filter(function (d) { return d.day >= cutoff; });
     var shown = S.dashAllDates ? days : soon, max = Math.max.apply(null, [1].concat(days.map(function (d) { return +d.n || 0; })));
-    h += '<div class="ops-lowergrid"><section class="ops-panel" id="dash-returns" tabindex="-1">' + panelHead('Upcoming returns', S.dashAllDates ? 'All dates' : 'Next 7 days') + '<div class="ops-tablehead"><span>RETURN DAY</span><span>VOLUME</span><span>CARS</span></div>';
+    h += '<div class="ops-lowergrid">' + foldOpen('returns', 'Upcoming returns', S.dashAllDates ? 'All dates' : 'Next 7 days', (+PK.late ? PK.late + ' past · ' : '') + 'Today ' + countOn(x.today) + ' · Tomorrow ' + countOn(addDaysKey(x.today, 1)), 'id="dash-returns" tabindex="-1"') + '<div class="ops-tablehead"><span>RETURN DAY</span><span>VOLUME</span><span>CARS</span></div>';
     if (+PK.late) h += '<details class="ops-latebox"><summary class="ops-returnrow ops-late"><span>Past their return</span><span class="ops-returnnote">Not handed back</span><strong class="num">' + PK.late + '</strong></summary><div class="dlist">' + lateBody(PK) + '</div></details>';
     h += shown.map(function (d) { return '<div class="ops-returnrow' + (d.day === x.today ? ' ops-today' : '') + '"><span>' + esc(x.dayName(d.day)) + '</span><span class="ops-volume" aria-hidden="true"><i style="width:' + Math.round(+d.n / max * 100) + '%"></i></span><strong class="num">' + d.n + '</strong></div>'; }).join('') || '<div class="empty">No upcoming returns' + (days.length ? ' in the next 7 days.' : '.') + '</div>';
     if (later.length) h += '<div class="ops-tablefoot"><span>' + x.sum(later, 'n') + ' cars returning later</span><button type="button" class="ops-link" data-dashdates aria-expanded="' + !!S.dashAllDates + '">' + (S.dashAllDates ? 'Show next 7 days' : 'View all dates') + '</button></div>';
-    h += '</section><div><section class="ops-panel dstats">' + panelHead('Desk activity', 'Last ' + period) + '<div class="ops-activitygrid">' +
+    h += FOLD_END + '<div>' + foldOpen('desk', 'Desk activity', 'Last ' + period, x.added.length + ' added · ' + x.removed.length + ' removed · ' + x.complaints.length + (x.complaints.length === 1 ? ' complaint' : ' complaints'), '', 'dstats') + '<div class="ops-activitygrid">' +
       metric('added', 'Added at the desk', x.added.length, x.added.filter(function (a) { return a.action === 'ADDED'; }).length + ' added · ' + x.added.filter(function (a) { return a.action !== 'ADDED'; }).length + ' NEW BOOKING', 'added') +
       metric('removed', 'Removed', x.removed.length, ['No show', 'Cancelled', 'Duplicate'].map(function (k) { var n = x.removed.filter(function (r) { return r.removed_reason === k; }).length; return n ? n + ' ' + k.toLowerCase() : ''; }).filter(Boolean).join(' · '), 'removed') +
       metric('comp', 'Complaints', x.complaints.length, 'Recorded in this period', 'complaints') +
-      metric('early', 'Early returns', +x.D.early || 0, (+x.D.changed || 0) + ' return changes', null) + '</div></section><section class="ops-panel ops-details">' + panelHead('Detailed records') +
+      metric('early', 'Early returns', +x.D.early || 0, (+x.D.changed || 0) + ' return changes', null) + '</div>' + FOLD_END + '<section class="ops-panel ops-details">' + panelHead('Detailed records') +
       detail('unpaid', 'Left with no payment recorded') + detail('added', 'Added at the desk') + detail('money', 'Money taken') + detail('owed', 'Owed now') + detail('waived', 'Waived') + detail('removed', 'Removed') + detail('complaints', 'Complaints') + '</section></div></div>';
-    h += '<section class="ops-panel ops-booked">' + panelHead('Cars on site', 'Next 14 days') + '<div class="booked">' + bookedBody(x.D, PK) + '</div></section>';
+    h += foldOpen('onsite', 'Cars on site', 'Next 14 days', onsiteSummary(x.D), '', 'ops-booked') + '<div class="booked">' + bookedBody(x.D, PK) + '</div>' + FOLD_END;
     if (x.yards.length) h += '<section class="ops-panel ops-yards">' + panelHead('Parked now, by yard') + '<div class="dlist">' + x.yards.map(function (y) {
       var ds = y.days || [], shown = ds.slice(0, 4), rest = ds.slice(4).reduce(function (n, d) { return n + d.n; }, 0);
       var line = shown.map(function (d) { return (d.day ? esc(x.dayName(d.day)) : '<b class="late">past return</b>') + ' ' + d.n; }).join(' · ') + (rest ? ' · later ' + rest : '');
@@ -4461,7 +4461,19 @@
     S.company.capacity = r.data.capacity; S.company.yard_capacity = r.data.yard_capacity || {}; S.dash = null;
     toast(r.data.capacity ? "Saved: " + r.data.capacity + " spaces" : "Capacity cleared"); render();
   }
+  // Operations dashboard panels fold open and closed; each person's choice is kept on their phone.
+  function foldIsOpen(id) { try { var m = JSON.parse(localStorage.getItem("takeoff_dash_fold") || "{}"); return m[id] !== false; } catch (e) { return true; } }
+  function foldSave(id, open) { try { var m = JSON.parse(localStorage.getItem("takeoff_dash_fold") || "{}"); m[id] = !!open; localStorage.setItem("takeoff_dash_fold", JSON.stringify(m)); } catch (e) {} }
+  function foldOpen(id, title, note, summary, attrs, cls) {
+    return '<details class="ops-panel ops-fold' + (cls ? " " + cls : "") + '" data-fold="' + id + '"' + (attrs ? " " + attrs : "") + (foldIsOpen(id) ? " open" : "") + '><summary class="ops-panelhead"><span class="ops-foldtitle"><strong>' + title + "</strong>" + (note ? "<small>" + note + "</small>" : "") + '</span><span class="ops-foldsum">' + summary + '</span><i class="ops-chev" aria-hidden="true"></i></summary><div class="ops-foldbody">';
+  }
+  var FOLD_END = "</div></details>";
+  document.addEventListener("toggle", function (e) { var d = e.target; if (d && d.dataset && d.dataset.fold) foldSave(d.dataset.fold, d.open); }, true);
   // Cars on site per day (database part 82): counted by the app from its own cars, against capacity.
+  function onsiteSummary(D) {
+    var r = (D.onsite || [])[0], cap = +S.company.capacity || 0;
+    return r ? "Tonight " + r.here + (cap ? " of " + cap : "") : "";
+  }
   function bookedBody(D, PK) {
     var rows = (D.onsite || []).slice(0, 14), cap = +S.company.capacity || 0, today = currentShiftKey();
     var k0 = function (k) { return k === today ? "Today" : k === addDaysKey(today, 1) ? "Tomorrow" : longDay(k); };
