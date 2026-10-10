@@ -144,6 +144,8 @@ function rpc(db, fn, a) {
     case "set_reg": { const b = row(a.p_booking); b.reg = a.p_reg; return b; }
     case "set_yard": { const b = row(a.p_booking); b.yard = a.p_yard; return b; }
     case "set_flight": { const b = row(a.p_booking); b.flight = a.p_flight; return b; }
+    case "set_pick_flight": { const b = row(a.p_booking); b.flight = a.p_flight; return b; }
+    case "set_pick_return": { const b = row(a.p_booking); b.return_at = new Date(a.p_return_local.replace(" ", "T") + ":00+01:00").toISOString(); return b; }
     case "set_sched_time": { const b = row(a.p_booking); b.sched_time = a.p_time; return b; }
     case "early_return": { const b = row(a.p_booking); b.moved_from = b.sheet_id; b.sheet_id = earlySheet(a.p_day); b.early = true; b.early_at = now(); b.num = 105; return b; }
     case "early_return_from_picks": { const p = row(a.p_picks); const n = { ...p, id: "de" + db.bookings.length, sheet_id: earlySheet(a.p_day), kind: "drops", num: 106, early: true, early_at: now(), moved_from: "d1", intake: "", called_at: null, sent_at: null, cleared_at: null }; db.bookings.push(n); return n; }
@@ -294,7 +296,9 @@ const noSideScroll = (page) => page.evaluate(() => document.documentElement.scro
 const toast = (page) => page.evaluate(() => [...document.querySelectorAll(".toast")].map((t) => t.textContent).join(" | "));
 // Open the DROPS or PICKS sheet: Operations' Drops | Picks in the bar, else the day picker.
 const pickKind = async (page, kind) => {
-  if (await page.isVisible("#kindBar")) await page.click('#kindBar [data-kind="' + kind + '"]'); else await page.selectOption("#sheetPick", kind === "picks" ? "p0" : "d0");
+  if (await page.isVisible("#kindBar")) await page.click('#kindBar [data-kind="' + kind + '"]');
+  else if (await page.isVisible("#kindSeg")) await page.click('#kindSeg [data-kind="' + kind + '"]');
+  else await page.selectOption("#sheetPick", kind === "picks" ? "p0" : "d0");
   await page.waitForFunction((k) => document.body.classList.contains("picks") === (k === "picks") && document.querySelector("#main .row"), kind);
 };
 
@@ -2102,6 +2106,58 @@ await scenario(async () => {
   check("return by hand to a day whose sheet is in: the car leaves tonight's board", await page.locator('.row[data-id="b2"]').count() === 0 && db.bookings.find((x) => x.id === "b2").sheet_id === "d1");
 });
 
+// 19b. the return flight given at drop-off: typed on the PICKS car (setup 78), every look
+for (const theme of ["", "stdplus", "ops", "premium", "board"]) await scenario(async () => {
+  const db = makeDb(); if (theme) db.company.brand = { theme, colour: "#F9A01B", ink: "#172536", short: "TakeOff" };
+  db.me = { ...db.me, role: "terminal" }; db.perms = { clear: true, picksinfo: true, note: true, intake: true };
+  const page = await phone(browser, db);
+  const look = theme || "standard";
+  await open(page); await pickKind(page, "picks");
+  const top = await page.locator("#main .row").first().evaluate((e) => e.getBoundingClientRect().top);
+  await page.click('.row[data-id="p1"] .reg'); await page.waitForSelector("#panel[open]");
+  check("Return flight (" + look + "): the PICKS car has a Return flight box", await page.isVisible("#pickFlightText"));
+  await page.fill("#pickFlightText", "ls 1234"); await page.click("[data-savepanel]"); await sleep(600);
+  const c = db.calls.filter((x) => x.fn === "set_pick_flight").pop();
+  check("Return flight (" + look + "): Save sends it, tidied", c && c.args.p_booking === "p1" && c.args.p_flight === "LS1234", c);
+  check("Return flight (" + look + "): the row shows it after the drop time", /LS1234/.test(await text(page, '.row[data-id="p1"]')), await text(page, '.row[data-id="p1"]'));
+  check("Return flight (" + look + "): the note is left alone", !db.calls.some((x) => x.fn === "set_note"));
+  check("Return flight (" + look + "): the rows don't move", Math.abs(top - await page.locator("#main .row").first().evaluate((e) => e.getBoundingClientRect().top)) < 1);
+  await page.click('.row[data-id="p1"] .reg'); await page.waitForSelector("#panel[open]");
+  check("Return flight (" + look + "): the box shows the saved flight", await page.inputValue("#pickFlightText") === "LS1234");
+  await page.fill("#pickFlightText", "LS1234"); await page.click("[data-savepanel]"); await sleep(400);
+  check("Return flight (" + look + "): unchanged sends nothing", db.calls.filter((x) => x.fn === "set_pick_flight").length === 1);
+});
+await scenario(async () => {
+  const db = makeDb(); db.me = { ...db.me, role: "view" }; db.perms = {};
+  const page = await phone(browser, db);
+  await open(page); await pickKind(page, "picks");
+  await page.click('.row[data-id="p1"] .reg'); await page.waitForSelector("#panel[open]");
+  check("Return flight: view-only has no box", !(await page.isVisible("#pickFlightText")));
+});
+// The office changes a PICKS car's return time (the customer rang), instead of a note.
+for (const theme of ["", "ops"]) await scenario(async () => {
+  const db = makeDb(); if (theme) db.company.brand = { theme, colour: "#F9A01B", ink: "#172536", short: "TakeOff" };
+  const page = await phone(browser, db);
+  const look = theme || "standard";
+  await open(page); await pickKind(page, "picks");
+  await page.click('.row[data-id="p1"] .reg'); await page.waitForSelector("#panel[open]");
+  check("PICKS return (" + look + "): the office gets the return date and time boxes", await page.isVisible("#retD") && await page.isVisible("#retT"));
+  check("PICKS return (" + look + "): they show the booked return", await page.inputValue("#retD") === addDays(TONIGHT, 1) && await page.inputValue("#retT") === new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit" }).format(new Date(iso(addDays(TONIGHT, 1), "09:00"))), [await page.inputValue("#retD"), await page.inputValue("#retT")]);
+  await page.fill("#retT", "0715"); await page.click("[data-savepanel]"); await sleep(600);
+  const c = db.calls.filter((x) => x.fn === "set_pick_return").pop();
+  check("PICKS return (" + look + "): Save sends the new time", c && c.args.p_booking === "p1" && c.args.p_return_local === addDays(TONIGHT, 1) + " 07:15", c);
+  check("PICKS return (" + look + "): no note needed", !db.calls.some((x) => x.fn === "set_note" || x.fn === "set_return"));
+  await page.click('.row[data-id="p1"] .reg'); await page.waitForSelector("#panel[open]");
+  check("PICKS return (" + look + "): the car shows the new time", await page.inputValue("#retT") === "07:15" && /07:15/.test(await page.locator("#panelBody .det").innerText()));
+});
+await scenario(async () => {
+  const db = makeDb(); db.me = { ...db.me, role: "terminal" }; db.perms = { clear: true, picksinfo: true, note: true, intake: true };
+  const page = await phone(browser, db);
+  await open(page); await pickKind(page, "picks");
+  await page.click('.row[data-id="p1"] .reg'); await page.waitForSelector("#panel[open]");
+  check("PICKS return: terminal staff don't get the boxes", !(await page.isVisible("#retD")));
+});
+
 // 20. a big night: 400 cars on one sheet stays quick
 await scenario(async () => {
   const db = makeDb();
@@ -2336,6 +2392,18 @@ async function shots(dir) {
     await car("b2", "exit-car-due"); await car("b3", "exit-car-paid"); await car("b1", "exit-car-free");
     await page.click("#bnav [data-bn=menuBtn]"); await sleep(300); await page.click('#menuBody [data-view="settings"]'); await sleep(400);
     await page.locator("[data-saveexit]").scrollIntoViewIfNeeded(); await sleep(300); await page.screenshot({ path: path.join(dir, "exit-settings.png") });
+    await page.context().close();
+    return;
+  }
+  // SHOTS_ONLY=flight: the return flight typed on a PICKS car (part 78), TakeOff's look.
+  if (process.env.SHOTS_ONLY === "flight") {
+    const db = makeDb(); db.company.brand = { colour: "#F9A01B", ink: "#1A1A1A", short: "TakeOff", theme: process.env.SHOTS_THEME || "stdplus" };
+    const page = await phone(browser, db, { width: 390 });
+    const snap = async (name) => { await sleep(400); await page.screenshot({ path: path.join(dir, name + ".png") }); };
+    await open(page); await pickKind(page, "picks");
+    await page.click('.row[data-id="p1"] .reg'); await sleep(500); await page.fill("#pickFlightText", "LS1234");
+    await page.locator("#pickFlightText").scrollIntoViewIfNeeded(); await snap("flight-picks-car");
+    await page.click("[data-savepanel]"); await sleep(600); await snap("flight-picks-row");
     await page.context().close();
     return;
   }
