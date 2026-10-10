@@ -240,3 +240,9 @@ html.stdplus .ops-dashboard .dlist .rowline .note{font-size:10px;line-height:1.5
  html.stdplus .ops-tablefoot{padding:8px 14px;}
  html.stdplus .ops-details,html.stdplus .ops-yards{margin-top:16px;}
 }
+
+/* Past their return: tap the row to list the cars, grouped by how long over. */
+html.stdplus .ops-latebox summary{list-style:none;cursor:pointer;}
+html.stdplus .ops-latebox summary::-webkit-details-marker{display:none;}
+html.stdplus .ops-latebox[open] .ops-late{border-bottom-color:#f3c7c2;}
+html.stdplus .ops-latebox .dlist{border-bottom:1px solid #edf0f4;}
