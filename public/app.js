@@ -396,7 +396,7 @@
     clearTimeout(redraw); redraw = setTimeout(function () { if ((S.view === "board" || S.view === "flights") && !$("panel").open && !yardOpen()) render(); }, 150);
   }
   var flashId = null;
-  var TAP_FIELDS = ["yard", "sent_at", "called_at", "called_word", "cleared_at", "clear_word", "intake", "pt_at", "pick_called", "note", "charge_method"];
+  var TAP_FIELDS = ["yard", "sent_at", "called_at", "called_word", "cleared_at", "clear_word", "intake", "pt_at", "pick_called", "note", "charge_method", "exit_method"];
 
   // ── saving: optimistic, queued, retried ───
   function queueKey() { return "takeoff_queue_" + (S.me ? S.me.id : ""); }
@@ -1259,7 +1259,7 @@
         : '<div class="l2" data-open>' + mid + (mid && times ? " · " : "") + times + "</div>" + flightLine(r)) +
       rowTags(r, [flightToCheck(r) ? '<span class="tag ck">' + (/^Not in the timetable/.test(r.flight_note) ? "CHECK MANUALLY"
         : /over 6 h from the booked time/.test(r.flight_note) && r.return_at ? "CHECK FLIGHT · BOOKED " + esc(hhmm(r.return_at)) : "CHECK FLIGHT NO.") + "</span>" : "",
-        over ? '<span class="tag ov">OVERSTAY</span>' : "", cmpl ? '<span class="tag cm">COMPLAINT</span>' : "", chargeTag(r).replace(/^ · /, "")]) +
+        over ? '<span class="tag ov">OVERSTAY</span>' : "", cmpl ? '<span class="tag cm">COMPLAINT</span>' : "", chargeTag(r).replace(/^ · /, ""), exitTag(r)]) +
       earlyLine(r) + noteLine(r) + "</div>" + (swipeOnly() ? stepStatus(r) + "</div>" : dropButtons(r, overWord, cmpl) + "</div>");
   }
   function dropButtons(r, overWord, cmpl, extra) {
@@ -1296,7 +1296,7 @@
       // Not in the day's timetable: the flight may still be on, so the office checks by hand.
       rowTags(r, [flightToCheck(r) ? '<span class="tag ck">' + (/^Not in the timetable/.test(r.flight_note) ? "CHECK MANUALLY"
         : /over 6 h from the booked time/.test(r.flight_note) && r.return_at ? "CHECK FLIGHT · BOOKED " + esc(hhmm(r.return_at)) : "CHECK FLIGHT NO.") + "</span>" : "", canc ? '<span class="tag cx">CANCELLED</span>' : "",
-        over ? '<span class="tag ov">OVERSTAY</span>' : "", cmpl ? '<span class="tag cm">COMPLAINT</span>' : "", chargeTag(r).replace(/^ · /, "")]) +
+        over ? '<span class="tag ov">OVERSTAY</span>' : "", cmpl ? '<span class="tag cm">COMPLAINT</span>' : "", chargeTag(r).replace(/^ · /, ""), exitTag(r)]) +
       earlyLine(r) + noteLine(r) + "</div>" +
       // "Show buttons on drops" off (Standard with features): what's done instead of buttons.
       (swipeOnly() ? stepStatus(r) : dropButtons(r, overWord, cmpl)) + "</div>";
@@ -1322,6 +1322,58 @@
   // button becomes the car's location (the company's yards); NO SHOW is in
   // the car's panel. Anyone who takes cars in can set it (database part 67).
   function picksYard() { return !!(S.company && S.company.brand && S.company.brand.picks_yard); }
+  // Exit fee (Settings, owners only, database part 76): the bookings whose
+  // reference starts with a listed start don't pay it. Compared by letters
+  // and numbers only, so "Cpd 19660209" starts with CPD.
+  function refKey(s) { return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); }
+  function exitFee() { return +(S.company && S.company.exit_fee) || 0; }
+  function exitFree(r) {
+    var k = refKey(r.ref), list = S.company.exit_free || [];
+    return exitFee() > 0 && !!k && list.some(function (x) { return x && k.indexOf(x) === 0; });
+  }
+  function exitTag(r) {
+    if (exitFree(r)) return '<span class="tag pd">NO EXIT FEE</span>';
+    return r.exit_method && exitFee() > 0 ? '<span class="tag pd">EXIT ' + money(r.exit_amount) + " " + r.exit_method.toUpperCase() + "</span>" : "";
+  }
+  // The car's EXIT FEE box (DROPS): paid by cash or card, with a photo of the
+  // payment; or what's due, CASH / CARD opening the camera first.
+  function exitPanelHtml(r) {
+    if (r.kind !== "drops" || !(exitFee() > 0) || exitFree(r)) return "";
+    var h = "<label>" + L("EXIT FEE") + "</label>";
+    if (r.exit_method) return h + '<div class="chgbox pd exitbox"><b>' + money(r.exit_amount) + " paid by " + esc(r.exit_method) + "</b><span>" +
+      esc(staffName(r.exit_by)) + (r.exit_at ? " · " + esc(dayShort(r.exit_at) + " " + hhmm(r.exit_at)) : "") + "</span>" +
+      (can("clear") ? '<button type="button" class="link" data-exitundo>Undo</button>' : "") + "</div>" +
+      (r.exit_photo ? '<div class="docbox"><a class="docimg" id="exitImg" target="_blank" rel="noopener"><span class="note">Loading photo…</span></a></div>' : '<p class="hint">No photo of the payment.</p>');
+    h += '<div class="chgbox exitbox"><b>' + money(exitFee()) + " due</b><span>Take a photo of the payment, then it's marked paid.</span></div>";
+    if (!can("clear")) return h;
+    return h + '<div class="when2 chgpay exitpay"><button type="button" data-exitshot="cash">📷 CASH</button><button type="button" data-exitshot="card">📷 CARD</button>' +
+      '<input type="file" id="exitFile" accept="image/*" capture="environment" data-exitfile hidden></div>' +
+      '<button type="button" class="link" data-exitnophoto="cash">Cash, no photo</button> <button type="button" class="link" data-exitnophoto="card">Card, no photo</button>';
+  }
+  async function markExit(r, method, file) {
+    r = S.rows.filter(function (x) { return x.id === r.id; })[0] || r;
+    var path = "";
+    if (file) {
+      toast("Saving the photo…");
+      try {
+        var small = await bkSmall(file, true);
+        path = S.company.id + "/docs/" + r.id + "/x" + Date.now() + ".jpg";
+        var up = await sb.storage.from("pt-photos").upload(path, small.blob, { contentType: "image/jpeg" });
+        if (up.error) throw up.error;
+      } catch (e) { return toast("The photo didn't save: " + ((e && e.message) || e), true); }
+    }
+    run("set_exit_paid", { p_booking: r.id, p_method: method, p_photo: path }, r, function (x) {
+      x.exit_method = method; x.exit_amount = method ? exitFee() : null; x.exit_at = method ? nowIso() : null; x.exit_by = method ? S.me.id : null; x.exit_photo = path;
+    });
+    toast(method ? "Exit fee " + money(exitFee()) + " " + method + " recorded" : "Exit fee cleared");
+    if (panelRow && panelRow.id === r.id && $("panel").open) openPanel(r);
+  }
+  async function fillExit(r) {
+    var u = await sb.storage.from("pt-photos").createSignedUrl(r.exit_photo, 3600);
+    var a = $("exitImg"); if (!a || !panelRow || panelRow.id !== r.id) return;
+    if (u.error || !u.data) { a.innerHTML = '<span class="note">Photo not found.</span>'; return; }
+    a.href = u.data.signedUrl; a.innerHTML = '<img alt="Photo of the payment" src="' + esc(u.data.signedUrl) + '">';
+  }
   function pickYardBtn(r) {
     var on = !!r.yard, lab = on ? esc(YARD_LABEL[r.yard] || r.yard) : "YARD";
     if (!can("intake")) return '<button type="button" class="pyard' + (on ? " on y-" + esc(r.yard) : "") + '" disabled>' + lab + "</button>";
@@ -2509,6 +2561,7 @@
     var drops = r.kind === "drops";
     function by(at, who) { return at ? esc(hhmm(at)) + (who ? " · " + esc(staffName(who)) : "") : "—"; }
     var det = [["NAME", esc(r.name) || "—"], ["CAR", /^[-\s.]*$/.test(r.make || "") ? "—" : esc(r.make)], ["REF", esc(r.ref) || "—"]];
+    if (exitFee() > 0) det.push(["EXIT FEE", exitFree(r) ? "None for this booking" : r.exit_method ? money(r.exit_amount) + " paid, " + esc(r.exit_method) : money(exitFee())]);
     if (drops) {
       det.push(["MEET", r.drop_at ? esc(dayShort(r.drop_at) + " " + hhmm(r.drop_at)) : "—"]);
       det.push(["BACK", esc(dayShort(r.return_at) + " " + hhmm(r.return_at)) + (r.orig_return_at ? ' <span class="hint">· was ' + esc(dayShort(r.orig_return_at) + " " + hhmm(r.orig_return_at)) + "</span>" : "")]);
@@ -2566,7 +2619,7 @@
       if (picksYard()) extra += '<button type="button" data-pnoshow class="' + (r.intake === "No Show" ? "on n" : "") + '">NO SHOW</button>';
     }
     if (extra) h += (can("note") ? "" : opsSec("Status")) + fld('<label>' + L("MARK AS") + '</label><div class="pseg">' + extra + "</div>", true);
-    if (drops) h += chargePanelHtml(r);
+    if (drops) h += chargePanelHtml(r) + exitPanelHtml(r);
     h += drops ? earlyHtml(r) : pickEarlyHtml(r);
     // PT photos from when the car came in (PICKS), also on its DROPS row: same booking ref.
     h += '<div id="ptPhotos"></div>';
@@ -2583,10 +2636,11 @@
     ptPhotosList(r);
     carHistory(r);
     if ($("docBox")) fillDoc(r);
+    if ($("exitImg")) fillExit(r);
   }
   // Operations' words, sections and two-column boxes for the car panel; the
   // other looks get exactly what they had.
-  var OPS_LABEL = { NAME: "Customer name", CAR: "Car", REF: "Booking reference", MEET: "Meet", BACK: "Back", FLIGHT: "Flight", ARRIVAL: "Arrival", SENT: "Sent", CALLED: "Called", OVERSTAY: "Overstay", CLEAR: "Clear", COMPLAINT: "Complaint",
+  var OPS_LABEL = { NAME: "Customer name", CAR: "Car", REF: "Booking reference", "EXIT FEE": "Exit fee", MEET: "Meet", BACK: "Back", FLIGHT: "Flight", ARRIVAL: "Arrival", SENT: "Sent", CALLED: "Called", OVERSTAY: "Overstay", CLEAR: "Clear", COMPLAINT: "Complaint",
     "DROP-OFF": "Drop-off", REG: "Registration", "BACK DATE AND TIME": "Return date and time", YARD: "Yard", LOCATION: "Location", "FLIGHT NUMBER": "Flight number", "COLLECTION TIME": "Collection time",
     "SCHEDULED LANDING": "Scheduled landing", "COMING BACK": "Coming back", NOTE: "Note", "MARK AS": "Mark as", STEPS: "Steps" };
   function L(t) { return isOps() && OPS_LABEL[t] || t; }
@@ -2722,6 +2776,9 @@
     if (t.dataset.ptwhy) return ptTickWhy(r, t.dataset.ptwhy);
     if (t.dataset.charge) { recordCharge(r, t.dataset.charge); return openPanel(r); }
     if (t.dataset.chargeundo !== undefined) { recordCharge(r, ""); return openPanel(r); }
+    if (t.dataset.exitshot) { $("exitFile").dataset.m = t.dataset.exitshot; $("exitFile").value = ""; return $("exitFile").click(); }
+    if (t.dataset.exitundo !== undefined) return markExit(r, "");
+    if (t.dataset.exitnophoto) return markExit(r, t.dataset.exitnophoto);
     if (t.dataset.chargeadd !== undefined) { S.chargeAdd = r.id; openPanel(r); var a = $("chgAmount"); if (a) a.focus(); return; }
     if (t.dataset.chargeagreed !== undefined) { setAgreed(r, t.dataset.chargeagreed); return openPanel(r); }
     if (t.dataset.removecar !== undefined) return askRemove(r);
@@ -4325,7 +4382,7 @@
         // Only speaks up when the settings would run past the monthly plan.
         (perDay > 1900 ? '<div class="alert">About ' + (perDay * 30).toLocaleString("en-GB") + " FlightRadar24 credits a month: more than the 60,000 plan.</div>" : "")) +
       '<div class="row-actions"><button type="button" class="btn ghost" data-resetsettings>' + (o ? "Restore defaults" : "Back to defaults") + '</button><button type="button" class="btn brand" data-savesettings>' + (o ? "Save flight settings" : "Save") + "</button></div></div>" +
-      discordHtml() + ptNumberHtml() + overstayRateHtml() + backupHtml();
+      discordHtml() + ptNumberHtml() + overstayRateHtml() + exitFeeHtml() + backupHtml();
   }
   // A settings box's title; Operations adds what it's set to on the right.
   function boxTitle(t, aside) { return "<strong>" + esc(t) + (isOps() && aside ? "<small>" + esc(aside) + "</small>" : "") + "</strong>"; }
@@ -4359,6 +4416,26 @@
       '<p class="note">Booked back before ' + esc(((S.company.drops_day_end) || "06:00").slice(0, 5)) + ": free until 12:00 that day, then one day's rate and one more every midnight. Booked back later: free until " + esc(((S.company.drops_day_end) || "06:00").slice(0, 5)) + " the next morning, then one day's rate and one more every morning at that time. 0 switches charging off." + (rate ? " Now: <b>" + money(rate) + " a day</b>." : " Now: <b>off</b>.") + "</p>" +
       '<label class="field">Daily rate (£)<input id="ovRate" type="number" inputmode="decimal" min="0" step="0.5" value="' + rate + '"></label>' +
       '<div class="row-actions"><button type="button" class="btn brand" data-saverate>Save rate</button></div></div>';
+  }
+  // Exit fee (database part 76): owners only.
+  function exitFeeHtml() {
+    if (!S.me || S.me.role !== "owner") return "";
+    var fee = exitFee(), free = S.company.exit_free || [];
+    return '<div class="box" style="padding:14px;margin-top:14px;max-width:560px">' + boxTitle("Exit fee", fee ? money(fee) : "Off") +
+      '<label class="field">Exit fee (£)<input id="exitFee" type="number" inputmode="decimal" min="0" max="999" step="0.01" placeholder="0 = off" value="' + (fee || "") + '"></label>' +
+      '<label class="field">No exit fee for references starting with<input id="exitFree" autocomplete="off" autocapitalize="characters" placeholder="e.g. CAP, APD, VIP APB-1147" value="' + esc(free.join(", ")) + '"></label>' +
+      '<p class="note">Agent codes or whole references, separated by commas.</p>' +
+      '<div class="row-actions"><button type="button" class="btn brand" data-saveexit>Save exit fee</button></div></div>';
+  }
+  async function saveExitFee(btn) {
+    var fee = $("exitFee").value.trim(), free = $("exitFree").value.split(/[,\n]+/).map(function (x) { return x.trim(); }).filter(Boolean);
+    if (fee && !(+fee >= 0)) return toast("Check the exit fee.", true);
+    btn.disabled = true;
+    var r = await sb.rpc("set_exit_fee", { p_fee: +fee || 0, p_free: free });
+    btn.disabled = false;
+    if (r.error) return toast(r.error.message, true);
+    S.company.exit_fee = r.data.exit_fee; S.company.exit_free = r.data.exit_free || [];
+    toast(+r.data.exit_fee ? "Saved: exit fee " + money(r.data.exit_fee) : "Exit fee off"); render();
   }
   async function saveOverstayRate(btn) {
     btn.disabled = true;
@@ -4635,6 +4712,7 @@
     if (t.dataset.savept !== undefined) return savePtNumber(t);
     if (t.dataset.backup !== undefined) return downloadBackup(t);
     if (t.dataset.saverate !== undefined) return saveOverstayRate(t);
+    if (t.dataset.saveexit !== undefined) return saveExitFee(t);
     if (t.dataset.savecap !== undefined) return saveCapacity(t);
     if (t.dataset.swipestep) { setSwipeChoice(t.dataset.swipestep); render(); return openMenu(); }
     if (t.dataset.swipeleft) { setSwipeLeftChoice(t.dataset.swipeleft); render(); return openMenu(); }
@@ -4786,6 +4864,7 @@
       if (deskPhoto) { $("dkShot").classList.add("done"); $("dkShotTxt").textContent = "Docket photo taken ✓ (tap to retake)"; }
       return;
     }
+    if (t.dataset.exitfile !== undefined) { var fx = t.files && t.files[0]; if (fx && panelRow && t.dataset.m) markExit(panelRow, t.dataset.m, fx); return; }
     if (t.dataset.docfile !== undefined) { var f0 = t.files && t.files[0]; if (f0 && panelRow) { toast("Saving the docket photo…"); uploadDoc(panelRow, f0); } return; }
     if (t.dataset.ptmethod !== undefined) return savePtMethod(t);
     if (t.dataset.file) { var f = t.files && t.files[0]; if (!f) return; S.imp[t.dataset.file + "File"] = f; S.imp.error = ""; render(); return; }
