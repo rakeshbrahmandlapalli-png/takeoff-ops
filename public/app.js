@@ -863,6 +863,7 @@
     $("tally").classList.toggle("has-yards", !!yardCells.length);
     renderCatStrip(picks);
     renderTallyFold(cells);
+    renderKeyBtn();
     var cardsWords = pro && !isPremium();
     $("tabTodo").textContent = cardsWords ? S.rows.filter(waiting).length + " Waiting for action" : "TO DO (" + S.rows.filter(waiting).length + ")";
     $("tabAll").textContent = cardsWords ? "All " + S.rows.length : "ALL (" + S.rows.length + ")";
@@ -1095,9 +1096,11 @@
   }
 
   function yardChip(r) {
-    if (!can("yard")) return r.yard ? '<span class="code ' + esc(r.yard) + '">' + esc(r.yard) + "</span>" : "";
+    // Key mode: grey until the car's key is ticked.
+    var kg = r.kind === "drops" && r.yard && keyOn() && !keyFound(r) ? " kgrey" : "";
+    if (!can("yard")) return r.yard ? '<span class="code ' + esc(r.yard) + kg + '">' + esc(r.yard) + "</span>" : "";
     // The chip is the picker: one tap, choose, saved.
-    return '<select class="code pick ' + (r.yard ? esc(r.yard) : "unset") + '" data-yard aria-label="Yard for ' + esc(r.reg) + '"><option value="">' + (r.yard ? "—" : "YARD") + "</option>" +
+    return '<select class="code pick ' + (r.yard ? esc(r.yard) : "unset") + kg + '" data-yard aria-label="Yard for ' + esc(r.reg) + '"><option value="">' + (r.yard ? "—" : "YARD") + "</option>" +
       (S.company.yards || []).map(function (y) { return "<option" + (y === r.yard ? " selected" : "") + ' value="' + esc(y) + '">' + esc(y) + "</option>"; }).join("") + "</select>";
   }
   // An early return gets its own line, like a note, so the flight line stays clear.
@@ -1304,7 +1307,7 @@
       (eta && booked && eta !== booked ? '<i class="num">booked ' + esc(booked) + "</i>" : "") + (r.flight_status === "landed" ? '<i class="ld">Landed</i>' : "") + "</div>";
     return '<div class="row' + cls + (S.pending[r.id] ? " busy" : "") + '" data-id="' + r.id + '">' + rt +
       '<div class="left"><div class="l1"><button type="button" class="reg" data-open>' + esc(r.reg || "NO REG") + "</button>" + yardChip(r) +
-      (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + catTag(r) + wasTag(r) + '<span class="pin">' + esc(nice(r.name)) + "</span></div>" +
+      (r.num ? '<span class="dn num">#' + r.num + "</span>" : "") + keyBox(r) + catTag(r) + wasTag(r) + '<span class="pin">' + esc(nice(r.name)) + "</span></div>" +
       '<div class="l2 num" data-open><span class="l2a">' + (makeOnly(r.make) ? '<span class="mk">' + esc(niceMake(makeOnly(r.make))) + "</span>" : "") +
       '<span class="flp' + (r.flight ? " has" : "") + '">' + (makeOnly(r.make) ? " · " : "") + (r.flight ? esc(r.flight) : can("flights") ? '<button type="button" class="addflight" data-addflight>+ FLIGHT</button>' : "—") + "</span></span>" +
       '<span class="l2b">' + (booked ? " · " + esc(booked) : "") +
@@ -3096,6 +3099,40 @@
     function line(c, cls) { return '<div class="ops-tr' + (cls ? " " + cls : "") + '" style="--cols:' + (c.length - 1) + '">' + c.map(function (x, i) { return i ? '<i class="num">' + x + "</i>" : "<b>" + x + "</b>"; }).join("") + "</div>"; }
     return (head ? line(head, "th") : "") + rows.map(function (r) { return line(r); }).join("") + (total ? line(total, "tot") : "");
   }
+  // ── Key check (K beside TO DO / ALL on a DROPS board) ──
+  // The office pulls every key out of the cabinet. With K on, each drop gets a
+  // tick box and its yard tag goes grey; ticking the car (key found) brings the
+  // yard's colour back. Ticks are kept on this phone, per sheet.
+  var KEYS_KEY = "takeoff_keys", KEYMODE_KEY = "takeoff_keymode";
+  function keyTicks() { try { return JSON.parse(localStorage.getItem(KEYS_KEY) || "{}") || {}; } catch (e) { return {}; } }
+  function keysFor(id) { var all = keyTicks(), t = all[id] || {}; return Array.isArray(t) ? {} : t; }
+  function setKeys(id, ticks) {
+    var all = keyTicks(); all[id] = ticks;
+    // Only the last few sheets are kept.
+    var ids = Object.keys(all); if (ids.length > 6) ids.slice(0, ids.length - 6).forEach(function (k) { delete all[k]; });
+    try { localStorage.setItem(KEYS_KEY, JSON.stringify(all)); } catch (e) {}
+  }
+  function keyOn() { var sh = sheet(); return !!(sh && sh.kind === "drops" && S.me && S.me.role !== "view" && (!isCards() || isBoard()) && keyModeChoice()); }
+  function keyModeChoice() { try { return localStorage.getItem(KEYMODE_KEY) === "1"; } catch (e) { return false; } }
+  function toggleKeyMode() { try { if (keyModeChoice()) localStorage.removeItem(KEYMODE_KEY); else localStorage.setItem(KEYMODE_KEY, "1"); } catch (e) {} render(); }
+  function keyFound(r) { var sh = sheet(); return !!(sh && keysFor(sh.id)[r.id]); }
+  // The row's tick box (key mode on): ticked = the key is in the cabinet.
+  function keyBox(r) { if (!keyOn()) return ""; var on = keyFound(r); return '<button type="button" class="kbox' + (on ? " on" : "") + '" data-keytick="' + r.id + '" aria-pressed="' + on + '" aria-label="Key for ' + esc(r.reg) + ' found"></button>'; }
+  // The K switch beside TO DO / ALL (DROPS only), with the count while on.
+  function renderKeyBtn() {
+    var sh = sheet(), can0 = !!(sh && sh.kind === "drops" && S.me.role !== "view" && (!isCards() || isBoard())), on = keyOn();
+    show("keyBtn", can0); document.body.classList.toggle("keymode", on);
+    if (!can0) return;
+    var t = keysFor(sh.id), cars = S.rows.filter(function (r) { return !r.cleared_at; }), n = cars.filter(function (r) { return t[r.id]; }).length;
+    $("keyBtn").classList.toggle("on", on); $("keyBtn").setAttribute("aria-pressed", on);
+    $("keyBtn").innerHTML = "<b>K</b>" + (on ? '<span class="num">' + n + "/" + cars.length + "</span>" : "");
+  }
+  function tickKey(id) {
+    var sh = sheet(); if (!sh) return;
+    var t = keysFor(sh.id); if (t[id]) delete t[id]; else t[id] = Date.now();
+    setKeys(sh.id, t); render();
+  }
+
   function renderStats() {
     var sh = sheet();
     if (!sh) return '<div class="msg">Choose a sheet first.</div>';
@@ -4820,6 +4857,8 @@
     if (t.dataset.swipestep) { setSwipeChoice(t.dataset.swipestep); render(); return openMenu(); }
     if (t.dataset.swipeleft) { setSwipeLeftChoice(t.dataset.swipeleft); render(); return openMenu(); }
     if (t.closest("[data-swipeonlyme]")) { setSwipeOnlyChoice(!swipeOnlyChoice()); render(); return openMenu(); }
+    if (t.dataset.keytick) return tickKey(t.dataset.keytick);
+    if (t.id === "keyBtn") return toggleKeyMode();
     if (t.dataset.view) return go(t.dataset.view);
     if (t.id === "menuBtn" || t.closest("#cHead")) return openMenu();
     if (t.id === "shiftBtn" || t.closest("#cShift")) return openShiftPick();

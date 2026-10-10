@@ -527,3 +527,13 @@ body:has(.deskbtn) main{padding-bottom:calc(150px + env(safe-area-inset-bottom))
 .booked-row.over small{color:var(--bad,#c0392b);font-weight:600;}
 @media (max-width:640px){.booked-row{grid-template-columns:64px 1fr 38px 54px;grid-template-areas:"day bar num note" ". flow flow flow";gap:2px 6px;}.booked-flow{text-align:left;}}
 .booked>.note{margin:10px 0 0;font-size:11px;}
+
+/* Key check (K beside TO DO / ALL): a tick box per drop, yard tags grey until the key is found. */
+.tabs .keybtn{flex:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:44px;padding:0 12px;}
+.tabs .keybtn b{font-size:14px;font-weight:800;}
+.tabs .keybtn span{font-size:11px;}
+.tabs .keybtn.on{background:#137A45;color:#fff;box-shadow:none;}
+.kbox{flex:none;width:24px;height:24px;padding:0;border:2px solid #9aa0a6;border-radius:5px;background:#fff;position:relative;}
+.kbox.on{background:#137A45;border-color:#137A45;}
+.kbox.on::after{content:"";position:absolute;left:6px;top:1px;width:6px;height:12px;border:solid #fff;border-width:0 3px 3px 0;transform:rotate(45deg);}
+html body.keymode .code.kgrey,html body.keymode select.code.pick.kgrey{background:#e8eaed!important;color:#9aa0a6!important;border-color:#dadce0!important;}
