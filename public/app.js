@@ -3317,7 +3317,7 @@
       '<div class="stats"><div class="stat"><span>Flights</span><strong class="num">' + all.length + '</strong></div><div class="stat"><span>Landed</span><strong class="num">' + n("landed") +
       '</strong></div><div class="stat"><span>Delayed or late</span><strong class="num">' + (n("delayed") + n("expected")) + '</strong></div><div class="stat"><span>Cancelled</span><strong class="num">' + n("cancelled") +
       '</strong></div></div><p class="note">Timetable last checked: ' + last("schedule") + "<br>Live positions last checked: " + last("live") + "</p>" +
-      (can("flights") ? '<div class="row-actions"><button type="button" class="btn small" data-filltimes>Fill &amp; check scheduled times</button><button type="button" class="btn small" data-checkflights>Check flights now</button></div>' : "") +
+      (can("flights") ? '<div class="row-actions"><button type="button" class="btn small" data-filltimes>Fill times · AeroData</button><button type="button" class="btn small" data-checkflights>Check flights now</button></div>' : "") +
       "</div>" + missingHtml() + manualHtml(manual) + (missingFlights().length || manual.length ? '<div class="sec">WITH FLIGHT NUMBERS</div>' : "");
     return h + (rows.length ? rows.map(function (r) {
       return '<div class="row frow' + (r.flight_status === "cancelled" || r.flight_status === "delayed" ? " late" : r.flight_status === "landed" ? " done" : "") + (r.flight_status ? " fs-" + esc(r.flight_status) : "") + '" data-id="' + r.id + '"><div class="left" data-open><div class="l1"><span class="reg">' + esc(r.flight) + '</span><span class="dn">' + esc(r.reg) + '</span><span class="pin">' + esc(nice(r.name)) + "</span></div>" +
@@ -3330,7 +3330,7 @@
     function run(src) { return (S.runs || []).filter(function (x) { return !src || x.source === src; })[0]; }
     var lastRun = run(), tt = run("schedule");
     var h = opsSub(sh) + '<div class="ops-acts ops-check"><span class="ops-dot' + (lastRun ? "" : " never") + '">' + (lastRun ? "Checked at " + esc(hhmm(lastRun.at)) : "Not checked yet") + "</span>" +
-      (can("flights") ? '<button type="button" class="btn ghost small" data-filltimes>Fill times</button><button type="button" class="btn small" data-checkflights>Check flights</button>' : "") + "</div>" +
+      (can("flights") ? '<button type="button" class="btn ghost small" data-filltimes>Fill times · AeroData</button><button type="button" class="btn small" data-checkflights>Check flights</button>' : "") + "</div>" +
       opsStrip([["Flights", all.length], ["Landed", n("landed")], ["Delayed", n("delayed") + n("expected")], ["Cancelled", n("cancelled")]]) +
       missingHtml() + manualHtml(manual);
     function mins(t) { return /^\d{2}:\d{2}$/.test(t || "") ? +t.slice(0, 2) * 60 + +t.slice(3) : null; }
@@ -3377,7 +3377,7 @@
     var sh = sheet();
     if (!sh || sh.kind !== "drops") return toast("Choose a DROPS sheet first.", true);
     if (btn) btn.disabled = true;
-    toast("Checking the timetable…");
+    toast("Checking the timetable (AeroData)…");
     try {
       var s = (await callFunction("flights", { action: "timetable", day: sh.day }, true)).schedule || {};
       var bits = [];
@@ -3397,14 +3397,14 @@
     toast("Checking flights…");
     try {
       var r = await callFunction("flights", { action: "check" }, true);
-      var bits = [], s = r.schedule || {}, l = r.live || {};
-      if (s.skipped) bits.push(s.skipped); if (l.skipped) bits.push(l.skipped);
-      if (s.filled || s.moved) bits.push((s.filled + s.moved) + " timetable times");
-      if (s.cancelled) bits.push(s.cancelled + " cancelled");
+      // Live positions only (FlightRadar24); the timetable is Fill times.
+      var bits = [], l = r.live || {};
+      if (l.skipped) bits.push(l.skipped);
       if (l.written) bits.push(l.written + " live ETAs");
-      if (l.delayed || s.expected) bits.push((l.delayed || 0) + (s.expected || 0) + " late");
-      if (s.error || l.error) bits.push("Problem: " + (s.error || l.error));
-      toast(bits.length ? bits.join(" · ") : "Checked. Nothing new: no flights due in the next 90 minutes.", !!(s.error || l.error));
+      if (l.landed) bits.push(l.landed + " landed");
+      if (l.delayed) bits.push(l.delayed + " late");
+      if (l.error) bits.push("Problem: " + l.error);
+      toast(bits.length ? bits.join(" · ") : "Checked. Nothing new: no flights due in the next 90 minutes.", !!l.error);
       S.runs = null; await loadRows(); render();
     } catch (err) { toast(err.message, true); }
     finally { if (btn) btn.disabled = false; }
@@ -4474,8 +4474,6 @@
         sel("before_min", o ? [[30, "30 min before"], [60, "1 hour before"], [90, "90 min before"], [120, "2 hours before"], [180, "3 hours before"], [240, "4 hours before"]]
           : [[30, "30 minutes before landing"], [60, "1 hour before"], [90, "90 minutes before"], [120, "2 hours before"], [180, "3 hours before"], [240, "4 hours before"]], o ? "Start watching" : "Start watching a flight") +
         sel("after_hours", [[1, "1 hour after its time"], [2, "2 hours after"], [3, "3 hours after"], [4, "4 hours after"], [5, "5 hours after"], [6, "6 hours after"]].map(function (x) { return o && x[0] === 1 ? [1, "1 hour after"] : x; }), o ? "Stop watching" : "Give up on a flight not seen") +
-        '<div class="section-label">Timetable and cancellations (AeroDataBox)</div>' +
-        sel("schedule_every_hours", [[1, "Every hour"], [2, "Every 2 hours"], [3, "Every 3 hours"], [4, "Every 4 hours"], [6, "Every 6 hours"], [12, "Every 12 hours"]], o ? "Timetable every" : "Check every") +
         // Only speaks up when the settings would run past the monthly plan.
         (perDay > 1900 ? '<div class="alert">About ' + (perDay * 30).toLocaleString("en-GB") + " FlightRadar24 credits a month: more than the 60,000 plan.</div>" : "")) +
       '<div class="row-actions"><button type="button" class="btn ghost" data-resetsettings>' + (o ? "Restore defaults" : "Back to defaults") + '</button><button type="button" class="btn brand" data-savesettings>' + (o ? "Save flight settings" : "Save") + "</button></div></div>" +

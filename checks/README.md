@@ -17,6 +17,7 @@ Run these before merging a change. Every line must say ok / PASS.
 | `booked-days.mjs` | `npm install @electric-sql/pglite` then `node booked-days.mjs` (no database needed). | Setup part 81: pasted cars-on-site totals (`set_booked_days`); the dashboard no longer uses them (part 82). |
 | `onsite-by-day.mjs` | `npm install @electric-sql/pglite` then `node onsite-by-day.mjs` (no database needed). | Setup part 82: cars on site per day (here / in / out) counted from the app's own cars. |
 | `yard-colours.mjs` | `npm install @electric-sql/pglite` then `node yard-colours.mjs` (no database needed). | Setup part 77: yard colours, owners only; Airport Parking Bay starts with MY green, GS orange, T yellow. |
+| `flight-sources.mjs` | `node checks/flight-sources.mjs` (no installs, Node 22) | The flights edge function with pretend APIs: the timer and Check flights call FlightRadar24 only; AeroData only from Fill times (once per sheet per 10 min, never on a sheet whose flights have all landed, and not for 6 h after its monthly quota runs out). |
 | `joblist.cjs` | See the top of the file; needs the sample PDFs, which hold real customer data and aren't in the repo. | Reading the booking PDFs. |
 
 `setup/09-isolation-check.sql` and `setup/11-function-isolation-check.sql` are the older isolation checks. They leave a small results table behind; drop it afterwards (`setup/39-drop-old-check-results.sql`).
