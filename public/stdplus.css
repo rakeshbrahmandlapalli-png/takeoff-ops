@@ -246,3 +246,14 @@ html.stdplus .ops-latebox summary{list-style:none;cursor:pointer;}
 html.stdplus .ops-latebox summary::-webkit-details-marker{display:none;}
 html.stdplus .ops-latebox[open] .ops-late{border-bottom-color:#f3c7c2;}
 html.stdplus .ops-latebox .dlist{border-bottom:1px solid #edf0f4;}
+
+/* Operations dashboard panels that fold (Upcoming returns, Desk activity, Cars on site). */
+html.stdplus .ops-fold>summary{list-style:none;cursor:pointer;min-height:44px;}
+html.stdplus .ops-fold>summary::-webkit-details-marker{display:none;}
+html.stdplus .ops-fold>summary:focus-visible{outline:2px solid #1765ad;outline-offset:-3px;}
+html.stdplus .ops-foldtitle{display:flex;align-items:baseline;gap:10px;min-width:0;flex:1;}
+html.stdplus .ops-foldsum{font-size:11px;color:#526174;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+html.stdplus .ops-fold[open]>summary .ops-foldsum{display:none;}
+html.stdplus .ops-chev{flex:none;width:7px;height:7px;border-right:2px solid #526174;border-bottom:2px solid #526174;transform:rotate(-45deg);transition:transform .15s;margin-left:2px;}
+html.stdplus .ops-fold[open]>summary .ops-chev{transform:rotate(45deg);}
+html.stdplus .ops-fold:not([open])>summary{border-bottom:0;}
