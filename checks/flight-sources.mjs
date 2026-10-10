@@ -87,6 +87,7 @@ globalThis.Deno = { env: { get: (k) => ({ SUPABASE_URL: "http://x", SUPABASE_SER
 await import(pathToFileURL(path.join(tmp, "index.ts")).href);
 
 const addSheet2 = () => { db.sheets.push({ id: "s2", company_id: "c1", kind: "drops", day: "2026-01-02", imported_at: iso(now) }); db.bookings.push({ ...db.bookings[0], id: "b2", sheet_id: "s2" }); };
+const addSheet3 = () => { db.sheets.push({ id: "s3", company_id: "c1", kind: "drops", day: "2026-01-03", imported_at: iso(now) }); db.bookings.push({ ...db.bookings[0], id: "b3", sheet_id: "s3" }); };
 const post = async (body) => { calls = {}; const r = await handler(new Request("http://x", { method: "POST", body: JSON.stringify(body), headers: { "x-timer": "s" } })); return { status: r.status, json: await r.json(), aero: calls["aerodatabox.p.rapidapi.com"] || 0, fr24: calls["fr24api.flightradar24.com"] || 0 }; };
 let failed = 0, passed = 0;
 const check = (name, ok, info) => { if (ok) passed++; else failed++; console.log((ok ? "ok   " : "FAIL ") + name + (ok ? "" : " " + JSON.stringify(info))); };
@@ -135,8 +136,16 @@ check("monthly quota spent: one call, no retries, the error is shown", r.aero ==
 addSheet2();
 r = await post({ action: "timetable", day: "2026-01-02" });
 check("after a spent quota: Fill times doesn't call AeroData for 6 h", r.aero === 0 && /used up/.test(r.json.schedule.skipped), r);
-db.flight_runs.forEach((x) => { x.at = iso(now - 7 * 3600e3); });
+db.flight_runs.push({ at: iso(Date.now() + 1000), company_id: "c2", source: "schedule", trigger: "button", result: { error: "" } });
+db.flight_runs.push({ at: iso(Date.now() + 2000), company_id: "c1", source: "live", trigger: "timer", result: { error: "" } });
+addSheet3(); aeroAnswer = "ok";
+r = await post({ action: "timetable", day: "2026-01-03" });
+check("after a spent quota, a later timetable run that worked (any client) means AeroData is back", r.aero === 3, r);
+fresh(); aeroAnswer = "quota"; db.bookings[0].sched_at = null;
+r = await post({ action: "timetable", day });
 aeroAnswer = "ok";
+db.flight_runs.forEach((x) => { x.at = iso(now - 7 * 3600e3); });
+addSheet2();
 r = await post({ action: "timetable", day: "2026-01-02" });
 check("6 h later Fill times tries AeroData again", r.aero === 3, r);
 

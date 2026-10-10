@@ -206,12 +206,12 @@ async function logRun(admin: SupabaseClient, c: Company, source: string, trigger
   await admin.from("flight_runs").insert({ company_id: c.id, source, trigger, result });
 }
 // The key is shared by every client: one client's spent month is everyone's.
-// The plan renews on its own date, not the 1st, so this only waits 6 h.
+// Only the latest timetable run counts (a later one that worked means the
+// allowance is back), and the plan renews on its own date, so 6 h at most.
 async function quotaGone(admin: SupabaseClient, now: Date) {
-  const since = new Date(now.getTime() - QUOTA_WAIT_H * 60 * MIN).toISOString();
-  const { data } = await admin.from("flight_runs").select("at").eq("source", "schedule").gte("at", since)
-    .ilike("result->>error", "%MONTHLY quota%").limit(1);
-  return !!data?.length;
+  const { data } = await admin.from("flight_runs").select("at, result").eq("source", "schedule")
+    .order("at", { ascending: false }).limit(1).maybeSingle();
+  return !!data && QUOTA_GONE.test(String(data.result?.error ?? "")) && minsBetween(new Date(data.at), now) < QUOTA_WAIT_H * 60;
 }
 async function lastRun(admin: SupabaseClient, c: Company, source: string) {
   const { data } = await admin.from("flight_runs").select("at").eq("company_id", c.id).eq("source", source).order("at", { ascending: false }).limit(1).maybeSingle();
