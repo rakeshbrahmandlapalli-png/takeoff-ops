@@ -91,11 +91,6 @@ function rpc(db, fn, a) {
       const yc = {}; for (const [k, v] of Object.entries(a.p_yards || {})) { if (!db.company.yards.includes(k)) throw new Error("Not a valid yard: " + k); if (+v) yc[k] = +v; }
       db.company.capacity = +a.p_total || null; db.company.yard_capacity = yc; return { capacity: db.company.capacity, yard_capacity: yc };
     }
-    case "set_booked_days": {
-      (db.bookedCalls = db.bookedCalls || []).push(a.p_days);
-      if (db.dash) { db.dash.booked = a.p_days; db.dash.booked_at = new Date().toISOString(); }
-      return { booked: a.p_days, booked_at: new Date().toISOString() };
-    }
     case "set_yard_colours": {
       const yc = {}; for (const [k, v] of Object.entries(a.p_colours || {})) { if (!db.company.yards.includes(k)) throw new Error("Not a valid yard: " + k); if (v) yc[k] = v.toUpperCase(); }
       db.company.yard_colours = yc; return { yard_colours: yc };
@@ -1594,7 +1589,7 @@ const dashData = () => {
     removed: [{ id: "r1", kind: "picks", reg: "NOSHOW1", name: "MR AWAY", removed_reason: "No show", removed_at: ago(7), by_name: "SUGU" }],
     complaints: [{ at: ago(8), reg: "MAD001", customer: "MR CROSS", staff_name: "TERRY" }],
     early: 2, changed: 3,
-    booked: (() => { const k = (n) => new Date(Date.now() + n * 86400000).toLocaleDateString("en-CA", { timeZone: "Europe/London" }); return { [k(0)]: 38, [k(1)]: 45, [k(2)]: 30 }; })(), booked_at: new Date().toISOString(),
+    onsite: (() => { const lp = new Date().toLocaleString("sv-SE", { timeZone: "Europe/London" }); const base = new Date(lp.slice(0, 10) + "T12:00:00Z"); if (lp.slice(11, 16) <= "06:00") base.setUTCDate(base.getUTCDate() - 1); return [38, 45, 30, 12].map((n, i) => ({ day: new Date(base.getTime() + i * 864e5).toISOString().slice(0, 10), here: n, in: 4 + i, out: 6 + i })); })(),
     parked: { total: 30, late: 2, late_cars: [{ reg: "LATE1", name: "Old Car", return_at: new Date(Date.now() - 2.5 * 86400000).toISOString(), yard: "NB" }, { reg: "LATE2", name: "New Car", return_at: new Date(Date.now() - 3600000).toISOString(), yard: "" }], days: [{ day: new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 8 }, { day: new Date(Date.now() + 2 * 86400000).toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 20 }],
       yards: [{ yard: "", n: 12, days: [{ day: null, n: 2 }, { day: new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 10 }] }, { yard: db0Yard, n: 18, days: [{ day: new Date(Date.now() + 2 * 86400000).toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 18 }] }] }
   };
@@ -1639,16 +1634,8 @@ for (const theme of ["", "stdplus"]) await scenario(async () => {
   const lateTxt = await page.locator("#main details.latebox, #main details.ops-latebox").first().innerText().catch(() => "");
   check("Dashboard (" + look + "): Past their return opens to list the cars by level", /LATE1/.test(lateTxt) && /LATE2/.test(lateTxt) && /2 days/.test(lateTxt) && /Less than a day/.test(lateTxt), lateTxt);
   const bookedTxt = (await page.locator("#main .booked").first().innerText().catch(() => "")).replace(/\s+/g, " ");
-  check("Dashboard (" + look + "): cars on site per day shows the pasted days", /Cars on site|Busiest/.test(bookedTxt) && /Tomorrow/.test(bookedTxt) && /45/.test(bookedTxt) && /Busiest: Tomorrow 45/.test(bookedTxt), bookedTxt);
-  const calls0 = (db.bookedCalls || []).length;
-  await page.evaluate(() => { document.querySelector("#main .booked-paste").open = true; }); await sleep(100);
-  await page.fill("#bookedText", "2026-10-10\t638\n2026-10-11\t651\n2026-10-12"); await page.click("[data-savebooked]"); await sleep(300);
-  check("Dashboard (" + look + "): a paste with a mismatch is refused, nothing saved", (db.bookedCalls || []).length === calls0 && await page.locator(".toast.bad").last().innerText().then((t) => /dates but/.test(t)).catch(() => false));
-  await page.fill("#bookedText", "2026-10-10 638\n2026-10-11 651\n10-October-2026 99"); await page.click("[data-savebooked]"); await sleep(900);
-  const saved = (db.bookedCalls || [])[calls0];
-  check("Dashboard (" + look + "): a good paste saves the days (ISO and 10-October-2026 dates)", saved && saved["2026-10-10"] === 99 && saved["2026-10-11"] === 651, saved);
-  db.dash.booked = (() => { const k = (n) => new Date(Date.now() + n * 86400000).toLocaleDateString("en-CA", { timeZone: "Europe/London" }); return { [k(0)]: 38, [k(1)]: 45, [k(2)]: 30 }; })();
-  await page.click("[data-dashreload]"); await sleep(700);
+  check("Dashboard (" + look + "): cars on site per day shows the days counted by the app", /Busiest: Tomorrow 45/.test(bookedTxt) && /Today\s*38/.test(bookedTxt) && /\+5 in · 7 out/.test(bookedTxt), bookedTxt);
+  check("Dashboard (" + look + "): no paste box, nothing to copy from another site", await page.locator("#bookedText, [data-savebooked]").count() === 0);
   const first = new Date(db.dashCalls[0]).getTime();
   check("Dashboard (" + look + "): opens on the last 7 days", Math.abs(Date.now() - first - 7 * 86400000) < 600000);
   await page.click('#main [data-dashp="30"]'); await sleep(600);
@@ -1691,6 +1678,8 @@ for (const theme of ["", "stdplus"]) await scenario(async () => {
   await page.click('#menuBody [data-view="dashboard"]'); await sleep(700);
   const parked = (await page.locator("#main .dstats .k-parked").innerText()).replace(/\s+/g, " ");
   check("Capacity (" + look + "): Parked now shows the spaces free", /30 of 40 · 10 free/.test(parked), parked);
+  const onsiteTxt = (await page.locator("#main .booked").first().innerText().catch(() => "")).replace(/\s+/g, " ");
+  check("Capacity (" + look + "): cars on site shows spaces free and over each day", /Today\s*38\s*2 free/.test(onsiteTxt) && /Tomorrow\s*45\s*5 over/.test(onsiteTxt) && await page.locator(".booked-row.over").count() === 1, onsiteTxt);
   const yard = (await page.locator("#main").innerText()).match(/NB[\s\S]{0,80}/)[0].replace(/\s+/g, " ");
   check("Capacity (" + look + "): a yard over its spaces shows red", /18 \/ 15/.test(yard) && await page.locator("#main strong.num.late").count() === 1, yard);
   if (process.env.SHOT_DIR) await page.screenshot({ path: process.env.SHOT_DIR + "/capacity-dashboard-" + look + ".png", fullPage: true });
