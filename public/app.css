@@ -509,3 +509,20 @@ body:has(.deskbtn) main{padding-bottom:calc(150px + env(safe-area-inset-bottom))
 .late-levels{display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px;}
 .late-lv{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:#fff1c2;color:#7a5200;white-space:nowrap;}
 .late-lv.lv0{background:#fff1c2;color:#7a5200;}.late-lv.lv1{background:#ffd9a8;color:#7a3b00;}.late-lv.lv2{background:#ffc2b8;color:#8a1f0f;}.late-lv.lv3{background:#f5a39b;color:#6b0f06;}
+
+/* Cars on site per day (dashboard): bar per day against capacity. */
+.booked{padding:10px 14px 14px;}
+.booked-top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted,#5b6472);margin-bottom:8px;}
+.booked-row{display:grid;grid-template-columns:78px 1fr 44px 64px;align-items:center;gap:10px;padding:5px 0;font-size:12px;}
+.booked-bar{position:relative;height:10px;border-radius:6px;background:#e9edf2;overflow:visible;}
+.booked-bar i{display:block;height:100%;border-radius:6px;background:var(--ok,#2f8f5b);}
+.booked-row.near .booked-bar i{background:var(--warn,#d98a00);}
+.booked-row.over .booked-bar i{background:var(--bad,#c0392b);}
+.booked-bar u{position:absolute;top:-3px;bottom:-3px;width:2px;background:#16181d;opacity:.55;text-decoration:none;}
+.booked-row strong{text-align:right;font-variant-numeric:tabular-nums;}
+.booked-row small{color:var(--muted,#5b6472);white-space:nowrap;}
+.booked-row.over small{color:var(--bad,#c0392b);font-weight:600;}
+.booked-paste{margin-top:10px;border-top:1px solid #e4e9ef;padding-top:8px;}
+.booked-paste summary{cursor:pointer;font-size:12px;color:#1765ad;min-height:32px;display:flex;align-items:center;}
+.booked-paste textarea{width:100%;box-sizing:border-box;font:12px/1.4 ui-monospace,Menlo,monospace;padding:8px;border:1px solid #cdd5df;border-radius:6px;margin:6px 0;}
+@media (max-width:480px){.booked-row{grid-template-columns:64px 1fr 38px 54px;gap:6px;}}
