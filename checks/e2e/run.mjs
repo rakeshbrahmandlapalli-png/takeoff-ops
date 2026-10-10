@@ -78,6 +78,13 @@ function makeDb(opts = {}) {
 const now = () => new Date().toISOString();
 function rpc(db, fn, a) {
   const row = (id) => db.bookings.find((x) => x.id === id);
+  // EARLY RETURN's night (part 75): tonight, or that day's DROPS sheet, made if missing.
+  const earlySheet = (day) => {
+    if (!day || day === TONIGHT) return "d0";
+    let sh = db.sheets.find((x) => x.kind === "drops" && x.day === day);
+    if (!sh) { sh = { id: "dx" + db.sheets.length, company_id: "c1", kind: "drops", day }; db.sheets.push(sh); }
+    return sh.id;
+  };
   switch (fn) {
     case "me": return db.me;
     case "set_capacity": {
@@ -132,8 +139,8 @@ function rpc(db, fn, a) {
     case "set_yard": { const b = row(a.p_booking); b.yard = a.p_yard; return b; }
     case "set_flight": { const b = row(a.p_booking); b.flight = a.p_flight; return b; }
     case "set_sched_time": { const b = row(a.p_booking); b.sched_time = a.p_time; return b; }
-    case "early_return": { const b = row(a.p_booking); b.moved_from = b.sheet_id; b.sheet_id = "d0"; b.early = true; b.early_at = now(); b.num = 105; return b; }
-    case "early_return_from_picks": { const p = row(a.p_picks); const n = { ...p, id: "de" + db.bookings.length, sheet_id: "d0", kind: "drops", num: 106, early: true, early_at: now(), moved_from: "d1", intake: "", called_at: null, sent_at: null, cleared_at: null }; db.bookings.push(n); return n; }
+    case "early_return": { const b = row(a.p_booking); b.moved_from = b.sheet_id; b.sheet_id = earlySheet(a.p_day); b.early = true; b.early_at = now(); b.num = 105; return b; }
+    case "early_return_from_picks": { const p = row(a.p_picks); const n = { ...p, id: "de" + db.bookings.length, sheet_id: earlySheet(a.p_day), kind: "drops", num: 106, early: true, early_at: now(), moved_from: "d1", intake: "", called_at: null, sent_at: null, cleared_at: null }; db.bookings.push(n); return n; }
     case "undo_early_return": { const b = row(a.p_booking); b.sheet_id = b.moved_from; b.moved_from = null; b.early = false; return b; }
     case "pt_link_save": {
       let l = db.ptLinks.find((x) => x.token === a.p_token);
@@ -843,6 +850,34 @@ await scenario(async () => {
   await page.selectOption("#sheetPick", "p0"); await sleep(700);
   await page.click('.row[data-id="p4"] .reg'); await sleep(300);
   check("without CALLED rights there is no EARLY RETURN on PICKS", await page.locator("[data-pearly]").count() === 0);
+});
+
+// 5c. EARLY RETURN on a night picked (part 75): booked back in 9 days, coming in 3
+await scenario(async () => {
+  const db = makeDb(); db.bookings.find((b) => b.id === "p3").intake = "Collected";
+  const page = await phone(browser, db);
+  await open(page);
+  await page.selectOption("#sheetPick", "p0"); await sleep(700);
+  await page.click('.row[data-id="p3"] .reg'); await sleep(300);
+  const box = page.locator("#earlyDay");
+  check("EARLY RETURN has a night picker starting tonight", (await box.inputValue()) === TONIGHT && (await box.getAttribute("min")) === TONIGHT);
+  check("the picker stops the night before the booked day", (await box.getAttribute("max")) === addDays(TONIGHT, 8));
+  const night = addDays(TONIGHT, 3), before = await page.locator("#earlyTo").innerText();
+  await box.fill(night); await box.dispatchEvent("change"); await sleep(200);
+  const after = await page.locator("#earlyTo").innerText();
+  check("the button names the night picked", after !== before && after.includes(String(+night.slice(8))), [before, after]);
+  await page.click("[data-pearly]"); await sleep(1500);
+  check("the night picked goes to the server", db.calls.some((c) => c.fn === "early_return_from_picks" && c.args.p_picks === "p3" && c.args.p_day === night), db.calls.filter((c) => /early/.test(c.fn)));
+  const sh = db.sheets.find((x) => x.kind === "drops" && x.day === night);
+  check("the app follows the car to that night's DROPS sheet", !!sh && (await page.locator("#sheetPick").inputValue()) === sh.id);
+  check("it shows there marked EARLY", /EARLY · booked/.test(await text(page, "#main")));
+  check("the toast names the night", (await toast(page)).includes(after.replace("EARLY RETURN · add to ", "")), await toast(page));
+  // DROPS car on a later sheet: the picker there too, tonight by default
+  await page.selectOption("#sheetPick", "d1"); await sleep(700);
+  await page.click('.row[data-id="b5"] .reg'); await sleep(300);
+  check("a DROPS car on a later sheet offers the picker, up to the night before its sheet", (await page.locator("#earlyDay").getAttribute("max")) === TONIGHT && (await page.locator("[data-early]").count()) === 1);
+  await page.click("[data-early]"); await sleep(1500);
+  check("tonight from the DROPS car sends tonight's day", db.calls.some((c) => c.fn === "early_return" && c.args.p_booking === "b5" && c.args.p_day === TONIGHT));
 });
 
 // 6. PICKS board
@@ -2137,7 +2172,7 @@ process.exit(failed ? 1 : 0);
 // ── previews (SHOTS=dir) ─────────────────────────────────────────────────
 async function shots(dir) {
   fs.mkdirSync(dir, { recursive: true });
-  const toDb = () => { const db = makeDb(); db.company.brand = { colour: "#F9A01B", ink: "#1A1A1A", short: "TakeOff", theme: process.env.SHOTS_THEME || "ops" }; return db; };
+  const toDb = () => { const db = makeDb(); db.company.brand = { colour: "#F9A01B", ink: "#1A1A1A", short: "TakeOff", theme: process.env.SHOTS_THEME || "ops" }; db.bookings.find((b) => b.id === "p3").intake = "Collected"; return db; };
   for (const width of [390, 1280]) {
     const page = await phone(browser, toDb(), { width });
     await page.setViewportSize({ width, height: width > 600 ? 900 : 844 });
@@ -2152,7 +2187,9 @@ async function shots(dir) {
     for (const v of ["settings", "staff", "dashboard"]) { if (!(await page.locator("#menu").evaluate((m) => m.open))) await page.click('#bnav [data-bn="menuBtn"]'); await sleep(200); await page.click('#menuBody [data-view="' + v + '"]'); await snap(v); if (v === "staff" && (await page.locator("#main .ops-dd summary").count())) { await page.click("#main .ops-dd summary"); await page.screenshot({ path: path.join(dir, "staff-actions-" + width + ".png") }); await page.keyboard.press("Escape"); } }
     // EARLY RETURN from a PICKS car (part 74), then the car on tonight's DROPS.
     await open(page); await pickKind(page, "picks");
-    await page.click('.row[data-id="p4"] .reg'); await sleep(300); await page.screenshot({ path: path.join(dir, "picks-early-" + width + ".png") });
+    await page.click('.row[data-id="p3"] .reg'); await sleep(300);
+    const night = addDays(TONIGHT, 3); await page.locator("#earlyDay").fill(night); await page.locator("#earlyDay").dispatchEvent("change"); await sleep(200);
+    await page.locator("#earlyTo").scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(dir, "picks-early-" + width + ".png") });
     await page.click("[data-pearly]"); await sleep(1500); await snap("drops-early");
     await page.context().close();
   }

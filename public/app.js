@@ -2401,51 +2401,66 @@
     return firstPhone(p) || String(p);
   }
   // ── early returns (database part 29) ──
-  // Booked back on a later day but coming back tonight: the car moves onto the
-  // sheet for the shift running now, marked EARLY. Undo puts it back.
+  // Booked back on a later day but coming back early: the car moves onto the
+  // DROPS sheet for the night picked (tonight unless changed; part 75), marked
+  // EARLY. Undo puts it back.
   function canEarly(r) {
     if (r.kind !== "drops" || r.early || r.cleared_at || !can("called")) return false;
     var here = S.sheets.filter(function (x) { return x.id === r.sheet_id; })[0];
     return !!here && here.day > currentShiftKey();
   }
+  // The night they're coming: tonight up to the night before the booked day.
+  function earlyPickHtml(before, attr) {
+    var today = currentShiftKey(), last = addDaysKey(before, -1);
+    return fld('<label for="earlyDay">' + L("COMING BACK") + '</label><input id="earlyDay" type="date" value="' + today + '" min="' + today + '" max="' + last + '">', true) +
+      '<button type="button" id="earlyTo" class="btn ghost ptgo" ' + attr + ">" + earlyLabel(today) + "</button>";
+  }
+  function earlyLabel(day) { return "EARLY RETURN · add to " + esc(sheetLabel({ kind: "drops", day: day })); }
+  function earlyDay() {
+    var el = $("earlyDay"), today = currentShiftKey();
+    return el && /^\d{4}-\d{2}-\d{2}$/.test(el.value) && el.value > today ? el.value : today;
+  }
+  function earlyWhen(day) { return day === currentShiftKey() ? "tonight's sheet" : sheetLabel({ kind: "drops", day: day }); }
   function earlyHtml(r) {
     if (!can("called") || r.cleared_at) return "";
-    var today = currentShiftKey();
     if (r.early) {
       var from = S.sheets.filter(function (x) { return x.id === r.moved_from; })[0];
       return '<button type="button" class="link" data-undoearly>Undo early return' + (from ? " (back to " + esc(sheetLabel(from)) + ")" : "") + "</button>";
     }
     if (!canEarly(r)) return "";
-    return '<button type="button" class="btn ghost ptgo" data-early>EARLY RETURN · move to ' + esc(sheetLabel({ kind: "drops", day: today })) + "</button>";
+    var here = S.sheets.filter(function (x) { return x.id === r.sheet_id; })[0];
+    return earlyPickHtml(here.day, "data-early");
   }
   async function earlyMove(r, btn, undo, asked) {
-    if (!undo && !asked && !confirm("Move " + (r.reg || "this car") + " to tonight's sheet as an early return?")) return;
+    var day = asked ? currentShiftKey() : earlyDay();
+    if (!undo && !asked && !confirm("Move " + (r.reg || "this car") + " to " + earlyWhen(day) + " as an early return?")) return;
     btn.disabled = true;
-    var x = await sb.rpc(undo ? "undo_early_return" : "early_return", { p_booking: r.id });
+    var x = await sb.rpc(undo ? "undo_early_return" : "early_return", undo || asked ? { p_booking: r.id } : { p_booking: r.id, p_day: day });
     btn.disabled = false;
     if (x.error) return toast(x.error.message, true);
     $("panel").close();
     // Follow the car to the sheet it's on now.
     S.sheetId = x.data.sheet_id; S.q = ""; S.yardFilter = "";
     await loadSheets(); await loadRows(); flashId = x.data.id; render();
-    toast((r.reg || "Car") + (undo ? " is back on its booked day." : " moved to tonight's sheet as an early return."));
+    toast((r.reg || "Car") + (undo ? " is back on its booked day." : " moved to " + earlyWhen(day) + " as an early return."));
   }
-  // From the PICKS car (database part 74): its booked day's DROPS sheet may not
-  // be imported yet, so this makes its DROPS car on tonight's sheet, marked EARLY.
+  // From the PICKS car (parts 74, 75): its booked day's DROPS sheet may not be
+  // imported yet, so this makes its DROPS car on the night picked, marked EARLY.
   function pickEarlyHtml(r) {
     if (r.kind !== "picks" || r.intake !== "Collected" || !can("called") || !(returnDay(r) > currentShiftKey())) return "";
-    return '<button type="button" class="btn ghost ptgo" data-pearly>EARLY RETURN · add to ' + esc(sheetLabel({ kind: "drops", day: currentShiftKey() })) + "</button>";
+    return earlyPickHtml(returnDay(r), "data-pearly");
   }
   async function earlyFromPicks(r, btn) {
-    if (!confirm((r.reg || "This car") + " is booked back " + dayShort(r.return_at) + " " + hhmm(r.return_at) + ". Coming back early?\n\nOK adds it to tonight's DROPS sheet as an early return.")) return;
+    var day = earlyDay();
+    if (!confirm((r.reg || "This car") + " is booked back " + dayShort(r.return_at) + " " + hhmm(r.return_at) + ". Coming back early?\n\nOK adds it to " + earlyWhen(day) + " as an early return.")) return;
     btn.disabled = true;
-    var x = await sb.rpc("early_return_from_picks", { p_picks: r.id });
+    var x = await sb.rpc("early_return_from_picks", { p_picks: r.id, p_day: day });
     btn.disabled = false;
     if (x.error) return toast(x.error.message, true);
     $("panel").close();
     S.sheetId = x.data.sheet_id; S.q = ""; S.yardFilter = "";
     await loadSheets(); await loadRows(); flashId = x.data.id; render();
-    toast((r.reg || "Car") + " added to tonight's DROPS as an early return.");
+    toast((r.reg || "Car") + " added to " + earlyWhen(day) + " as an early return.");
   }
   function canReturn(r) { return can("import") && r.kind === "drops" && !r.early && !r.cleared_at; }
   function openPanel(r) {
@@ -2532,7 +2547,7 @@
   // other looks get exactly what they had.
   var OPS_LABEL = { NAME: "Customer name", CAR: "Car", REF: "Booking reference", MEET: "Meet", BACK: "Back", FLIGHT: "Flight", ARRIVAL: "Arrival", SENT: "Sent", CALLED: "Called", OVERSTAY: "Overstay", CLEAR: "Clear", COMPLAINT: "Complaint",
     "DROP-OFF": "Drop-off", REG: "Registration", "BACK DATE AND TIME": "Return date and time", YARD: "Yard", LOCATION: "Location", "FLIGHT NUMBER": "Flight number", "COLLECTION TIME": "Collection time",
-    "SCHEDULED LANDING": "Scheduled landing", NOTE: "Note", "MARK AS": "Mark as", STEPS: "Steps" };
+    "SCHEDULED LANDING": "Scheduled landing", "COMING BACK": "Coming back", NOTE: "Note", "MARK AS": "Mark as", STEPS: "Steps" };
   function L(t) { return isOps() && OPS_LABEL[t] || t; }
   function opsSec(t) { return isOps() ? '<div class="ops-psec">' + esc(t) + "</div>" : ""; }
   function fld(html, wide) { return isOps() ? '<div class="ops-f' + (wide ? " wide" : "") + '">' + html + "</div>" : html; }
@@ -4714,6 +4729,7 @@
     if (e.target.id === "q") { S.q = e.target.value; show("qClear", !!S.q); searchOtherDays(); setMain(renderBoard(), "board"); }
   });
   document.addEventListener("change", async function (e) {
+    if (e.target.id === "earlyDay" && $("earlyTo")) { $("earlyTo").innerHTML = earlyLabel(earlyDay()); return; }
     var t = e.target;
     if (t.id === "sheetPick") { S.sheetId = t.value; S.q = ""; S.other = null; S.yardFilter = ""; S.catFilter = ""; S.view = "board"; S.runs = null; await loadRows(); render(); window.scrollTo(0, 0); return; }
     if (t.dataset.yard !== undefined) {
