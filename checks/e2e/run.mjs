@@ -159,7 +159,7 @@ function rpc(db, fn, a) {
     case "set_flight": { const b = row(a.p_booking); b.flight = a.p_flight; return b; }
     case "set_pick_flight": { const b = row(a.p_booking); b.flight = a.p_flight; return b; }
     case "set_pick_return": { const b = row(a.p_booking); b.return_at = new Date(a.p_return_local.replace(" ", "T") + ":00+01:00").toISOString(); return b; }
-    case "set_sched_time": { const b = row(a.p_booking); b.sched_time = a.p_time; return b; }
+    case "set_sched_time": { const b = row(a.p_booking); b.sched_time = a.p_time; return db.schedEcho === false ? null : b; }
     case "early_return": { const b = row(a.p_booking); b.moved_from = b.sheet_id; b.sheet_id = earlySheet(a.p_day); b.early = true; b.early_at = now(); b.num = 105; return b; }
     case "early_return_from_picks": { const p = row(a.p_picks); const n = { ...p, id: "de" + db.bookings.length, sheet_id: earlySheet(a.p_day), kind: "drops", num: 106, early: true, early_at: now(), moved_from: "d1", intake: "", called_at: null, sent_at: null, cleared_at: null }; db.bookings.push(n); return n; }
     case "undo_early_return": { const b = row(a.p_booking); b.sheet_id = b.moved_from; b.moved_from = null; b.early = false; return b; }
@@ -837,6 +837,21 @@ await scenario(async () => {
   await page.click("[data-close]").catch(() => {}); await sleep(200);
   await page.click('.row[data-id="b1"] .reg'); await sleep(300);
   check("no sideways scrolling in the car panel", await noSideScroll(page));
+});
+
+// 4b. a typed landing time after midnight goes to the end of the night
+await scenario(async () => {
+  const db = makeDb();
+  db.bookings.find((b) => b.id === "b1").return_at = iso(TONIGHT, "12:00");
+  db.schedEcho = false;   // the board keeps the time the app worked out (the database does the same, part 83)
+  const page = await phone(browser, db);
+  await open(page);
+  await page.click("#tabAll"); await sleep(200);
+  await page.click('.row[data-id="b1"] .reg'); await sleep(300);
+  await page.fill("#schedText", "00:22"); await page.click("[data-savepanel]"); await sleep(500);
+  const order = await page.locator('#main .row[data-id^="b"]').evaluateAll((els) => els.map((e) => e.dataset.id));
+  check("00:22 typed on a car booked for 12:00 sorts after the late-evening cars", order[order.length - 1] === "b1" && order.indexOf("b2") < order.indexOf("b1"), order);
+  check("and shows 00:22 on the row", /00:22/.test(await text(page, '.row[data-id="b1"]')));
 });
 
 // 5. early return

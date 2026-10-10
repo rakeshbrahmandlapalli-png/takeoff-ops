@@ -3224,7 +3224,18 @@
     if (!base) return null;
     var booked = hhmm(base), diff = (+time.slice(0, 2) * 60 + +time.slice(3)) - (+booked.slice(0, 2) * 60 + +booked.slice(3));
     if (diff < -720) diff += 1440; if (diff > 720) diff -= 1440;
-    return new Date(new Date(base).getTime() + diff * 60000).toISOString();
+    var t = new Date(base).getTime() + diff * 60000;
+    // Over 6 h from the booking and outside the sheet's night (06:00 to 06:00):
+    // the same time on the other day is the one meant. 00:22 typed on a car
+    // booked for 12:00 is tonight's 00:22, not last night's (part 83).
+    var sh = S.sheets.concat(S.archiveSheet ? [S.archiveSheet] : []).filter(function (s) { return s.id === r.sheet_id; })[0];
+    if (sh && sh.kind === "drops" && Math.abs(diff) > 360) {
+      var end = ((S.company && S.company.drops_day_end) || "06:00").slice(0, 5);
+      var w0 = new Date(londonIso(sh.day + " " + end)).getTime(), w1 = new Date(londonIso(addDaysKey(sh.day, 1) + " " + end)).getTime();
+      var inNight = function (x) { return x >= w0 && x < w1; };
+      if (!inNight(t)) { if (inNight(t + 864e5)) t += 864e5; else if (inNight(t - 864e5)) t -= 864e5; }
+    }
+    return new Date(t).toISOString();
   }
   // sched: the scheduled landing time typed by hand (HH:MM, "" clears it),
   // for when the flights check can't find the flight.
