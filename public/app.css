@@ -496,3 +496,9 @@ body:has(.deskbtn) main{padding-bottom:calc(150px + env(safe-area-inset-bottom))
 
 /* The enterprise heading belongs to Standard with features only. */
 .dash-heading{display:none;}
+/* Settings → Yard colours (database part 77) */
+.ycols{display:grid;gap:8px;margin:10px 0 4px;}
+.ycol{display:flex;align-items:center;gap:12px;}
+.ycol .code{min-width:52px;text-align:center;font-size:12px;padding:4px 6px;}
+.ycol input[type=color]{width:52px;height:34px;padding:2px;border:1px solid #c4c7cc;border-radius:6px;background:#fff;cursor:pointer;}
+.ycol input[data-off]{opacity:.45;}

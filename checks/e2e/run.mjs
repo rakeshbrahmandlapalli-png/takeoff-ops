@@ -91,6 +91,10 @@ function rpc(db, fn, a) {
       const yc = {}; for (const [k, v] of Object.entries(a.p_yards || {})) { if (!db.company.yards.includes(k)) throw new Error("Not a valid yard: " + k); if (+v) yc[k] = +v; }
       db.company.capacity = +a.p_total || null; db.company.yard_capacity = yc; return { capacity: db.company.capacity, yard_capacity: yc };
     }
+    case "set_yard_colours": {
+      const yc = {}; for (const [k, v] of Object.entries(a.p_colours || {})) { if (!db.company.yards.includes(k)) throw new Error("Not a valid yard: " + k); if (v) yc[k] = v.toUpperCase(); }
+      db.company.yard_colours = yc; return { yard_colours: yc };
+    }
     case "set_swipe_only": db.company.swipe_only = !!a.p_on; return !!a.p_on;
     case "admin_clients": return [{ id: "c1", name: "TAKEOFF", slug: "takeoff", yards: ["NB", "S"], brand: { colour: "#F59E0B", host: "takeoff-ops.vercel.app" }, staff: 14, has_owner: true, sheets_7d: 18, cars_7d: 2074, last_activity: now() }];
     case "admin_usage": return { db_bytes: 25709715, store_bytes: 0, store_files: 0, clients: [{ id: "c1", name: "TAKEOFF", cars_30d: 2074, sheets_30d: 18, pt_sets_30d: 134, pt_photos_30d: 4277, fr24_calls_30d: 209, fr24_calls_today: 46, timetable_runs_30d: 148, timetable_last_ok: now(), timetable_last_error: "", activity_30d: 5805 }] };
@@ -1786,6 +1790,62 @@ for (const role of ["owner", "manager"]) await scenario(async () => {
   await page.click("#menuBtn"); await sleep(300); await page.click('#menuBody [data-view="board"]').catch(() => {}); await sleep(300);
 });
 
+// 18a3d3. Yard colours (companies.yard_colours, database part 77): each yard's tag on DROPS, the PICKS location button and the car's yard buttons
+const YC = { MY: "#2E7D32", GS: "#EF6C00", T: "#FBC02D" };
+const rgb = (h) => "rgb(" + [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(", ") + ")";
+for (const theme of ["", "stdplus", "ops", "premium", "board", "cards", "pro"]) await scenario(async () => {
+  const db = apbDb(theme || "standard"); if (!theme) db.company.brand = { ...db.company.brand, theme: undefined };
+  db.company.brand = { ...db.company.brand, picks_yard: true }; db.company.yard_colours = YC;
+  const sid = db.bookings[0].sheet_id, drops = db.bookings.filter((x) => x.kind === "drops" && x.sheet_id === sid);
+  drops[0].yard = "MY"; drops[1].yard = "GS"; if (drops[2]) drops[2].yard = "T";
+  const page = await phone(browser, db);
+  await open(page); await sleep(300);
+  const look = theme || "standard";
+  const bg = (sel) => page.locator(sel).first().evaluate((e) => getComputedStyle(e).backgroundColor);
+  await page.waitForSelector('.row[data-id="' + drops[0].id + '"] .code');
+  check("Yard colours (" + look + "): MY's tag on DROPS is green", await bg('.row[data-id="' + drops[0].id + '"] .code') === rgb(YC.MY));
+  check("Yard colours (" + look + "): GS's tag on DROPS is orange", await bg('.row[data-id="' + drops[1].id + '"] .code') === rgb(YC.GS));
+  if (drops[2]) check("Yard colours (" + look + "): T's tag on DROPS is yellow, with dark text", await bg('.row[data-id="' + drops[2].id + '"] .code') === rgb(YC.T)
+    && await page.locator('.row[data-id="' + drops[2].id + '"] .code').evaluate((e) => getComputedStyle(e).color) === "rgb(31, 26, 0)");
+  await page.click('.row[data-id="' + drops[0].id + '"] .reg'); await page.waitForSelector("#panel[open]");
+  check("Yard colours (" + look + "): the car's chosen yard button is green", await bg('#panelBody [data-setyard="MY"]') === rgb(YC.MY));
+  await page.click("#panelBody [data-close]"); await sleep(300);
+  if (await page.locator("#kindBar [data-kind=picks]:visible").count()) await page.click("#kindBar [data-kind=picks]"); else if (await page.locator("#kindSeg:not(.hidden)").count()) await page.click("#kindSeg [data-kind=picks]"); else await page.selectOption("#sheetPick", "p0");
+  await page.waitForSelector('.row[data-id="p1"] .pyard');
+  await page.selectOption('.row[data-id="p1"] .pyard select', "GS"); await sleep(500);
+  check("Yard colours (" + look + "): the PICKS location button is orange for GS", await bg('.row[data-id="p1"] .pyard.on') === rgb(YC.GS));
+});
+await scenario(async () => {
+  const db = apbDb("ops"), plain = apbDb("ops");
+  const sid = db.bookings[0].sheet_id, d0 = db.bookings.filter((x) => x.kind === "drops" && x.sheet_id === sid)[0];
+  d0.yard = "T"; plain.bookings.find((x) => x.id === d0.id).yard = "T";
+  db.company.yard_colours = { MY: "#2E7D32" };
+  const a = await phone(browser, db), b = await phone(browser, plain);
+  await open(a); await open(b); await sleep(300);
+  const sel = '.row[data-id="' + d0.id + '"] .code';
+  await a.waitForSelector(sel); await b.waitForSelector(sel);
+  const st = (p) => p.locator(sel).evaluate((e) => { const c = getComputedStyle(e); return c.backgroundColor + c.color; });
+  check("Yard colours: a yard with no colour keeps the look's own", await st(a) === await st(b));
+});
+// Yard colours in Settings: owners only.
+for (const role of ["owner", "manager"]) await scenario(async () => {
+  const db = apbDb("ops"); db.me = { ...db.me, role }; db.company.yard_colours = { MY: "#2E7D32" };
+  if (role === "manager") db.perms = Object.fromEntries(["sent", "called", "clear", "yard", "summary", "log", "flights", "rtc", "picksinfo", "import", "staff", "note", "intake", "settings"].map((k) => [k, true]));
+  const page = await phone(browser, db);
+  await open(page); await sleep(300);
+  await page.click("#menuBtn"); await sleep(300); await page.click('#menuBody [data-view="settings"]'); await sleep(400);
+  if (role === "manager") return check("Yard colours settings: a manager doesn't get them", await page.locator("[data-saveycol]").count() === 0 && await page.locator("[data-savecap]").count() === 1);
+  check("Yard colours settings: the owner gets a colour per yard", await page.locator("[data-ycol]").count() === 3 && await page.inputValue('[data-ycol="MY"]') === "#2e7d32");
+  await page.locator('[data-ycol="GS"]').evaluate((e) => { e.value = "#ef6c00"; e.dispatchEvent(new Event("input", { bubbles: true })); });
+  check("Yard colours settings: the tag shows the colour as it's chosen", await page.locator('.ycol:has([data-ycol="GS"]) .code').evaluate((e) => getComputedStyle(e).backgroundColor) === rgb("#EF6C00"));
+  await page.click('[data-ycoff="MY"]');
+  await page.click("[data-saveycol]"); await sleep(500);
+  const c = db.calls.filter((x) => x.fn === "set_yard_colours").pop();
+  check("Yard colours settings: saving sends each yard's colour, blank for none", c && c.args.p_colours.GS === "#ef6c00" && c.args.p_colours.MY === "" && c.args.p_colours.T === "", c);
+  check("Yard colours settings: saved colours apply at once", await page.locator('.ycol:has([data-ycol="GS"]) .code').evaluate((e) => getComputedStyle(e).backgroundColor) === rgb("#EF6C00")
+    && await page.locator('[data-ycol="MY"][data-off]').count() === 1);
+});
+
 // 18a3e. PICKS: a new booking at the desk, with a photo of the docket (database part 69)
 for (const [theme, role] of [["", "office"], ["stdplus", "terminal"]]) await scenario(async () => {
   const db = theme ? apbDb(theme) : makeDb(); db.me = { ...db.me, role }; db.company.brand = { ...db.company.brand, picks_yard: true };
@@ -2276,6 +2336,25 @@ async function shots(dir) {
     await car("b2", "exit-car-due"); await car("b3", "exit-car-paid"); await car("b1", "exit-car-free");
     await page.click("#bnav [data-bn=menuBtn]"); await sleep(300); await page.click('#menuBody [data-view="settings"]'); await sleep(400);
     await page.locator("[data-saveexit]").scrollIntoViewIfNeeded(); await sleep(300); await page.screenshot({ path: path.join(dir, "exit-settings.png") });
+    await page.context().close();
+    return;
+  }
+  // SHOTS_ONLY=yards: yard colours on Airport Parking Bay's look (part 77).
+  if (process.env.SHOTS_ONLY === "yards") {
+    const d = makeDb(); d.company = { ...d.company, name: "Airport Parking Bay", slug: "airport-parking-bay", yards: ["GS", "MY", "T"], yard_colours: { MY: "#2E7D32", GS: "#EF6C00", T: "#FBC02D" },
+      brand: { colour: "#1560BD", ink: "#FFFFFF", soft: "#E8F0FB", text: "#0E3F7E", short: "Parking Bay", theme: process.env.SHOTS_THEME || "ops", chrome: "#0E3F7E", mark: "P", picks_yard: true } };
+    const ys = ["MY", "GS", "T", "MY", "GS", "MY"];
+    d.bookings.filter((x) => x.kind === "drops").forEach((x, i) => { x.yard = ys[i % ys.length]; });
+    d.bookings.filter((x) => x.kind === "picks").forEach((x, i) => { if (i < 4) { x.intake = "Collected"; x.yard = ys[i]; } });
+    const page = await phone(browser, d, { width: 390 });
+    const snap = async (name) => { await sleep(400); await page.screenshot({ path: path.join(dir, name + ".png") }); };
+    await open(page); await snap("yards-drops");
+    await page.click('.row[data-id="b1"] .reg'); await sleep(500); await page.locator("#panelBody [data-setyard]").first().scrollIntoViewIfNeeded(); await snap("yards-car");
+    await page.click("#panelBody [data-close]"); await sleep(300);
+    if (await page.locator("#kindBar [data-kind=picks]:visible").count()) await page.click("#kindBar [data-kind=picks]"); else if (await page.locator("#kindSeg:not(.hidden)").count()) await page.click("#kindSeg [data-kind=picks]"); else await page.selectOption("#sheetPick", "p0");
+    await snap("yards-picks");
+    await page.click("#bnav [data-bn=menuBtn]"); await sleep(300); await page.click('#menuBody [data-view="settings"]'); await sleep(400);
+    await page.locator("[data-saveycol]").scrollIntoViewIfNeeded(); await snap("yards-settings");
     await page.context().close();
     return;
   }
