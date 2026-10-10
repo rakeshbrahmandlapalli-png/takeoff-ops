@@ -3679,6 +3679,7 @@
   }
   function applyBrand(co) {
     var b = (co && co.brand) || {};
+    applyYardColours(co);
     // Remembered on this phone so the NEXT sign-in screen already wears the
     // right name and colour. Without it an Airport Parking Bay driver opens
     // their app and is greeted by another company.
@@ -4003,6 +4004,23 @@
     var ch = function (x, y) { return Math.round(x + (y - x) * amt); };
     var r = ch(a >> 16 & 255, b >> 16 & 255), g = ch(a >> 8 & 255, b >> 8 & 255), bl = ch(a & 255, b & 255);
     return "#" + ((1 << 24) + (r << 16) + (g << 8) + bl).toString(16).slice(1).toUpperCase();
+  }
+  // Yard colours (Settings, owners only, database part 77): each yard's tag,
+  // PICKS location button and car-panel yard button filled with its colour.
+  // A yard with no colour keeps the look's own.
+  function yardColour(y) { var c = ((S.company && S.company.yard_colours) || {})[y]; return /^#[0-9A-Fa-f]{6}$/.test(c || "") ? c.toUpperCase() : ""; }
+  function applyYardColours(co) {
+    var yc = (co && co.yard_colours) || {}, css = "";
+    Object.keys(yc).forEach(function (y) {
+      var c = yc[y];
+      if (!/^[A-Za-z0-9_-]+$/.test(y) || !/^#[0-9A-Fa-f]{6}$/.test(c || "")) return;
+      var ink = lightColour(c) ? "#1F1A00" : "#FFFFFF", line = hexMix(c, "#000000", 0.15);
+      css += "html body .code." + y + ",html body select.code.pick." + y + ",html body .acts .pyard.on.y-" + y + ",html body .pseg.yard button.on.y-" + y +
+        "{background:" + c + ";border-color:" + line + ";color:" + ink + ";}";
+    });
+    var el = document.getElementById("yardColours");
+    if (!el) { el = document.createElement("style"); el.id = "yardColours"; document.head.appendChild(el); }
+    el.textContent = css;
   }
   function lightColour(hex) { var n = parseInt(hex.slice(1), 16); return (0.299 * (n >> 16 & 255) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) > 160; }
   function openClient(id) {
@@ -4382,7 +4400,7 @@
         // Only speaks up when the settings would run past the monthly plan.
         (perDay > 1900 ? '<div class="alert">About ' + (perDay * 30).toLocaleString("en-GB") + " FlightRadar24 credits a month: more than the 60,000 plan.</div>" : "")) +
       '<div class="row-actions"><button type="button" class="btn ghost" data-resetsettings>' + (o ? "Restore defaults" : "Back to defaults") + '</button><button type="button" class="btn brand" data-savesettings>' + (o ? "Save flight settings" : "Save") + "</button></div></div>" +
-      discordHtml() + ptNumberHtml() + overstayRateHtml() + exitFeeHtml() + backupHtml();
+      discordHtml() + ptNumberHtml() + overstayRateHtml() + yardColoursHtml() + exitFeeHtml() + backupHtml();
   }
   // A settings box's title; Operations adds what it's set to on the right.
   function boxTitle(t, aside) { return "<strong>" + esc(t) + (isOps() && aside ? "<small>" + esc(aside) + "</small>" : "") + "</strong>"; }
@@ -4416,6 +4434,29 @@
       '<p class="note">Booked back before ' + esc(((S.company.drops_day_end) || "06:00").slice(0, 5)) + ": free until 12:00 that day, then one day's rate and one more every midnight. Booked back later: free until " + esc(((S.company.drops_day_end) || "06:00").slice(0, 5)) + " the next morning, then one day's rate and one more every morning at that time. 0 switches charging off." + (rate ? " Now: <b>" + money(rate) + " a day</b>." : " Now: <b>off</b>.") + "</p>" +
       '<label class="field">Daily rate (£)<input id="ovRate" type="number" inputmode="decimal" min="0" step="0.5" value="' + rate + '"></label>' +
       '<div class="row-actions"><button type="button" class="btn brand" data-saverate>Save rate</button></div></div>';
+  }
+  // Yard colours (database part 77): owners only.
+  function yardColoursHtml() {
+    var ys = (S.company && S.company.yards) || [];
+    if (!S.me || S.me.role !== "owner" || !ys.length) return "";
+    var set = ys.filter(function (y) { return yardColour(y); }).length;
+    return '<div class="box" style="padding:14px;margin-top:14px;max-width:560px">' + boxTitle("Yard colours", set ? set + " of " + ys.length + " set" : "Not set") +
+      '<div class="ycols">' + ys.map(function (y) {
+        var c = yardColour(y);
+        return '<div class="ycol"><span class="code ' + esc(y) + '">' + esc(YARD_LABEL[y] || y) + '</span><input type="color" data-ycol="' + esc(y) + '" aria-label="Colour for ' + esc(YARD_LABEL[y] || y) + '" value="' + (c || "#9AA0A6") + '"' + (c ? "" : " data-off") + '>' +
+          (c ? '<button type="button" class="link" data-ycoff="' + esc(y) + '">No colour</button>' : '<span class="note">Not set</span>') + "</div>";
+      }).join("") + "</div>" +
+      '<div class="row-actions"><button type="button" class="btn brand" data-saveycol>Save colours</button></div></div>';
+  }
+  async function saveYardColours(btn) {
+    var cols = {};
+    document.querySelectorAll("[data-ycol]").forEach(function (i) { cols[i.dataset.ycol] = i.hasAttribute("data-off") ? "" : i.value; });
+    btn.disabled = true;
+    var r = await sb.rpc("set_yard_colours", { p_colours: cols });
+    btn.disabled = false;
+    if (r.error) return toast(r.error.message, true);
+    S.company.yard_colours = r.data.yard_colours || {}; applyYardColours(S.company);
+    toast("Saved: yard colours"); render();
   }
   // Exit fee (database part 76): owners only.
   function exitFeeHtml() {
@@ -4713,6 +4754,8 @@
     if (t.dataset.backup !== undefined) return downloadBackup(t);
     if (t.dataset.saverate !== undefined) return saveOverstayRate(t);
     if (t.dataset.saveexit !== undefined) return saveExitFee(t);
+    if (t.dataset.saveycol !== undefined) return saveYardColours(t);
+    if (t.dataset.ycoff) { var yi = document.querySelector('[data-ycol="' + t.dataset.ycoff + '"]'); if (yi) { yi.setAttribute("data-off", ""); var yt = yi.parentNode.querySelector(".code"); if (yt) yt.removeAttribute("style"); } t.outerHTML = '<span class="note">Not set</span>'; return; }
     if (t.dataset.savecap !== undefined) return saveCapacity(t);
     if (t.dataset.swipestep) { setSwipeChoice(t.dataset.swipestep); render(); return openMenu(); }
     if (t.dataset.swipeleft) { setSwipeLeftChoice(t.dataset.swipeleft); render(); return openMenu(); }
@@ -4846,6 +4889,14 @@
   });
   document.addEventListener("input", function (e) {
     if (e.target.id === "q") { S.q = e.target.value; show("qClear", !!S.q); searchOtherDays(); setMain(renderBoard(), "board"); }
+    // Yard colours: the tag beside the picker shows the colour as it's chosen.
+    var yc = e.target.dataset && e.target.dataset.ycol;
+    if (yc) {
+      e.target.removeAttribute("data-off");
+      var tag = e.target.parentNode.querySelector(".code"), v = e.target.value;
+      if (tag) { tag.style.background = v; tag.style.borderColor = hexMix(v, "#000000", 0.15); tag.style.color = lightColour(v) ? "#1F1A00" : "#FFFFFF"; }
+      var nt = e.target.parentNode.querySelector(".note"); if (nt) nt.outerHTML = '<button type="button" class="link" data-ycoff="' + esc(yc) + '">No colour</button>';
+    }
   });
   document.addEventListener("change", async function (e) {
     if (e.target.id === "earlyDay" && $("earlyTo")) { $("earlyTo").innerHTML = earlyLabel(earlyDay()); return; }

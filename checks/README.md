@@ -12,6 +12,7 @@ Run these before merging a change. Every line must say ok / PASS.
 | `desk-booking.mjs` | `npm install @electric-sql/pglite` then `node desk-booking.mjs` (no database needed). | Setup part 69: desk bookings on PICKS and docket photos (kept 90 days). |
 | `carry-from-picks.mjs` | `npm install @electric-sql/pglite` then `node carry-from-picks.mjs` (no database needed). | Setup part 68: the PICKS yard, note and £ carried to the DROPS car. |
 | `drops-yard-to-picks.mjs` | `npm install @electric-sql/pglite` then `node drops-yard-to-picks.mjs` (no database needed). | Setup part 73: the dashboard counts a car under its DROPS yard when PICKS has none; a DROPS yard fills in an empty PICKS location. |
+| `yard-colours.mjs` | `npm install @electric-sql/pglite` then `node yard-colours.mjs` (no database needed). | Setup part 77: yard colours, owners only; Airport Parking Bay starts with MY green, GS orange, T yellow. |
 | `joblist.cjs` | See the top of the file; needs the sample PDFs, which hold real customer data and aren't in the repo. | Reading the booking PDFs. |
 
 `setup/09-isolation-check.sql` and `setup/11-function-isolation-check.sql` are the older isolation checks. They leave a small results table behind; drop it afterwards (`setup/39-drop-old-check-results.sql`).
