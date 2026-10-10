@@ -2222,44 +2222,38 @@ await scenario(async () => {
 });
 
 
-// 22. Key check (Menu → Key check): tick each car whose key is in the cabinet
+// 22. Key check (K beside TO DO / ALL): a tick box per drop, yard tags grey until the key is found
 for (const theme of ["ops", ""]) await scenario(async () => {
   const name = "Key check (" + (theme || "Standard") + "): ";
   const page = await phone(browser, keysDb(theme), { width: 360 });
   await open(page);
-  const menu = async () => { await page.evaluate(() => document.getElementById("menuBtn").click()); await sleep(300); };
-  await menu();
-  check(name + "Menu has Key check on a DROPS sheet", await page.locator('#menuBody [data-view="keys"]').count() === 1);
-  await page.click('#menuBody [data-view="keys"]'); await sleep(300);
-  const groups = await page.locator(".kc-group > header .code").allInnerTexts();
-  check(name + "NO YARD first, then the yards in the tally's order", groups.join(",") === "NO YARD,NB,S YARD,CP,NY", groups);
-  check(name + "every car still on site is listed, a CLEAR car is not", await page.locator(".kc-row").count() === 17 && !(await page.locator('[data-keytick="k99"]').count()));
-  check(name + "a yard's cars in running order", (await page.locator(".kc-group").nth(1).locator(".kc-reg").allInnerTexts()).join(",") === "AF75VWM,YK71ZNM,BD68KLO");
-  check(name + "counts start at 0 of 17", /0\/17/.test(await text(page, ".kc-count")) && /17/.test(await text(page, ".kc-miss")));
-  await page.click('[data-keytick="k12"]'); await page.click('[data-keytick="k13"]'); await page.click('[data-keytick="k15"]'); await sleep(200);
-  check(name + "ticked cars leave To find", !(await page.locator('[data-keytick="k12"]').count()) && /2\/17/.test(await text(page, ".kc-count")) === false && /3\/17/.test(await text(page, ".kc-count")));
-  check(name + "a yard with every key found says so", /3 \/ 3/.test(await page.locator(".kc-group").nth(1).locator("header small").innerText()) && await page.locator(".kc-group.done").count() === 1);
-  await page.click('[data-keysleft="0"]'); await sleep(200);
-  check(name + "All shows ticked cars ticked", await page.locator(".kc-row.on").count() === 3 && await page.locator(".kc-row").count() === 17);
-  await page.click('[data-keytick="k15"]'); await sleep(200);
-  check(name + "a second tap unticks", await page.locator(".kc-row.on").count() === 2);
-  await page.reload(); await page.waitForSelector("#main .row, #main .msg"); await sleep(300);
-  if (!(await page.locator(".kc").count())) { await menu(); await page.click('#menuBody [data-view="keys"]'); await sleep(300); }
-  check(name + "ticks are kept after the app is reopened", /2\/17/.test(await text(page, ".kc-count")), await text(page, ".kc-count"));
-  // The page itself: the Operations top bar is checked elsewhere (its "connecting" sign is wider here than live).
+  check(name + "K shows on a DROPS board, off to start", await page.isVisible("#keyBtn") && !(await page.locator(".kbox").count()) && !(await page.locator(".code.kgrey").count()));
+  await page.click("#keyBtn"); await sleep(300);
+  check(name + "K on: every drop gets a tick box", await page.locator("#main .row .kbox").count() === await page.locator("#main .row").count());
+  check(name + "K on: yard tags go grey, NO YARD stays as it is", await page.locator('.row[data-id="k3"] .code.kgrey').count() === 1 && !(await page.locator('.row[data-id="k1"] .kgrey').count()));
+  const grey = await page.locator('.row[data-id="k3"] .code').evaluate((e) => getComputedStyle(e).backgroundColor);
+  check(name + "a grey tag is grey", grey === "rgb(232, 234, 237)", grey);
+  check(name + "K shows 0 of the cars on site", /0\/17/.test(await text(page, "#keyBtn")), await text(page, "#keyBtn"));
+  await page.click('.row[data-id="k3"] .kbox'); await sleep(200);
+  check(name + "ticking a car brings its yard colour back", !(await page.locator('.row[data-id="k3"] .kgrey').count()) && await page.locator('.row[data-id="k3"] .kbox.on').count() === 1 && /1\/17/.test(await text(page, "#keyBtn")));
+  check(name + "ticking doesn't open the car", !(await page.locator("#panel").evaluate((p) => p.open)));
+  await page.click('.row[data-id="k4"] .kbox'); await page.click('.row[data-id="k4"] .kbox'); await sleep(200);
+  check(name + "a second tap unticks", await page.locator('.row[data-id="k4"] .code.kgrey').count() === 1);
+  await page.reload(); await page.waitForSelector("#main .row"); await sleep(300);
+  check(name + "K and the ticks are kept after the app is reopened", await page.locator('.row[data-id="k3"] .kbox.on').count() === 1 && /1\/17/.test(await text(page, "#keyBtn")));
   const wide = await page.evaluate(() => [...document.querySelectorAll("#main *")].filter((e) => e.getBoundingClientRect().right > innerWidth + 1).map((e) => e.className));
   check(name + "nothing wider than a 360 px phone", wide.length === 0, wide.slice(0, 3));
-  await page.click("[data-keysreset]"); await sleep(200);
-  check(name + "Reset unticks every key (it asks first)", /0\/17/.test(await text(page, ".kc-count")) && page.__dialogs.some((d) => /Untick every key/.test(d)));
-  await pickKind(page, "picks"); await menu();
-  check(name + "no Key check on a PICKS sheet", !(await page.locator('#menuBody [data-view="keys"]').count()));
+  await pickKind(page, "picks");
+  check(name + "no K and no tick boxes on PICKS", !(await page.isVisible("#keyBtn")) && !(await page.locator(".kbox").count()));
+  await pickKind(page, "drops"); await page.click("#keyBtn"); await sleep(200);
+  check(name + "K off: tick boxes go, yard colours are back", !(await page.locator(".kbox").count()) && !(await page.locator(".kgrey").count()));
   check(name + "no errors", page.__errors.length === 0, page.__errors);
 });
 await scenario(async () => {
   const db = keysDb("ops"); db.me.role = "view";
   const page = await phone(browser, db);
-  await open(page); await page.evaluate(() => document.getElementById("menuBtn").click()); await sleep(300);
-  check("Key check: not in a view-only person's menu", !(await page.locator('#menuBody [data-view="keys"]').count()));
+  await open(page);
+  check("Key check: no K for a view-only person", !(await page.isVisible("#keyBtn")));
 });
 
 // ── stress tests (STRESS=1) ──────────────────────────────────────────────
@@ -2467,18 +2461,15 @@ async function shots(dir) {
     await page.context().close();
     return;
   }
-  // SHOTS_ONLY=keys: the key check list on TakeOff's look.
+  // SHOTS_ONLY=keys: key check on TakeOff's board.
   if (process.env.SHOTS_ONLY === "keys") {
     const page = await phone(browser, keysDb(process.env.SHOTS_THEME || "ops"), { width: 390 }); await page.setViewportSize({ width: 390, height: 1000 });
     const snap = async (name) => { await sleep(400); await page.evaluate(() => window.scrollTo(0, 0)); await page.screenshot({ path: path.join(dir, name + ".png") }); };
-    await open(page);
-    await page.click("#bnav [data-bn=menuBtn]"); await sleep(300); await snap("keys-menu");
-    await page.click('#menuBody [data-view="keys"]'); await sleep(300); await snap("keys-start");
-    for (const id of ["k3", "k5", "k6", "k8", "k9", "k11", "k12", "k14", "k15", "k16"]) await page.click('[data-keytick="' + id + '"]');
-    await snap("keys-still-to-find");
-    await page.click('[data-keysleft="0"]'); await snap("keys-all");
+    await open(page); await snap("keys-off");
+    await page.click("#keyBtn"); await snap("keys-on");
+    for (const id of ["k3", "k5", "k6", "k8", "k11"]) await page.click('.row[data-id="' + id + '"] .kbox');
+    await snap("keys-some-ticked");
     await page.setViewportSize({ width: 1280, height: 900 }); await snap("keys-desktop");
-    await page.emulateMedia({ media: "print" }); await page.setViewportSize({ width: 800, height: 1100 }); await snap("keys-print"); await page.emulateMedia({ media: "screen" });
     await page.context().close();
     return;
   }
