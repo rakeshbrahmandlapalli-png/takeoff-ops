@@ -2246,7 +2246,14 @@ for (const theme of ["ops", ""]) await scenario(async () => {
   await pickKind(page, "picks");
   check(name + "no K and no tick boxes on PICKS", !(await page.isVisible("#keyBtn")) && !(await page.locator(".kbox").count()));
   await pickKind(page, "drops"); await page.click("#keyBtn"); await sleep(200);
-  check(name + "K off: tick boxes go, yard colours are back", !(await page.locator(".kbox").count()) && !(await page.locator(".kgrey").count()));
+  check(name + "K off: tick boxes go, but unticked tags stay grey while a check is under way", !(await page.locator(".kbox").count()) && await page.locator('.row[data-id="k4"] .code.kgrey').count() === 1 && !(await page.locator('.row[data-id="k3"] .kgrey').count()));
+  check(name + "K off: the count stays on the button, Untick all is hidden", /1\/17/.test(await text(page, "#keyBtn")) && !(await page.locator("[data-keyreset]").count()));
+  await page.click("#keyBtn"); await sleep(200);
+  check(name + "K on with a tick: Untick all shows above the list", await page.isVisible("[data-keyreset]"));
+  await page.click("[data-keyreset]"); await sleep(200);
+  check(name + "Reset unticks every key (it asks first)", !(await page.locator(".kbox.on").count()) && page.__dialogs.some((d) => /Untick every key/.test(d)) && !(await page.locator("[data-keyreset]").count()));
+  await page.click("#keyBtn"); await sleep(200);
+  check(name + "K off with no ticks: the board is back to normal", !(await page.locator(".kbox").count()) && !(await page.locator(".kgrey").count()) && (await text(page, "#keyBtn")).trim() === "K");
   check(name + "no errors", page.__errors.length === 0, page.__errors);
 });
 await scenario(async () => {
@@ -2469,6 +2476,7 @@ async function shots(dir) {
     await page.click("#keyBtn"); await snap("keys-on");
     for (const id of ["k3", "k5", "k6", "k8", "k11"]) await page.click('.row[data-id="' + id + '"] .kbox');
     await snap("keys-some-ticked");
+    await page.click("#keyBtn"); await snap("keys-k-off-still-grey"); await page.click("#keyBtn");
     await page.setViewportSize({ width: 1280, height: 900 }); await snap("keys-desktop");
     await page.context().close();
     return;

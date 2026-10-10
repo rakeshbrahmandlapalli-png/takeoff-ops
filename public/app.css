@@ -532,6 +532,8 @@ body:has(.deskbtn) main{padding-bottom:calc(150px + env(safe-area-inset-bottom))
 .tabs .keybtn{flex:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:44px;padding:0 12px;}
 .tabs .keybtn b{font-size:14px;font-weight:800;}
 .tabs .keybtn span{font-size:11px;}
+.kstrip{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 12px;background:#e3f4ea;border-bottom:1px solid #b9e0c8;font-size:12px;font-weight:700;color:#137A45;}
+.kstrip button{min-height:30px;padding:0 10px;border:1px solid #137A45;border-radius:6px;background:#fff;color:#137A45;font-size:12px;font-weight:700;}
 .tabs .keybtn.on{background:#137A45;color:#fff;box-shadow:none;}
 .kbox{flex:none;width:24px;height:24px;padding:0;border:2px solid #9aa0a6;border-radius:5px;background:#fff;position:relative;}
 .kbox.on{background:#137A45;border-color:#137A45;}

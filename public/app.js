@@ -920,7 +920,7 @@
   }
 
   function renderBoard() {
-    var n = backupNudge(), d = deskBtn(); sheetChunks = null;
+    var n = backupNudge(), d = deskBtn() + keyStrip(); sheetChunks = null;
     var sh = renderSheet(), o = otherDaysHtml();
     boardChunks = [["nudge", n], ["desk", d]].concat(sheetChunks || [["sheet", sh]]).concat([["other", o]]);
     return n + d + sh + o;
@@ -1097,7 +1097,7 @@
 
   function yardChip(r) {
     // Key mode: grey until the car's key is ticked.
-    var kg = r.kind === "drops" && r.yard && keyOn() && !keyFound(r) ? " kgrey" : "";
+    var kg = r.kind === "drops" && r.yard && keyGrey() && !keyFound(r) ? " kgrey" : "";
     if (!can("yard")) return r.yard ? '<span class="code ' + esc(r.yard) + kg + '">' + esc(r.yard) + "</span>" : "";
     // The chip is the picker: one tap, choose, saved.
     return '<select class="code pick ' + (r.yard ? esc(r.yard) : "unset") + kg + '" data-yard aria-label="Yard for ' + esc(r.reg) + '"><option value="">' + (r.yard ? "—" : "YARD") + "</option>" +
@@ -3112,21 +3112,30 @@
     var ids = Object.keys(all); if (ids.length > 6) ids.slice(0, ids.length - 6).forEach(function (k) { delete all[k]; });
     try { localStorage.setItem(KEYS_KEY, JSON.stringify(all)); } catch (e) {}
   }
-  function keyOn() { var sh = sheet(); return !!(sh && sh.kind === "drops" && S.me && S.me.role !== "view" && (!isCards() || isBoard()) && keyModeChoice()); }
+  function keyAllowed() { var sh = sheet(); return !!(sh && sh.kind === "drops" && S.me && S.me.role !== "view" && (!isCards() || isBoard())); }
+  function keyOn() { return keyAllowed() && keyModeChoice(); }
+  // Grey tags stay while a check is under way (any key ticked on this sheet),
+  // K on or off; K only shows the tick boxes. Reset ends the check.
+  function keyAny() { var sh = sheet(); return !!(sh && Object.keys(keysFor(sh.id)).length); }
+  function keyGrey() { return keyAllowed() && (keyModeChoice() || keyAny()); }
   function keyModeChoice() { try { return localStorage.getItem(KEYMODE_KEY) === "1"; } catch (e) { return false; } }
   function toggleKeyMode() { try { if (keyModeChoice()) localStorage.removeItem(KEYMODE_KEY); else localStorage.setItem(KEYMODE_KEY, "1"); } catch (e) {} render(); }
   function keyFound(r) { var sh = sheet(); return !!(sh && keysFor(sh.id)[r.id]); }
   // The row's tick box (key mode on): ticked = the key is in the cabinet.
   function keyBox(r) { if (!keyOn()) return ""; var on = keyFound(r); return '<button type="button" class="kbox' + (on ? " on" : "") + '" data-keytick="' + r.id + '" aria-pressed="' + on + '" aria-label="Key for ' + esc(r.reg) + ' found"></button>'; }
-  // The K switch beside TO DO / ALL (DROPS only), with the count while on.
+  // The K switch beside TO DO / ALL (DROPS only), with the count while a
+  // check is under way; Reset beside it while K is on.
   function renderKeyBtn() {
-    var sh = sheet(), can0 = !!(sh && sh.kind === "drops" && S.me.role !== "view" && (!isCards() || isBoard())), on = keyOn();
-    show("keyBtn", can0); document.body.classList.toggle("keymode", on);
+    var sh = sheet(), can0 = keyAllowed(), on = keyOn(), grey = keyGrey();
+    show("keyBtn", can0); document.body.classList.toggle("keymode", grey);
     if (!can0) return;
     var t = keysFor(sh.id), cars = S.rows.filter(function (r) { return !r.cleared_at; }), n = cars.filter(function (r) { return t[r.id]; }).length;
     $("keyBtn").classList.toggle("on", on); $("keyBtn").setAttribute("aria-pressed", on);
-    $("keyBtn").innerHTML = "<b>K</b>" + (on ? '<span class="num">' + n + "/" + cars.length + "</span>" : "");
+    $("keyBtn").innerHTML = "<b>K</b>" + (grey ? '<span class="num">' + n + "/" + cars.length + "</span>" : "");
   }
+  // K on with keys ticked: a line above the list to end the check.
+  function keyStrip() { return keyOn() && keyAny() ? '<div class="kstrip"><span>Key check</span><button type="button" data-keyreset>Untick all</button></div>' : ""; }
+  function resetKeys() { var sh = sheet(); if (!sh || !confirm("Untick every key on this sheet? All yard colours come back.")) return; setKeys(sh.id, {}); render(); }
   function tickKey(id) {
     var sh = sheet(); if (!sh) return;
     var t = keysFor(sh.id); if (t[id]) delete t[id]; else t[id] = Date.now();
@@ -4859,6 +4868,7 @@
     if (t.closest("[data-swipeonlyme]")) { setSwipeOnlyChoice(!swipeOnlyChoice()); render(); return openMenu(); }
     if (t.dataset.keytick) return tickKey(t.dataset.keytick);
     if (t.id === "keyBtn") return toggleKeyMode();
+    if (t.dataset.keyreset !== undefined) return resetKeys();
     if (t.dataset.view) return go(t.dataset.view);
     if (t.id === "menuBtn" || t.closest("#cHead")) return openMenu();
     if (t.id === "shiftBtn" || t.closest("#cShift")) return openShiftPick();
