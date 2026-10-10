@@ -61,6 +61,7 @@ The user wants looks kept **separate** (a change to one must not change another)
 - Yard colours (Settings → Yard colours, **owners only**, `companies.yard_colours`, setup 77): each yard's tag on DROPS rows, the PICKS location button and the car's yard buttons filled with the colour (`applyYardColours` writes `<style id=yardColours>`); a yard with no colour keeps the look's own. Every look.
 - Dashboard (owner/manager, Menu → OFFICE): parked now by return day, desk adds, money taken/owed/left unpaid, removed, complaints (`owner_dashboard`, setup 66).
 - PICKS "+ New booking at the desk" (everyone but view-only): quick form with a docket photo (camera), NEW BOOKING, taken in, location; photo in pt-photos at <company>/docs/<booking>/, kept 90 days, shown in the car panel (also on its DROPS car by ref). Setup 69.
+- Settings sections (`setBox`): a header per section (title, what it's set to) that opens it, one at a time (`S.setOpen`); an unsaved-changes bar with Save changes (saves every section with changes); leaving Settings, switching day/kind, opening or closing a section with unsaved edits asks first (`leaveOk`), closing the app too (beforeunload); a redraw keeps what was typed (`setEdits`/`settingsDrawn`). Standard, Cards and APB UI keep the old open boxes.
 - Every look: menu bottom shows "App version <etag> · up to date" or
   "New version ready · Update now".
 
@@ -77,7 +78,7 @@ The user wants looks kept **separate** (a change to one must not change another)
   force-push it (it only carries merged history).
 - Keep UI text short; the user removed explanatory notes in the menu (keep only
   the Display note).
-- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **647 passing** as of 10 Oct
+- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **718 passing** as of 10 Oct
   2026. Add tests for every change. Write output to a file and grep `FAIL|passed`.
   The mock Supabase lives in run.mjs (`rpc()` cases, REST routes).
   Previews: `SHOTS=<dir> node run.mjs` screenshots TakeOff's look (phone and desktop).

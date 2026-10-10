@@ -246,3 +246,18 @@ html.stdplus .ops-latebox summary{list-style:none;cursor:pointer;}
 html.stdplus .ops-latebox summary::-webkit-details-marker{display:none;}
 html.stdplus .ops-latebox[open] .ops-late{border-bottom-color:#f3c7c2;}
 html.stdplus .ops-latebox .dlist{border-bottom:1px solid #edf0f4;}
+
+/* Settings: each section a header (its name, what it's set to) that opens it;
+   a bar at the top while something isn't saved (app.js setBox, showUnsaved). */
+html.stdplus main .setsec{max-width:560px;margin-top:12px;padding:0 !important;overflow:hidden;}
+html.stdplus main .setsec:first-of-type{margin-top:0;}
+html.stdplus .sethead{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:12px 14px;border:0;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer;}
+html.stdplus .sethead b{font-size:15px;font-weight:700;}
+html.stdplus .sethead small{margin-left:auto;font-size:12.5px;color:var(--ink-2);text-align:right;}
+html.stdplus .sethead::after{content:"";flex:none;width:7px;height:7px;margin:0 3px 3px 2px;border-right:2px solid var(--ink-2);border-bottom:2px solid var(--ink-2);transform:rotate(45deg);transition:transform .15s;}
+html.stdplus .setsec.open .sethead{border-bottom:1px solid var(--line);}
+html.stdplus .setsec.open .sethead::after{transform:rotate(-135deg);margin-bottom:-3px;}
+html.stdplus .setbody{padding:4px 14px 0;}
+html.stdplus .setbody[hidden],html.stdplus .setdirty[hidden]{display:none !important;}
+html.stdplus .setdirty{display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:560px;margin:0 0 12px;padding:10px 12px 10px 14px;border:1px solid #f0d9a8;border-radius:var(--r);background:#fdf6e7;color:#5c4510;font-size:14px;}
+html.stdplus .setdirty .btn{flex:none;}
