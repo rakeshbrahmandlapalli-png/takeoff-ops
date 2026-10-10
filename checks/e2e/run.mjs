@@ -76,6 +76,19 @@ function makeDb(opts = {}) {
   return db;
 }
 const now = () => new Date().toISOString();
+// The key check (Menu → Key check): TakeOff's yards and a night of cars.
+function keysDb(theme = "ops") {
+  const db = makeDb(); db.company.yards = ["Y", "S", "CP", "NY", "T"];
+  db.company.brand = { colour: "#F9A01B", ink: "#1A1A1A", short: "TakeOff", theme };
+  const cars = [["N99LCD", "", "ANDRIICIUC MX", "06:50"], ["LX59XHS", "", "RETKA MX", "07:00"], ["KV18WVM", "CP", "NIKOLLI MR", "07:15"], ["PX71OWD", "CP", "MIHAI MX", "08:00"],
+    ["SY70XOH", "S", "FINCH MR", "09:45"], ["GY16WJJ", "CP", "ZAJANCKAUSKAS MX", "11:00"], ["OW74TXH", "S", "TEMPBOOKING MR", "11:20"], ["WP19ENO", "NY", "TAIT MR", "11:30"],
+    ["AF25KJV", "CP", "KHAN MR", "11:40"], ["SL73NFY", "CP", "MOON MR", "11:45"], ["KM71DDJ", "NY", "BRADBURY MR", "11:50"], ["AF75VWM", "Y", "TEMPBOOKING MR", "11:50"],
+    ["YK71ZNM", "Y", "ROBSON MRS", "11:55"], ["SN22THV", "CP", "SMITH MR", "12:00"], ["BD68KLO", "Y", "PATEL MRS", "12:30"], ["MF19XRT", "S", "JONES MR", "13:10"], ["LR21PKN", "", "OKAFOR MS", "14:05"]];
+  const day = TONIGHT;
+  db.bookings = db.bookings.filter((b) => b.sheet_id !== "d0").concat(cars.map((c, i) => ({ id: "k" + (i + 1), sheet_id: "d0", company_id: "c1", kind: "drops", ref: "K" + i, reg: c[0], yard: c[1] || null, num: i + 1, name: c[2], flight: "W4" + (3600 + i), return_at: iso(day, c[3]), note: "" })))
+    .concat([{ id: "k99", sheet_id: "d0", company_id: "c1", kind: "drops", ref: "K99", reg: "EF12GHJ", yard: "Y", num: 40, name: "GONE MR", flight: "W40001", return_at: iso(day, "06:20"), sent_at: iso(day, "06:00"), cleared_at: iso(day, "06:30"), note: "" }]);
+  return db;
+}
 function rpc(db, fn, a) {
   const row = (id) => db.bookings.find((x) => x.id === id);
   // EARLY RETURN's night (part 75): tonight, or that day's DROPS sheet, made if missing.
@@ -2209,6 +2222,46 @@ await scenario(async () => {
 });
 
 
+// 22. Key check (Menu → Key check): tick each car whose key is in the cabinet
+for (const theme of ["ops", ""]) await scenario(async () => {
+  const name = "Key check (" + (theme || "Standard") + "): ";
+  const page = await phone(browser, keysDb(theme), { width: 360 });
+  await open(page);
+  const menu = async () => { await page.evaluate(() => document.getElementById("menuBtn").click()); await sleep(300); };
+  await menu();
+  check(name + "Menu has Key check on a DROPS sheet", await page.locator('#menuBody [data-view="keys"]').count() === 1);
+  await page.click('#menuBody [data-view="keys"]'); await sleep(300);
+  const groups = await page.locator(".kc-group > header .code").allInnerTexts();
+  check(name + "NO YARD first, then the yards in the tally's order", groups.join(",") === "NO YARD,NB,S YARD,CP,NY", groups);
+  check(name + "every car still on site is listed, a CLEAR car is not", await page.locator(".kc-row").count() === 17 && !(await page.locator('[data-keytick="k99"]').count()));
+  check(name + "a yard's cars in running order", (await page.locator(".kc-group").nth(1).locator(".kc-reg").allInnerTexts()).join(",") === "AF75VWM,YK71ZNM,BD68KLO");
+  check(name + "counts start at 0 of 17", /0\/17/.test(await text(page, ".kc-count")) && /17/.test(await text(page, ".kc-miss")));
+  await page.click('[data-keytick="k12"]'); await page.click('[data-keytick="k13"]'); await page.click('[data-keytick="k15"]'); await sleep(200);
+  check(name + "ticked cars leave To find", !(await page.locator('[data-keytick="k12"]').count()) && /2\/17/.test(await text(page, ".kc-count")) === false && /3\/17/.test(await text(page, ".kc-count")));
+  check(name + "a yard with every key found says so", /3 \/ 3/.test(await page.locator(".kc-group").nth(1).locator("header small").innerText()) && await page.locator(".kc-group.done").count() === 1);
+  await page.click('[data-keysleft="0"]'); await sleep(200);
+  check(name + "All shows ticked cars ticked", await page.locator(".kc-row.on").count() === 3 && await page.locator(".kc-row").count() === 17);
+  await page.click('[data-keytick="k15"]'); await sleep(200);
+  check(name + "a second tap unticks", await page.locator(".kc-row.on").count() === 2);
+  await page.reload(); await page.waitForSelector("#main .row, #main .msg"); await sleep(300);
+  if (!(await page.locator(".kc").count())) { await menu(); await page.click('#menuBody [data-view="keys"]'); await sleep(300); }
+  check(name + "ticks are kept after the app is reopened", /2\/17/.test(await text(page, ".kc-count")), await text(page, ".kc-count"));
+  // The page itself: the Operations top bar is checked elsewhere (its "connecting" sign is wider here than live).
+  const wide = await page.evaluate(() => [...document.querySelectorAll("#main *")].filter((e) => e.getBoundingClientRect().right > innerWidth + 1).map((e) => e.className));
+  check(name + "nothing wider than a 360 px phone", wide.length === 0, wide.slice(0, 3));
+  await page.click("[data-keysreset]"); await sleep(200);
+  check(name + "Reset unticks every key (it asks first)", /0\/17/.test(await text(page, ".kc-count")) && page.__dialogs.some((d) => /Untick every key/.test(d)));
+  await pickKind(page, "picks"); await menu();
+  check(name + "no Key check on a PICKS sheet", !(await page.locator('#menuBody [data-view="keys"]').count()));
+  check(name + "no errors", page.__errors.length === 0, page.__errors);
+});
+await scenario(async () => {
+  const db = keysDb("ops"); db.me.role = "view";
+  const page = await phone(browser, db);
+  await open(page); await page.evaluate(() => document.getElementById("menuBtn").click()); await sleep(300);
+  check("Key check: not in a view-only person's menu", !(await page.locator('#menuBody [data-view="keys"]').count()));
+});
+
 // ── stress tests (STRESS=1) ──────────────────────────────────────────────
 // 2. A big night on a slow phone, 3. bad signal, 4. big imports.
 function bigDb(drops, picks) {
@@ -2411,6 +2464,21 @@ async function shots(dir) {
     await car("b2", "exit-car-due"); await car("b3", "exit-car-paid"); await car("b1", "exit-car-free");
     await page.click("#bnav [data-bn=menuBtn]"); await sleep(300); await page.click('#menuBody [data-view="settings"]'); await sleep(400);
     await page.locator("[data-saveexit]").scrollIntoViewIfNeeded(); await sleep(300); await page.screenshot({ path: path.join(dir, "exit-settings.png") });
+    await page.context().close();
+    return;
+  }
+  // SHOTS_ONLY=keys: the key check list on TakeOff's look.
+  if (process.env.SHOTS_ONLY === "keys") {
+    const page = await phone(browser, keysDb(process.env.SHOTS_THEME || "ops"), { width: 390 }); await page.setViewportSize({ width: 390, height: 1000 });
+    const snap = async (name) => { await sleep(400); await page.evaluate(() => window.scrollTo(0, 0)); await page.screenshot({ path: path.join(dir, name + ".png") }); };
+    await open(page);
+    await page.click("#bnav [data-bn=menuBtn]"); await sleep(300); await snap("keys-menu");
+    await page.click('#menuBody [data-view="keys"]'); await sleep(300); await snap("keys-start");
+    for (const id of ["k3", "k5", "k6", "k8", "k9", "k11", "k12", "k14", "k15", "k16"]) await page.click('[data-keytick="' + id + '"]');
+    await snap("keys-still-to-find");
+    await page.click('[data-keysleft="0"]'); await snap("keys-all");
+    await page.setViewportSize({ width: 1280, height: 900 }); await snap("keys-desktop");
+    await page.emulateMedia({ media: "print" }); await page.setViewportSize({ width: 800, height: 1100 }); await snap("keys-print"); await page.emulateMedia({ media: "screen" });
     await page.context().close();
     return;
   }

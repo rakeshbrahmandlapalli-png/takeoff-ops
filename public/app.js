@@ -410,7 +410,7 @@
       // Flash a row someone else tapped, not every flight-time refresh.
       if (!before || TAP_FIELDS.some(function (k) { return before[k] !== n[k]; })) flashId = id;
     } else if (idx >= 0) S.rows.splice(idx, 1);
-    clearTimeout(redraw); redraw = setTimeout(function () { if ((S.view === "board" || S.view === "flights") && !$("panel").open && !yardOpen()) render(); }, 150);
+    clearTimeout(redraw); redraw = setTimeout(function () { if ((S.view === "board" || S.view === "flights" || S.view === "keys") && !$("panel").open && !yardOpen()) render(); }, 150);
   }
   var flashId = null;
   var TAP_FIELDS = ["yard", "sent_at", "called_at", "called_word", "cleared_at", "clear_word", "intake", "pt_at", "pick_called", "note", "charge_method", "exit_method"];
@@ -552,7 +552,7 @@
   // picker, who is signed in, and a row of icon buttons. The yard tally, TO DO /
   // ALL, search and column captions belong to the board only.
   var OPS_TITLE = { summary: "Shift summary", stats: "Hourly stats", staff: "Staff & access" }, BN_VIEW = { logBtn: "summary", psBtn: "stats", flBtn: "flights" };
-  var VIEW_TITLE = { dashboard: "Dashboard", clients: "Clients", flights: "Flights", summary: "Summary and activity", import: "Import bookings", staff: "Staff", settings: "Settings", archive: "Archive", me: "Me" };
+  var VIEW_TITLE = { dashboard: "Dashboard", clients: "Clients", flights: "Flights", summary: "Summary and activity", import: "Import bookings", staff: "Staff", settings: "Settings", archive: "Archive", me: "Me", keys: "Key check" };
   var YARD_LABEL = { Y: "NB", S: "S YARD" };
   // The tally reads left to right as the Sheet's did; any yard not listed follows.
   var YARD_ORDER = ["Y", "S", "CP", "NY", "T"];
@@ -565,6 +565,7 @@
     var sh = sheet(), picks = !!(sh && sh.kind === "picks"), board = S.view === "board";
     document.body.classList.toggle("picks", picks);
     document.body.classList.toggle("on-board", board);
+    document.body.classList.toggle("view-keys", S.view === "keys");
     $("who").textContent = S.me.name.toUpperCase(); $("who").setAttribute("data-role", ROLE_LABEL[S.me.role] || "");
     show("homeBtn", !S.platform && !!homeSaved());
     $("clock").textContent = londonParts(new Date()).time;
@@ -739,7 +740,7 @@
   function render() {
     if (!S.me) return;
     try { renderChrome(); } catch (err) { oopsLog(err); }
-    var fn = { stats: renderStats, clients: renderClients, board: renderBoard, flights: renderFlights, summary: renderSummary, dashboard: renderDashboard, import: renderImport, staff: renderStaff, settings: renderSettings, archive: renderArchive, me: renderMe }[S.view] || renderBoard;
+    var fn = { stats: renderStats, clients: renderClients, board: renderBoard, flights: renderFlights, summary: renderSummary, dashboard: renderDashboard, keys: renderKeys, import: renderImport, staff: renderStaff, settings: renderSettings, archive: renderArchive, me: renderMe }[S.view] || renderBoard;
     var html;
     // One screen going wrong never takes the app down: it says so and offers a way out.
     try { html = fn(); } catch (err) {
@@ -3096,6 +3097,62 @@
     function line(c, cls) { return '<div class="ops-tr' + (cls ? " " + cls : "") + '" style="--cols:' + (c.length - 1) + '">' + c.map(function (x, i) { return i ? '<i class="num">' + x + "</i>" : "<b>" + x + "</b>"; }).join("") + "</div>"; }
     return (head ? line(head, "th") : "") + rows.map(function (r) { return line(r); }).join("") + (total ? line(total, "tot") : "");
   }
+  // ── Key check (Menu → Key check, DROPS sheets) ──
+  // The office pulls every key out of the cabinet and ticks each car whose key
+  // is there. Cars still on site (not CLEAR), NO YARD first, then each yard,
+  // in running order. Ticks are kept on this phone, per sheet, so a refresh or
+  // a closed app keeps them.
+  var KEYS_KEY = "takeoff_keys";
+  function keyTicks() { try { return JSON.parse(localStorage.getItem(KEYS_KEY) || "{}") || {}; } catch (e) { return {}; } }
+  function keysFor(id) { var all = keyTicks(), t = all[id] || {}; return Array.isArray(t) ? {} : t; }
+  function setKeys(id, ticks) {
+    var all = keyTicks(); all[id] = ticks;
+    // Only the last few sheets are kept.
+    var ids = Object.keys(all); if (ids.length > 6) ids.slice(0, ids.length - 6).forEach(function (k) { delete all[k]; });
+    try { localStorage.setItem(KEYS_KEY, JSON.stringify(all)); } catch (e) {}
+  }
+  function keyMenu() { var sh = sheet(); return !!(sh && sh.kind === "drops" && S.me.role !== "view"); }
+  function keyCars() { return S.rows.filter(function (r) { return r.kind === "drops" && !r.cleared_at; }); }
+  function renderKeys() {
+    var sh = sheet();
+    if (!sh || sh.kind !== "drops") return '<div class="msg">Key check is for a DROPS sheet.<br><br><button type="button" class="btn ghost" data-view="board">Back to the board</button></div>';
+    var ticks = keysFor(sh.id), cars = keyCars(), found = cars.filter(function (r) { return ticks[r.id]; }).length, left = cars.length - found;
+    var only = S.keysLeft !== false;
+    var byTime = function (a, b) { var x = orderAt(a), y = orderAt(b); return x < y ? -1 : x > y ? 1 : (a.num || 0) - (b.num || 0); };
+    var groups = [["-", "NO YARD"]].concat(yardOrder().map(function (y) { return [y, YARD_LABEL[y] || y]; }));
+    cars.forEach(function (r) { if (r.yard && !groups.some(function (g) { return g[0] === r.yard; })) groups.push([r.yard, r.yard]); });
+    var row = function (r) {
+      var on = !!ticks[r.id], t = r.early ? r.est_time || r.sched_time : r.est_time || r.sched_time || hhmm(r.return_at);
+      return '<button type="button" class="kc-row' + (on ? " on" : "") + '" data-keytick="' + r.id + '" aria-pressed="' + on + '"><span class="kc-box" aria-hidden="true"></span>' +
+        '<b class="kc-reg">' + esc(r.reg || "NO REG") + "</b>" + (r.num ? '<span class="kc-num num">#' + r.num + "</span>" : "") +
+        '<span class="kc-name">' + esc(nice(r.name)) + (makeOnly(r.make) ? " · " + esc(niceMake(makeOnly(r.make))) : "") + "</span>" +
+        '<span class="kc-time num">' + esc(t || "—") + "</span></button>";
+    };
+    var h = '<div class="kc">' +
+      '<div class="kc-head"><div class="kc-count"><b class="num">' + found + "<small>/" + cars.length + '</small></b><span>keys found</span></div>' +
+      '<div class="kc-miss' + (left ? "" : " ok") + '"><b class="num">' + left + "</b><span>" + (left ? "still to find" : "all found") + "</span></div></div>" +
+      '<div class="kc-bar"><i style="width:' + (cars.length ? Math.round(found * 100 / cars.length) : 0) + '%"></i></div>' +
+      '<div class="kc-tools"><div class="seg kc-seg"><button type="button" data-keysleft="1" class="' + (only ? "on" : "") + '">To find (' + left + ')</button><button type="button" data-keysleft="0" class="' + (only ? "" : "on") + '">All (' + cars.length + ")</button></div>" +
+      '<button type="button" class="btn ghost small" data-keysprint>Print</button>' + (found ? '<button type="button" class="btn ghost small" data-keysreset>Reset</button>' : "") + "</div>";
+    var shown = 0;
+    groups.forEach(function (g) {
+      var all = cars.filter(function (r) { return (r.yard || "-") === g[0]; }).sort(byTime);
+      if (!all.length) return;
+      var got = all.filter(function (r) { return ticks[r.id]; }).length, list = only ? all.filter(function (r) { return !ticks[r.id]; }) : all;
+      h += '<section class="kc-group' + (g[0] === "-" ? " warn" : "") + (got === all.length ? " done" : "") + '"><header><span class="code ' + (g[0] === "-" ? "unset" : esc(g[0])) + '">' + esc(g[1]) + "</span>" +
+        '<small class="num">' + got + " / " + all.length + (got === all.length ? " ✓" : "") + "</small></header>" + list.map(row).join("") + "</section>";
+      shown += list.length;
+    });
+    if (!cars.length) h += '<div class="msg">No cars on site on this sheet.</div>';
+    else if (!shown) h += '<div class="msg">Every key is found.</div>';
+    return h + "</div>";
+  }
+  function tickKey(id) {
+    var sh = sheet(); if (!sh) return;
+    var t = keysFor(sh.id); if (t[id]) delete t[id]; else t[id] = Date.now();
+    setKeys(sh.id, t); render();
+  }
+
   function renderStats() {
     var sh = sheet();
     if (!sh) return '<div class="msg">Choose a sheet first.</div>';
@@ -4820,6 +4877,10 @@
     if (t.dataset.swipestep) { setSwipeChoice(t.dataset.swipestep); render(); return openMenu(); }
     if (t.dataset.swipeleft) { setSwipeLeftChoice(t.dataset.swipeleft); render(); return openMenu(); }
     if (t.closest("[data-swipeonlyme]")) { setSwipeOnlyChoice(!swipeOnlyChoice()); render(); return openMenu(); }
+    if (t.dataset.keytick) return tickKey(t.dataset.keytick);
+    if (t.dataset.keysleft) { S.keysLeft = t.dataset.keysleft === "1"; return render(); }
+    if (t.dataset.keysprint !== undefined) return window.print();
+    if (t.dataset.keysreset !== undefined) { if (confirm("Untick every key on this sheet?")) { setKeys(sheet().id, {}); render(); } return; }
     if (t.dataset.view) return go(t.dataset.view);
     if (t.id === "menuBtn" || t.closest("#cHead")) return openMenu();
     if (t.id === "shiftBtn" || t.closest("#cShift")) return openShiftPick();
@@ -5009,7 +5070,7 @@
         '</div><div class="pbtns"><button type="button" data-closemenu>Close</button></div>';
       return $("menu").showModal();
     }
-    var items = [["board", "Board", true], ["flights", "Flights", true], ["summary", "Summary and activity", can("summary") || can("log")], ["archive", "Archive: older days and search", can("log")], ["dashboard", "Dashboard", can("settings")],
+    var items = [["board", "Board", true], ["flights", "Flights", true], ["summary", "Summary and activity", can("summary") || can("log")], ["archive", "Archive: older days and search", can("log")], ["dashboard", "Dashboard", can("settings")], ["keys", "Key check", keyMenu()],
       ["import", "Import bookings", can("import")], ["staff", "Staff", can("staff")], ["settings", "Settings", can("settings")], ["me", "Me · sign out", true]];
     var sh = sheet();
     var sheetTools = sh && can("import") ? '<label>THIS SHEET · ' + esc(sheetLabel(sh)) + '</label><div class="menu-list">' +
@@ -5041,6 +5102,7 @@
     box: '<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9"/>',
     bin: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
     dashboard: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+    keys: '<circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M17 6l3 3M14.5 8.5l2.5 2.5"/>',
     play: '<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l6-3.5z"/>'
   };
   function menuIcon(k) { return '<svg class="mi" viewBox="0 0 24 24" aria-hidden="true">' + (MENU_ICON[k] || "") + "</svg>"; }
@@ -5051,7 +5113,7 @@
     var btn = function (k) { return '<button type="button" data-view="' + k + '"' + (S.view === k ? ' aria-current="page"' : "") + ">" + menuIcon(k) + "<span>" + esc(have[k]) + "</span></button>"; };
     var group = function (title, keys) { keys = keys.filter(function (k) { return have[k]; }); return keys.length ? "<label>" + title + '</label><div class="menu-list">' + keys.map(btn).join("") + "</div>" : ""; };
     var h = (o ? '<h2>Menu</h2><p class="sub">' + esc(S.me.name) + " · " + esc(ROLE_LABEL[S.me.role] || S.me.role) + "</p>" : "<h2>" + esc(S.company.name) + '</h2><p class="sub">' + esc(S.me.name) + " · " + esc(ROLE_LABEL[S.me.role] || S.me.role) + "</p>") +
-      group(o ? "Operations" : "TODAY", ["board", "flights", "summary", "stats"]) + group(o ? "Office" : "OFFICE", ["dashboard", "archive", "import", "staff", "settings"]);
+      group(o ? "Operations" : "TODAY", ["board", "flights", "summary", "stats", "keys"]) + group(o ? "Office" : "OFFICE", ["dashboard", "archive", "import", "staff", "settings"]);
     if (sh && can("import")) {
       h += "<label>" + (o ? "This sheet<small>" + esc(sheetLabel(sh)) + "</small>" : "THIS SHEET · " + esc(sheetLabel(sh))) + '</label><div class="menu-list">' +
         '<button type="button" data-addcar>' + menuIcon("add") + "<span>Add a car</span></button>" +
