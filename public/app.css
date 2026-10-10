@@ -502,3 +502,10 @@ body:has(.deskbtn) main{padding-bottom:calc(150px + env(safe-area-inset-bottom))
 .ycol .code{min-width:52px;text-align:center;font-size:12px;padding:4px 6px;}
 .ycol input[type=color]{width:52px;height:34px;padding:2px;border:1px solid #c4c7cc;border-radius:6px;background:#fff;cursor:pointer;}
 .ycol input[data-off]{opacity:.45;}
+
+/* Past their return list (dashboard): level chips and the cars. */
+.latebox>summary{list-style:none;cursor:pointer;}
+.latebox>summary::-webkit-details-marker{display:none;}
+.late-levels{display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px;}
+.late-lv{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:#fff1c2;color:#7a5200;white-space:nowrap;}
+.late-lv.lv0{background:#fff1c2;color:#7a5200;}.late-lv.lv1{background:#ffd9a8;color:#7a3b00;}.late-lv.lv2{background:#ffc2b8;color:#8a1f0f;}.late-lv.lv3{background:#f5a39b;color:#6b0f06;}

@@ -1589,7 +1589,7 @@ const dashData = () => {
     removed: [{ id: "r1", kind: "picks", reg: "NOSHOW1", name: "MR AWAY", removed_reason: "No show", removed_at: ago(7), by_name: "SUGU" }],
     complaints: [{ at: ago(8), reg: "MAD001", customer: "MR CROSS", staff_name: "TERRY" }],
     early: 2, changed: 3,
-    parked: { total: 30, late: 2, days: [{ day: new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 8 }, { day: new Date(Date.now() + 2 * 86400000).toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 20 }],
+    parked: { total: 30, late: 2, late_cars: [{ reg: "LATE1", name: "Old Car", return_at: new Date(Date.now() - 2.5 * 86400000).toISOString(), yard: "NB" }, { reg: "LATE2", name: "New Car", return_at: new Date(Date.now() - 3600000).toISOString(), yard: "" }], days: [{ day: new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 8 }, { day: new Date(Date.now() + 2 * 86400000).toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 20 }],
       yards: [{ yard: "", n: 12, days: [{ day: null, n: 2 }, { day: new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 10 }] }, { yard: db0Yard, n: 18, days: [{ day: new Date(Date.now() + 2 * 86400000).toLocaleDateString("en-CA", { timeZone: "Europe/London" }), n: 18 }] }] }
   };
 };
@@ -1629,6 +1629,9 @@ for (const theme of ["", "stdplus"]) await scenario(async () => {
   check("Dashboard (" + look + "): parked cars by yard, yards first, no yard last", /Parked now, by yard\s*NB\s*\S*\s*\w{3},? \d+ \w{3} 18\s*18\s*No yard yet\s*past return 2 · Today 10\s*12/i.test(body), (body.match(/Parked now, by yard[\s\S]{0,160}/i) || [""])[0]);
   check("Dashboard (" + look + "): no capacity set, no spaces shown", !/ free|\/ \d/.test(tile("Parked now")) && await page.locator(".ops-capbar").count() === 0);
   check("Dashboard (" + look + "): parked cars by return day, past return first", theme === "stdplus" ? /Past their return[\s\S]*?2\s*Today\s*8\s*\w{3},? \d+ \w{3}\s*20/i.test(await page.locator('#dash-returns').innerText()) : /Parked now, by return day\s*Past their return[\s\S]*?2\s*Today\s*8\s*\w{3},? \d+ \w{3}\s*20/i.test(body), body.slice(0, 160));
+  await page.evaluate(() => { const d = document.querySelector("#main details.latebox, #main details.ops-latebox"); if (d) d.open = true; }); await sleep(150);
+  const lateTxt = await page.locator("#main details.latebox, #main details.ops-latebox").first().innerText().catch(() => "");
+  check("Dashboard (" + look + "): Past their return opens to list the cars by level", /LATE1/.test(lateTxt) && /LATE2/.test(lateTxt) && /2 days/.test(lateTxt) && /Less than a day/.test(lateTxt), lateTxt);
   const first = new Date(db.dashCalls[0]).getTime();
   check("Dashboard (" + look + "): opens on the last 7 days", Math.abs(Date.now() - first - 7 * 86400000) < 600000);
   await page.click('#main [data-dashp="30"]'); await sleep(600);

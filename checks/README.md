@@ -13,6 +13,7 @@ Run these before merging a change. Every line must say ok / PASS.
 | `carry-from-picks.mjs` | `npm install @electric-sql/pglite` then `node carry-from-picks.mjs` (no database needed). | Setup part 68: the PICKS yard, note and £ carried to the DROPS car. |
 | `drops-yard-to-picks.mjs` | `npm install @electric-sql/pglite` then `node drops-yard-to-picks.mjs` (no database needed). | Setup part 73: the dashboard counts a car under its DROPS yard when PICKS has none; a DROPS yard fills in an empty PICKS location. |
 | `yard-both-ways.mjs` | `npm install @electric-sql/pglite` then `node yard-both-ways.mjs` (no database needed). | Setup part 79: a yard set on DROPS or PICKS is copied to the other car (latest change wins; T and clearing are not copied). |
+| `dashboard-drops-days.mjs` | `npm install @electric-sql/pglite` then `node dashboard-drops-days.mjs` (no database needed). | Setup part 80: dashboard return days run 06:00 to 06:00 (DROPS days); the list of cars past their return. |
 | `yard-colours.mjs` | `npm install @electric-sql/pglite` then `node yard-colours.mjs` (no database needed). | Setup part 77: yard colours, owners only; Airport Parking Bay starts with MY green, GS orange, T yellow. |
 | `joblist.cjs` | See the top of the file; needs the sample PDFs, which hold real customer data and aren't in the repo. | Reading the booking PDFs. |
 

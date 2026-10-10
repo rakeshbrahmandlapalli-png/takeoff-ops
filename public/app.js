@@ -44,6 +44,17 @@
     var off = new Date(p.key + "T" + p.time + ":00Z").getTime() - guess.getTime();
     return new Date(guess.getTime() - off).toISOString();
   }
+  // Cars past their return and not handed back (database part 80): grouped by how long over, then listed.
+  function lateBody(PK) {
+    var cars = PK.late_cars || [];
+    if (!cars.length) return '<div class="empty">None.</div>';
+    var now = Date.now(), lv = [["Less than a day", 0], ["1 day", 0], ["2 days", 0], ["3+ days", 0]];
+    cars.forEach(function (c) { var d = Math.floor((now - new Date(c.return_at).getTime()) / 864e5); c.lv = Math.max(0, Math.min(3, d)); lv[c.lv][1]++; });
+    var chips = lv.map(function (l, i) { return l[1] ? '<span class="late-lv lv' + i + '"><b>' + l[1] + "</b> " + l[0] + "</span>" : ""; }).join("");
+    return '<div class="late-levels">' + chips + "</div>" + cars.map(function (c) {
+      return '<div class="rowline late-car"><div class="grow"><strong>' + esc(c.reg) + "</strong>" + (c.name ? " · " + esc(c.name) : "") + '<div class="note">Due ' + esc(dayShort(c.return_at)) + " " + esc(hhmm(c.return_at)) + (c.yard ? " · " + esc(YARD_LABEL[c.yard] || c.yard) : "") + '</div></div><span class="late-lv lv' + c.lv + '">' + lv[c.lv][0] + "</span></div>";
+    }).join("") + (+PK.late > cars.length ? '<div class="note">Showing the first ' + cars.length + " of " + PK.late + ".</div>" : "");
+  }
   function addDaysKey(key, n) { var d = new Date(key + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
   // "DROPS 17TH SEPT", the way the Sheet's tabs were named.
   function sheetLabel(s) {
@@ -3542,7 +3553,7 @@
     var when = function (ts) { return esc(dayShort(ts)) + " " + esc(hhmm(ts)); };
     var TK = { "Parked now": "parked", "Added at the desk": "added", "Money taken": "money", "Owed now": "owed", "Left unpaid": "unpaid", Waived: "waived", Removed: "removed", Complaints: "comp", "Early returns": "early" };
     var tile = function (label, big, small, cls) { return kstat(TK[label] || "x", label, big, small ? "<small>" + small + "</small>" : "", cls); };
-    var PK = D.parked || { total: 0, late: 0, days: [] }, todayKey = londonParts(new Date()).key;
+    var PK = D.parked || { total: 0, late: 0, days: [] }, todayKey = currentShiftKey();
     var dayName = function (k) { return k === todayKey ? "Today" : k === addDaysKey(todayKey, 1) ? "Tomorrow" : longDay(k); };
     var cap = +S.company.capacity || 0;
     h += '<div class="stats dstats">' +
@@ -3574,7 +3585,8 @@
     }
     var pdays = (PK.late ? [{ late: true, n: PK.late }] : []).concat(PK.days || []);
     h += '<div class="section-label">Parked now, by return day</div><div class="box dlist dpark">' + (pdays.length ? pdays.map(function (d) {
-      return '<div class="rowline' + (d.late ? " late" : "") + '"><div class="grow"><strong>' + (d.late ? "Past their return" : esc(dayName(d.day))) + "</strong>" + (d.late ? '<div class="note">Return time gone, not handed back yet</div>' : "") + '</div><strong class="num">' + d.n + "</strong></div>";
+      if (d.late) return '<details class="latebox"><summary class="rowline late"><div class="grow"><strong>Past their return</strong><div class="note">Return time gone, not handed back yet · tap to see them</div></div><strong class="num">' + d.n + "</strong></summary>" + lateBody(PK) + "</details>";
+      return '<div class="rowline"><div class="grow"><strong>' + esc(dayName(d.day)) + '</strong></div><strong class="num">' + d.n + "</strong></div>";
     }).join("") : '<div class="empty">No cars in.</div>') + "</div>";
     if (left.length) h += list("Left with no payment recorded", left, function (r) {
       return '<div class="rowline"><div class="grow"><strong>' + esc(r.reg) + "</strong> · " + esc(r.name) + '<div class="note">Cleared ' + when(r.cleared_at) + (r.charge_reason ? " · " + esc(r.charge_reason) : r.days ? " · " + r.days + (r.days === 1 ? " day" : " days") + " over" : "") + '</div></div><strong class="num due">' + money(r.due) + "</strong></div>";
@@ -3635,7 +3647,7 @@
     var cutoff = addDaysKey(x.today, 7), soon = days.filter(function (d) { return d.day < cutoff; }), later = days.filter(function (d) { return d.day >= cutoff; });
     var shown = S.dashAllDates ? days : soon, max = Math.max.apply(null, [1].concat(days.map(function (d) { return +d.n || 0; })));
     h += '<div class="ops-lowergrid"><section class="ops-panel" id="dash-returns" tabindex="-1">' + panelHead('Upcoming returns', S.dashAllDates ? 'All dates' : 'Next 7 days') + '<div class="ops-tablehead"><span>RETURN DAY</span><span>VOLUME</span><span>CARS</span></div>';
-    if (+PK.late) h += '<div class="ops-returnrow ops-late"><span>Past their return</span><span class="ops-returnnote">Not handed back</span><strong class="num">' + PK.late + '</strong></div>';
+    if (+PK.late) h += '<details class="ops-latebox"><summary class="ops-returnrow ops-late"><span>Past their return</span><span class="ops-returnnote">Not handed back</span><strong class="num">' + PK.late + '</strong></summary><div class="dlist">' + lateBody(PK) + '</div></details>';
     h += shown.map(function (d) { return '<div class="ops-returnrow' + (d.day === x.today ? ' ops-today' : '') + '"><span>' + esc(x.dayName(d.day)) + '</span><span class="ops-volume" aria-hidden="true"><i style="width:' + Math.round(+d.n / max * 100) + '%"></i></span><strong class="num">' + d.n + '</strong></div>'; }).join('') || '<div class="empty">No upcoming returns' + (days.length ? ' in the next 7 days.' : '.') + '</div>';
     if (later.length) h += '<div class="ops-tablefoot"><span>' + x.sum(later, 'n') + ' cars returning later</span><button type="button" class="ops-link" data-dashdates aria-expanded="' + !!S.dashAllDates + '">' + (S.dashAllDates ? 'Show next 7 days' : 'View all dates') + '</button></div>';
     h += '</section><div><section class="ops-panel dstats">' + panelHead('Desk activity', 'Last ' + period) + '<div class="ops-activitygrid">' +
@@ -4854,7 +4866,7 @@
       var target = document.getElementById('dash-' + t.dataset.dashjump);
       if (target) {
         if (target.tagName === 'DETAILS') target.open = true;
-        var focus = target.querySelector('summary') || target;
+        var focus = (target.tagName === 'DETAILS' && target.querySelector('summary')) || target;
         focus.focus({ preventScroll: true }); target.scrollIntoView({ block: 'start', behavior: 'auto' });
       }
       return;
