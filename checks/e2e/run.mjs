@@ -133,6 +133,7 @@ function rpc(db, fn, a) {
       if (a.p.desk && n.kind === "picks") Object.assign(n, { pick_called: "New Booking", pick_called_at: now(), intake: a.p.taken_in ? "Collected" : "", intake_at: a.p.taken_in ? now() : null, yard: a.p.yard || "" });
       db.bookings.push(n); return n; }
     case "set_doc": { const b = row(a.p_booking); b.doc_path = a.p_path; b.doc_at = now(); return b; }
+    case "set_flight_settings": db.company.flight_settings = a.p; return a.p;
     case "set_exit_fee": db.company.exit_fee = a.p_fee; db.company.exit_free = a.p_free.map((x) => x.toUpperCase().replace(/[^A-Z0-9]/g, "")); return { exit_fee: a.p_fee, exit_free: db.company.exit_free };
     case "set_exit_paid": { const b = row(a.p_booking); Object.assign(b, { exit_method: a.p_method, exit_amount: a.p_method ? db.company.exit_fee : null, exit_at: a.p_method ? new Date().toISOString() : null, exit_by: a.p_method ? "s1" : null, exit_photo: a.p_photo || "" }); return b; }
     case "set_overstay_paid": { const b = row(a.p_booking); Object.assign(b, { charge_amount: a.p_amount, charge_method: a.p_method, charge_at: a.p_method ? new Date().toISOString() : null, charge_by: a.p_method ? "s1" : null }); return b; }
@@ -473,6 +474,7 @@ await scenario(async () => {
     return { below: btns.top >= name.bottom - 1, initial: getComputedStyle(row, "::before").content, oneRow: new Set([...row.querySelectorAll(".sbtns .btn")].map((b) => Math.round(b.getBoundingClientRect().top))).size === 1 }; });
   check("Premium Staff: the buttons sit under the name (never over it), on one row, with the person's initial", st && st.below && st.oneRow && /"S"/.test(st.initial), st);
   await go("settings");
+  await page.click('[data-setsec="flights"]'); await sleep(200);
   check("Premium Settings: From and Until side by side", await page.evaluate(() => { const p = document.querySelector(".pair"); if (!p) return false; const f = p.querySelectorAll(".field"); return f.length === 2 && Math.abs(f[0].getBoundingClientRect().top - f[1].getBoundingClientRect().top) < 2; }));
   check("Premium screens: no sideways scrolling, no errors", (await noSideScroll(page)) && page.__errors.length === 0, page.__errors);
 });
@@ -723,8 +725,9 @@ await scenario(async () => {
   await plus.click("#main [data-addperson]"); await sleep(200);
   check("Operations: Add person opens the form", await plus.evaluate(() => !!document.querySelector("#main form#addStaff #newName") && document.activeElement.id === "newName"));
   await plus.click('#bnav [data-bn="menuBtn"]'); await sleep(200); await plus.click('#menuBody [data-view="settings"]'); await sleep(300);
-  const se = await plus.evaluate(() => { const a = document.querySelector('[data-setting="enabled"]').getBoundingClientRect(), b = document.querySelector('[data-setting="live_every_min"]').getBoundingClientRect(), h = document.querySelector(".fchecks > strong");
-    return { side: Math.round(a.top) === Math.round(b.top) && a.right < b.left, head: h.innerText.replace(/\s+/g, " "), unsaved: !!document.querySelector(".ops-unsaved") }; });
+  await plus.click('[data-setsec="flights"]'); await sleep(200);
+  const se = await plus.evaluate(() => { const a = document.querySelector('[data-setting="enabled"]').getBoundingClientRect(), b = document.querySelector('[data-setting="live_every_min"]').getBoundingClientRect(), h = document.querySelector(".fchecks > .sethead");
+    return { side: Math.round(a.top) === Math.round(b.top) && a.right < b.left, head: h.innerText.replace(/\s+/g, " "), unsaved: !!document.querySelector(".ops-unsaved:not([hidden])") }; });
   check("Operations: Settings in panels, Flight checks two boxes a line, what it's set to by the title", se.side && se.head === "Flight checks Automatic checks on" && !se.unsaved, se);
   await plus.selectOption('[data-setting="live_every_min"]', "60"); await sleep(200);
   check("Operations: Settings says when there are unsaved changes", await plus.evaluate(() => /Unsaved changes/.test((document.querySelector(".ops-unsaved") || {}).textContent || "")));
@@ -1848,6 +1851,7 @@ for (const role of ["owner", "manager"]) await scenario(async () => {
   await open(page); await sleep(300);
   await page.click("#menuBtn"); await sleep(300); await page.click('#menuBody [data-view="settings"]'); await sleep(400);
   if (role === "manager") return check("Yard colours settings: a manager doesn't get them", await page.locator("[data-saveycol]").count() === 0 && await page.locator("[data-savecap]").count() === 1);
+  await page.click('[data-setsec="ycol"]'); await sleep(200);
   check("Yard colours settings: the owner gets a colour per yard", await page.locator("[data-ycol]").count() === 3 && await page.inputValue('[data-ycol="MY"]') === "#2e7d32");
   await page.locator('[data-ycol="GS"]').evaluate((e) => { e.value = "#ef6c00"; e.dispatchEvent(new Event("input", { bubbles: true })); });
   check("Yard colours settings: the tag shows the colour as it's chosen", await page.locator('.ycol:has([data-ycol="GS"]) .code').evaluate((e) => getComputedStyle(e).backgroundColor) === rgb("#EF6C00"));
@@ -1857,6 +1861,63 @@ for (const role of ["owner", "manager"]) await scenario(async () => {
   check("Yard colours settings: saving sends each yard's colour, blank for none", c && c.args.p_colours.GS === "#ef6c00" && c.args.p_colours.MY === "" && c.args.p_colours.T === "", c);
   check("Yard colours settings: saved colours apply at once", await page.locator('.ycol:has([data-ycol="GS"]) .code').evaluate((e) => getComputedStyle(e).backgroundColor) === rgb("#EF6C00")
     && await page.locator('[data-ycol="MY"][data-off]').count() === 1);
+});
+
+// 18a3d4. Settings: each section opens on its own, with what it's set to on its header; unsaved changes are kept from being lost.
+for (const theme of ["stdplus", "ops", "premium", "board"]) await scenario(async () => {
+  const db = apbDb(theme); db.company.capacity = 800; db.company.exit_fee = 10; db.company.exit_free = ["CAP"];
+  const page = await phone(browser, db), asked = [];
+  let answer = false;
+  page.removeAllListeners("dialog"); page.on("dialog", (d) => { asked.push(d.type() + ": " + d.message()); answer ? d.accept() : d.dismiss(); });
+  await open(page); await sleep(300);
+  await page.click('#bnav [data-bn="menuBtn"]'); await sleep(250); await page.click('#menuBody [data-view="settings"]'); await sleep(400);
+  const openBodies = () => page.locator("#main .setbody:not([hidden])").count();
+  const heads = await page.locator("#main .sethead").allInnerTexts();
+  check("Settings sections (" + theme + "): all closed to start, each header says what it's set to", await openBodies() === 0 && heads.length >= 7
+    && heads.some((h) => /Car park capacity\s+800 spaces/.test(h)) && heads.some((h) => /Flight checks\s+Automatic checks on/.test(h)) && heads.some((h) => /Exit fee\s+£10/.test(h)) && !(await page.isVisible("#setUnsaved")), heads);
+  await page.click('[data-setsec="cap"]'); await sleep(200);
+  check("Settings sections (" + theme + "): a header opens its section", await openBodies() === 1 && await page.isVisible("#capTotal") && await page.getAttribute('[data-setsec="cap"]', "aria-expanded") === "true");
+  await page.click('[data-setsec="exit"]'); await sleep(200);
+  check("Settings sections (" + theme + "): opening another closes the first", await openBodies() === 1 && await page.isVisible("#exitFee") && !(await page.isVisible("#capTotal")));
+  await page.fill("#exitFee", "12");
+  check("Settings sections (" + theme + "): typing shows the unsaved bar", await page.isVisible("#setUnsaved") && /Unsaved changes in Exit fee/.test(await page.innerText("#setUnsaved")));
+  await page.click('[data-setsec="cap"]'); await sleep(200);
+  check("Settings sections (" + theme + "): opening another section with unsaved changes asks, and No keeps them", asked.length === 1 && /Unsaved changes in Exit fee/.test(asked[0]) && await page.inputValue("#exitFee") === "12" && await page.isVisible("#exitFee"), asked);
+  await page.click('#bnav [data-bn="logBtn"]'); await sleep(300);
+  check("Settings sections (" + theme + "): leaving for another page asks, and No stays on Settings", asked.length === 2 && await page.isVisible("#exitFee") && await page.inputValue("#exitFee") === "12", asked);
+  await page.click("#bnBoard"); await sleep(300);
+  check("Settings sections (" + theme + "): Board asks too", asked.length === 3 && await page.isVisible("#exitFee"), asked);
+  // A redraw (here: a flight checks change) keeps what was typed.
+  await page.evaluate(() => { const s = document.querySelector('[data-setting="live_every_min"]'); s.value = "60"; s.dispatchEvent(new Event("change", { bubbles: true })); }); await sleep(200);
+  check("Settings sections (" + theme + "): a redraw keeps what was typed", await page.inputValue("#exitFee") === "12" && /Exit fee/.test(await page.innerText("#setUnsaved")) && /Flight checks/.test(await page.innerText("#setUnsaved")));
+  if (theme === "stdplus") {
+    const r = await page.evaluate(() => { const e = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(e); return e.defaultPrevented; });
+    check("Settings sections: closing the app with unsaved changes asks first", r);
+  }
+  await page.click("#setUnsaved [data-savedirty]"); await sleep(500);
+  const c = db.calls.filter((x) => x.fn === "set_exit_fee").pop();
+  const f = db.calls.filter((x) => x.fn === "set_flight_settings").pop();
+  check("Settings sections (" + theme + "): Save changes on the bar saves every section with changes", c && c.args.p_fee === 12 && JSON.stringify(c.args.p_free) === '["CAP"]' && /£12/.test(await page.innerText('[data-setsec="exit"]')) && await page.inputValue("#exitFee") === "12" && f && f.args.p.live_every_min === 60, [c, f]);
+  check("Settings sections (" + theme + "): nothing unsaved, no bar", !(await page.isVisible("#setUnsaved")));
+  await page.fill("#exitFee", "15"); answer = true;
+  await page.click('[data-setsec="exit"]'); await sleep(300);
+  check("Settings sections (" + theme + "): closing a section with unsaved changes asks; Yes puts back what's saved", asked.length === 4 && await openBodies() === 0 && await page.inputValue("#exitFee") === "12" && !(await page.isVisible("#setUnsaved")), asked);
+  await page.click('[data-setsec="flights"]'); await sleep(200); await page.selectOption('[data-setting="before_min"]', "60"); await sleep(200);
+  check("Settings sections (" + theme + "): Flight checks changes show the bar", /Unsaved changes in Flight checks/.test(await page.innerText("#setUnsaved")));
+  check("Settings sections (" + theme + "): nothing on the page runs off the side", await page.evaluate(() => [...document.querySelectorAll("#main *")].every((e) => e.getBoundingClientRect().right <= innerWidth + 1)));
+  await page.click('#bnav [data-bn="logBtn"]'); await sleep(400);
+  check("Settings sections (" + theme + "): Yes leaves Settings", asked.length === 5 && !(await page.locator("#exitFee").count()), asked);
+  check("Settings sections (" + theme + "): no errors", page.__errors.length === 0, page.__errors);
+});
+await scenario(async () => {
+  const db = apbDb("standard"); db.company.brand = { ...db.company.brand, theme: undefined };
+  const page = await phone(browser, db), asked = [];
+  page.removeAllListeners("dialog"); page.on("dialog", (d) => { asked.push(d.message()); d.dismiss(); });
+  await open(page); await sleep(300);
+  await page.click("#menuBtn"); await sleep(300); await page.click('#menuBody [data-view="settings"]'); await sleep(400);
+  check("Settings sections: Standard keeps its open boxes", await page.locator("#main .setsec, #setUnsaved").count() === 0 && await page.isVisible("#capTotal") && await page.isVisible('[data-setting="enabled"]'));
+  await page.fill("#capTotal", "50"); await page.click("#menuBtn"); await sleep(300); await page.click('#menuBody [data-view="board"]'); await sleep(300);
+  check("Settings sections: Standard doesn't ask on leaving", asked.length === 0 && !(await page.locator("#capTotal").count()), asked);
 });
 
 // 18a3e. PICKS: a new booking at the desk, with a photo of the docket (database part 69)

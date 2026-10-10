@@ -219,18 +219,22 @@ html.ops .ops-x{flex:none;display:flex;align-items:center;justify-content:center
 
 /* Settings: each box a panel, its title on a line with what it's set to, the buttons in a footer */
 html.ops main[data-view="settings"]{max-width:720px;}
-html.ops main[data-view="settings"] .box{max-width:none !important;padding:0 14px !important;background:#fff;}
-html.ops main[data-view="settings"] .box > strong:first-child{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 -14px 4px;padding:15px 14px 14px;border-bottom:1px solid #e4e9ef;}
-html.ops main[data-view="settings"] .box > strong:first-child small{font-size:12px;font-weight:500;color:var(--op-mut);text-align:right;}
-html.ops main[data-view="settings"] .box > .row-actions{justify-content:flex-end;margin:14px -14px 0;padding:12px 14px;border-top:1px solid #e4e9ef;}
-html.ops main[data-view="settings"] .box > :last-child:not(.row-actions){margin-bottom:14px;}
-html.ops main[data-view="settings"] .box.fchecks{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:12px;}
-html.ops main[data-view="settings"] .box.fchecks > *{grid-column:1 / -1;}
-html.ops main[data-view="settings"] .box.fchecks .field{grid-column:auto;margin:6px 0;}
-html.ops main[data-view="settings"] .box.fchecks .pair{display:contents;}
-html.ops main[data-view="settings"] .box.fchecks .section-label{display:none;}
-html.ops main[data-view="settings"] .box.fchecks select{min-width:0;}
-html.ops .ops-unsaved{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px;padding:12px 14px;border:1px solid #f0d9a8;border-radius:6px;background:#fdf6e7;color:#5c4510;font-size:13px;}
+html.ops main[data-view="settings"] .box{max-width:none !important;padding:0 !important;background:#fff;}
+html.ops main[data-view="settings"] .setsec{margin-top:14px;border-radius:6px;}
+html.ops main[data-view="settings"] .setsec:first-of-type{margin-top:0;}
+html.ops main[data-view="settings"] .sethead{padding:15px 14px 14px;}
+html.ops main[data-view="settings"] .sethead small{font-size:12px;font-weight:500;color:var(--op-mut);}
+html.ops main[data-view="settings"] .setsec.open .sethead{border-bottom-color:#e4e9ef;}
+html.ops main[data-view="settings"] .setbody{padding:4px 14px 0;}
+html.ops main[data-view="settings"] .setbody > .row-actions{justify-content:flex-end;margin:14px -14px 0;padding:12px 14px;border-top:1px solid #e4e9ef;}
+html.ops main[data-view="settings"] .setbody > :last-child:not(.row-actions){margin-bottom:14px;}
+html.ops main[data-view="settings"] .fchecks .setbody:not([hidden]){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:12px;}
+html.ops main[data-view="settings"] .fchecks .setbody > *{grid-column:1 / -1;}
+html.ops main[data-view="settings"] .fchecks .field{grid-column:auto;margin:6px 0;}
+html.ops main[data-view="settings"] .fchecks .pair{display:contents;}
+html.ops main[data-view="settings"] .fchecks .section-label{display:none;}
+html.ops main[data-view="settings"] .fchecks select{min-width:0;}
+html.ops .ops-unsaved{display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:none;margin:0 0 14px;padding:12px 14px;border:1px solid #f0d9a8;border-radius:6px;background:#fdf6e7;color:#5c4510;font-size:13px;}
 html.ops .ops-unsaved .btn{flex:none;}
 
 /* Flights: when they were checked, the numbers, then each flight's times and status */
