@@ -1,9 +1,10 @@
 // Which flight APIs each way of calling the flights edge function uses, with a
 // pretend database and pretend APIs (no network, no Deno needed):
 //   node checks/flight-sources.mjs
-// The timer and "Check flights" use FlightRadar24 only; AeroDataBox (AeroData)
-// is called only by "Fill times", at most once per sheet per 10 min, and not
-// at all for 6 h after it says the month's quota is spent.
+// "Check flights" uses FlightRadar24 only. AeroDataBox (AeroData) is called by
+// the timer every 90 min for tonight's sheet (only the 12-hour chunks with a
+// car still waiting) and by "Fill times" (once per sheet per 10 min); neither
+// calls it for 6 h after it says the month's quota is spent.
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -29,7 +30,7 @@ const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).form
 let db;
 function fresh() {
   db = {
-    companies: [{ id: "c1", name: "TAKEOFF", slug: "takeoff", time_zone: "Europe/London", drops_day_end: "06:00", airport_iata: "LGW", airport_icao: "EGKK", flight_settings: { schedule_every_hours: 1 }, suspended_at: null }],
+    companies: [{ id: "c1", name: "TAKEOFF", slug: "takeoff", time_zone: "Europe/London", drops_day_end: "06:00", airport_iata: "LGW", airport_icao: "EGKK", flight_settings: { schedule_every_hours: 1, active_from: 0, active_to: 24 }, suspended_at: null }],
     sheets: [{ id: "s1", company_id: "c1", kind: "drops", day, imported_at: iso(now - 60e3) }],
     bookings: [{ id: "b1", company_id: "c1", sheet_id: "s1", ref: "R1", reg: "AB12CDE", name: "A", flight: "U22464", return_at: iso(now + 30 * 60e3), cleared_at: null, overstay: false,
       sched_at: iso(now + 30 * 60e3), sched_time: "", est_at: null, est_time: "", flight_status: "", flight_note: "" }],
@@ -92,11 +93,29 @@ const check = (name, ok, info) => { if (ok) passed++; else failed++; console.log
 
 fresh(); aeroAnswer = "ok";
 let r = await post({ action: "timer" });
-check("timer, with a sheet just imported and the timetable set to every hour: FR24 only, no AeroData", r.aero === 0 && r.fr24 === 1, r);
+check("timer: FR24, and AeroData for tonight's sheet, only the chunk(s) around the one car still waiting", r.fr24 === 1 && r.aero >= 1 && r.aero <= 2 && r.json.results[0].schedule, r);
+r = await post({ action: "timer" });
+check("timer again 10 min later: no AeroData (every 90 min), and only tonight's sheet", r.aero === 0 && !db.flight_runs.some((x) => x.source === "schedule" && x.result.day !== day), r);
+db.flight_runs.forEach((x) => { x.at = iso(now - 89 * 60e3); });
+r = await post({ action: "timer" });
+check("timer 89 min after the last timetable: AeroData again", r.aero >= 1, r);
+db.flight_runs.forEach((x) => { x.at = iso(now - 120 * 60e3); });
+Object.assign(db.bookings[0], { sched_at: day + "T12:00:00Z", flight_status: "scheduled" });
+r = await post({ action: "timer" });
+check("a car matched at 13:00 is the only one waiting: just the 05:00-17:00 chunk", r.aero === 1, r);
+check("a partial fetch never marks a car \"Not in the timetable\"", !/Not in the timetable/.test(db.bookings[0].flight_note), db.bookings[0].flight_note);
+db.flight_runs.forEach((x) => { x.at = iso(now - 120 * 60e3); });
+db.bookings.push({ ...db.bookings[0], id: "b9", flight: "", sched_at: null, flight_status: "" });
+r = await post({ action: "timer" });
+check("a car with no flight number yet: every chunk (3 calls), for the flights-near-its-time list", r.aero === 3, r);
+db.flight_runs.forEach((x) => { x.at = iso(now - 120 * 60e3); });
+db.bookings.forEach((b) => { b.flight_status = "landed"; });
+r = await post({ action: "timer" });
+check("timer when every flight on tonight's sheet has landed: no AeroData", r.aero === 0, r);
 fresh();
 r = await post({ action: "check" });
 check("Check flights: FR24 only, no AeroData", r.status === 200 && r.aero === 0 && r.fr24 === 1 && !r.json.schedule, r);
-fresh();
+fresh(); db.bookings[0].sched_at = null;   // not matched yet: every chunk
 r = await post({ action: "timetable", day });
 check("Fill times: AeroData only (3 calls for the day), no FR24", r.status === 200 && r.aero === 3 && r.fr24 === 0, r);
 r = await post({ action: "timetable", day });
@@ -105,7 +124,7 @@ addSheet2();
 r = await post({ action: "timetable", day: "2026-01-02" });
 check("Fill times for another sheet: allowed", r.status === 200 && r.aero === 3, r);
 
-fresh(); aeroAnswer = "quota";
+fresh(); aeroAnswer = "quota"; db.bookings[0].sched_at = null;
 r = await post({ action: "timetable", day });
 check("monthly quota spent: one call, no retries, the error is shown", r.aero === 1 && /MONTHLY quota/.test(r.json.schedule.error), r);
 addSheet2();

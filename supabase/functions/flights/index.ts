@@ -5,13 +5,14 @@
 //   (All timings below are the defaults; owners and managers change them in
 //   the app under Settings, stored in companies.flight_settings.)
 //
-//   SCHEDULE (AeroDataBox)  only when someone presses "Fill times".
+//   SCHEDULE (AeroDataBox)  every 90 min in working hours, tonight's sheet
+//     only, and when someone presses "Fill times".
 //     The published timetable for the day: scheduled landing, cancellations,
 //     "the airline has moved it later" before the plane has even left, and
-//     the real landing time once it's down. ~3 calls per day sheet. Its
-//     monthly quota ran out on 10 Oct 2026 (the timer ran it every hour or
-//     two for two days of sheets, and Check flights ran it too), so nothing
-//     calls it on its own any more.
+//     the real landing time once it's down. Up to 3 calls per sheet, fewer
+//     once the day's early flights are down. Its monthly quota ran out on
+//     10 Oct 2026 (the timer ran it every hour for two days of sheets, and
+//     Check flights ran it too).
 //
 //   LIVE (FlightRadar24)    every 30 min, 06:00 to midnight.
 //     Where the aircraft actually is, and its ETA. Credits are charged per
@@ -22,7 +23,7 @@
 //
 // Called three ways (POST JSON):
 //   { action: "timer" }  by the database timer every 10 min, with the x-timer
-//                        header. FR24 only; decides for itself whether it's due.
+//                        header. Decides for itself whether a check is due.
 //   { action: "check" }  by the office's "Check flights" button, with their
 //                        sign-in. FR24 only. Needs the "flights" permission;
 //                        at most every 3 min.
@@ -54,7 +55,7 @@ const BUTTON_GAP_MIN = 3;
 const DELAY_WITHIN = 60, DELAY_AFTER = 20;
 const MIN_DELAY = 15, MAX_DELAY = 360, MAX_EARLY = 60, MIN_FLIGHT = 20;
 const FR24_BATCH = 15, FR24_GAP_MS = 6500, FR24_MAX_CALLS = 6;
-const AERO_GAP_MS = 1200, TIMETABLE_GAP_MIN = 10;
+const AERO_GAP_MS = 1200, TIMETABLE_GAP_MIN = 10, TIMETABLE_EVERY_MIN = 90;
 // RapidAPI's answer once the month's units are spent. Asking again only
 // draws the same answer, so a press within 6 h of it doesn't call at all.
 const QUOTA_GONE = /MONTHLY quota/i, QUOTA_WAIT_H = 6;
@@ -141,12 +142,15 @@ async function aeroFetch(key: string, airport: string, from: string, to: string)
 
 // Every arrival from 05:00 on the sheet's day for 26 hours, in 12-hour chunks
 // (the API refuses longer ranges). Times asked for are the airport's local time.
-async function aeroDay(key: string, c: Company, day: string): Promise<Arrival[]> {
+// want(from, to) false skips a chunk (no car still waiting on a flight in it).
+async function aeroDay(key: string, c: Company, day: string, want: (from: string, to: string) => boolean = () => true) {
   const next = addDays(day, 1);
   const windows = [[`${day}T05:00`, `${day}T17:00`], [`${day}T17:00`, `${next}T05:00`], [`${next}T05:00`, `${next}T07:00`]];
   const out: Arrival[] = [];
+  let calls = 0, skipped = 0;
   for (let i = 0; i < windows.length; i++) {
-    if (i) await sleep(AERO_GAP_MS);
+    if (!want(windows[i][0], windows[i][1])) { skipped++; continue; }
+    if (calls++) await sleep(AERO_GAP_MS);
     for (const f of await aeroFetch(key, c.airport_iata, windows[i][0], windows[i][1])) {
       const leg = f.movement ?? f.arrival ?? {};
       const num = String(f.number ?? "");
@@ -183,7 +187,7 @@ async function aeroDay(key: string, c: Company, day: string): Promise<Arrival[]>
         codeshare: /codeshared/i.test(String(f.codeshareStatus ?? "")), sched, cancelled, late, why, landed });
     }
   }
-  return out;
+  return { arrivals: out, partial: skipped > 0 };
 }
 
 // ── FlightRadar24: where the aircraft is ──────────────────────────────
@@ -245,11 +249,22 @@ async function checkSchedule(admin: SupabaseClient, c: Company, days: string[], 
     if (rows.every((b) => b.overstay || b.cleared_at || ["landed", "cancelled"].includes(b.flight_status))) { tally.done++; continue; }
     tally.sheets++;
 
-    let arrivals: Arrival[];
+    // Only the 12-hour chunks with a car still waiting on its flight: one
+    // already matched to the timetable needs the chunk around its time (an
+    // hour either side); one not matched yet, or with no flight number,
+    // needs every chunk. Landed, cancelled and handed-back cars need none.
+    const waiting = (rows as Booking[]).filter((b) => !b.overstay && !b.cleared_at && !["landed", "cancelled"].includes(b.flight_status));
+    const local = (d: Date) => { const l = localParts(d, tz); return `${l.day}T${l.time}`; };
+    const want = (from: string, to: string) => waiting.some((b) => {
+      if (!b.flight || !b.sched_at) return true;
+      const at = new Date(b.sched_at).getTime();
+      return local(new Date(at + 60 * MIN)) >= from && local(new Date(at - 60 * MIN)) < to;
+    });
+    let arrivals: Arrival[], partial = false;
     // The API allows about one request a second: the gap between days too, not
     // just between one day's three windows (two back to back drew a 429).
     if (fetchedDays++) await sleep(AERO_GAP_MS);
-    try { arrivals = await aeroDay(key, c, day); }
+    try { ({ arrivals, partial } = await aeroDay(key, c, day, want)); }
     catch (err) { tally.error = (err as Error).message; if (QUOTA_GONE.test(tally.error)) break; continue; }
 
     // Keep the day's arrivals, so a car with no flight number can be offered
@@ -274,7 +289,8 @@ async function checkSchedule(admin: SupabaseClient, c: Company, days: string[], 
         tally.notfound++;
         if (!b.flight_status && !b.sched_at && b.flight_note !== note) patchOf(changes, b).flight_note = note;
       };
-      if (!runs.length) { missing.push(b); continue; }
+      // A chunk skipped as done: no news is not "not in the timetable".
+      if (!runs.length) { if (!partial) missing.push(b); continue; }
       // A daily number appears more than once in 26 hours: take the run
       // nearest the time the customer booked, and never one 6 h away.
       const timed = runs.filter((a) => a.sched && (!booked || Math.abs(minsBetween(booked, a.sched!)) <= MAX_DELAY))
@@ -288,7 +304,7 @@ async function checkSchedule(admin: SupabaseClient, c: Company, days: string[], 
         // flight's time (so the board orders it by that) and keeps the warning.
         const near = runs.filter((a) => a.sched && !a.cancelled)
           .sort((x, y) => booked ? Math.abs(minsBetween(booked, x.sched!)) - Math.abs(minsBetween(booked, y.sched!)) : 0)[0];
-        if (!near) { flag(NOT_FOUND); continue; }
+        if (!near) { if (!partial) flag(NOT_FOUND); continue; }
         tally.notfound++;
         const note = `Lands ${hhmm(near.sched!, tz)}, over 6 h from the booked time · check the flight number`;
         if (!b.sched_at || new Date(b.sched_at).getTime() !== near.sched!.getTime() || (b.flight_status === "" || b.flight_status === "scheduled") && b.flight_note !== note) {
@@ -442,7 +458,9 @@ async function checkLive(admin: SupabaseClient, c: Company, day: string, trigger
   return tally;
 }
 
-// FR24 only. The timetable (AeroDataBox) runs only from its own button.
+// Live (FR24) on its own timer. The timetable (AeroDataBox) every 90 min in
+// working hours, tonight's sheet only (Rakesh, 10 Oct 2026, after the
+// monthly quota ran out), plus the Fill times button.
 async function runCompany(admin: SupabaseClient, c: Company, trigger: "timer" | "button") {
   const now = new Date(), today = shiftDay(c, now), T = timingOf(c);
   if (trigger === "timer" && !T.enabled) return { company: c.name, skipped: "Flight checks are switched off in Settings" };
@@ -455,6 +473,10 @@ async function runCompany(admin: SupabaseClient, c: Company, trigger: "timer" | 
   const inHours = T.active_from < T.active_to ? hour >= T.active_from && hour < T.active_to : hour >= T.active_from || hour < T.active_to;
   if (trigger === "button" || (inHours && (!lastLive || minsBetween(lastLive, now) >= T.live_every_min - SLACK_MIN))) {
     out.live = await checkLive(admin, c, today, trigger);
+  }
+  if (trigger === "timer" && inHours && Deno.env.get("AERODATABOX_KEY")) {
+    const lastSched = await lastRun(admin, c, "schedule");
+    if (!lastSched || minsBetween(lastSched, now) >= TIMETABLE_EVERY_MIN - SLACK_MIN) out.schedule = await checkSchedule(admin, c, [today], "timer");
   }
   return out;
 }
