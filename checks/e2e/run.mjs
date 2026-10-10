@@ -232,10 +232,10 @@ async function backend(ctx, db) {
 }
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 const JWT = b64({ alg: "HS256" }) + "." + b64({ sub: "u1", role: "authenticated", exp: 4102444800 }) + ".sig";
-async function phone(browser, db, { signedIn = true, ua, width = 390, noBitmap = false, still = "", pdfLabels = false } = {}) {
+async function phone(browser, db, { signedIn = true, ua, width = 390, noBitmap = false, still = "", pdfLabels = false, stuckBlob = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 844 }, userAgent: ua, permissions: ["camera"] });
   await backend(ctx, db);
-  await ctx.addInitScript(([jwt, signedIn, noBitmap, still, pdfLabels]) => {
+  await ctx.addInitScript(([jwt, signedIn, noBitmap, still, pdfLabels, stuckBlob]) => {
     // Every label the PDF button shows, however quickly it changes.
     if (pdfLabels) {
       window.__pdfLabels = [];
@@ -269,7 +269,9 @@ async function phone(browser, db, { signedIn = true, ua, width = 390, noBitmap =
     try { navigator.clipboard.writeText = async () => {}; } catch (e) {}
     // Like an iPhone that won't decode a photo this way.
     if (noBitmap) window.createImageBitmap = () => Promise.reject(new Error("not supported"));
-  }, [JWT, signedIn, noBitmap, still, pdfLabels]);
+    // Like the Android phones where toBlob's answer never comes after the camera (10 Oct).
+    if (stuckBlob) { window.__toBlobs = 0; HTMLCanvasElement.prototype.toBlob = function () { window.__toBlobs++; }; }
+  }, [JWT, signedIn, noBitmap, still, pdfLabels, stuckBlob]);
   const page = await ctx.newPage();
   page.setDefaultTimeout(6000);
   page.__errors = [];
@@ -1184,6 +1186,23 @@ await scenario(async () => {
   const sh = await page.evaluate(() => window.__shares);
   check("PT (PDF): one share, one PDF named after the reg, reg as the message", sh.length === 1 && sh[0].n === 1 && sh[0].types[0] === "application/pdf" && /^DY16MYO-PT-8-photos\.pdf$/.test(sh[0].names[0]) && sh[0].text === "DY16MYO", sh);
   check("PT (PDF): PT gets ticked", db.calls.some((c) => c.fn === "tap_pick" && c.args.p_key === "pt"));
+});
+// Android's stuck toBlob: PT still finishes on its own, no switching apps needed.
+await scenario(async () => {
+  const { page } = await ptRun("pdf", 4, { stuckBlob: true });
+  check("PT (toBlob never answers): Done still closes the camera with every photo", await page.locator("#camVideo").count() === 0 && await page.locator(".ptthumbs img").count() === 4, await page.locator(".ptthumbs img").count());
+  await page.waitForSelector("[data-ptpdf]:not([disabled])", { timeout: 15000 }).catch(() => {});
+  check("PT (toBlob never answers): the PDF is still made", await page.locator("[data-ptpdf]:not([disabled])").count() === 1);
+  check("PT (toBlob never answers): it gave up waiting on toBlob once, then used the plain way", (await page.evaluate(() => window.__toBlobs)) === 1, await page.evaluate(() => window.__toBlobs));
+  await page.click("[data-ptpdf]").catch(() => {}); await sleep(800);
+  const sh = await page.evaluate(() => window.__shares);
+  check("PT (toBlob never answers): one PDF of 4 photos shared", sh.length === 1 && /^DY16MYO-PT-4-photos\.pdf$/.test(sh[0].names[0]) && sh[0].sizes[0] > 4000, sh);
+  check("PT (toBlob never answers): no errors", page.__errors.length === 0, page.__errors);
+});
+await scenario(async () => {
+  const { db, page } = await ptRun("link", 5, { stuckBlob: true });
+  await page.waitForSelector("[data-ptlink]", { timeout: 15000 }).catch(() => {});
+  check("PT link (toBlob never answers): photos still upload and the link is saved", db.uploads.length === 5 && db.ptLinks.length === 1 && db.ptLinks[0].paths.length === 5, { up: db.uploads.length, links: db.ptLinks.length });
 });
 await scenario(async () => {
   const { db, page } = await ptRun("link", 5);
