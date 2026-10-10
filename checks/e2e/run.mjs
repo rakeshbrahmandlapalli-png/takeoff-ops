@@ -200,6 +200,10 @@ async function backend(ctx, db) {
       if (a.action === "client_open") { db.company = db.clientCompany; db.me = { ...db.me, company_id: db.company.id, name: "RAKESH (PARKING OPS)" }; return reply(200, { token_hash: "th", name: db.company.name }); }
       return reply(400, { error: "not in the test" });
     }
+    if (p.startsWith("/functions/v1/flights")) {
+      const a = JSON.parse(req.postData() || "{}"); (db.flightCalls = db.flightCalls || []).push(a);
+      return reply(200, a.action === "timetable" ? { schedule: { filled: 2, moved: 0, notfound: 0 } } : { company: "TAKEOFF", live: { written: 1, landed: 1 } });
+    }
     if (p.startsWith("/functions/v1/takeoff-bookings")) {
       (db.autoRuns = db.autoRuns || []).push(JSON.parse(req.postData() || "{}"));
       return reply(200, { ok: true, summary: { days: [{ kind: "drops", day: TONIGHT, added: 2, updated: 1 }, { kind: "picks", day: TONIGHT, added: 3, updated: 0 }], drops_rows: 3, picks_rows: 3 } });
@@ -2455,6 +2459,26 @@ async function stressTests() {
     check("Stress import (" + kind + "): the same file again sends the same 500 (the server keeps one of each)", total2 === 500, total2);
   });
 }
+
+// Flights: Check flights asks for live positions only; the timetable (AeroData,
+// a paid monthly allowance) is its own clearly named button; Settings no longer
+// offers a timetable timer.
+for (const [look, mk] of [["Standard", () => makeDb()], ["Operations", () => apbDb("ops")]]) await scenario(async () => {
+  const db = mk(), page = await phone(browser, db, { width: 390 });
+  await open(page); await sleep(300);
+  const go = async (v) => { await page.evaluate(() => (document.querySelector("#bnav [data-bn=menuBtn]") || document.querySelector("#cHead:not(.hidden)") || document.getElementById("menuBtn")).click()); await page.waitForSelector("#menu[open]"); await sleep(300); await page.click('#menuBody [data-view="' + v + '"]'); await sleep(400); };
+  await go("flights");
+  const b = await page.evaluate(() => ({ fill: (document.querySelector("#main [data-filltimes]") || {}).textContent, check: (document.querySelector("#main [data-checkflights]") || {}).textContent }));
+  check(look + " Flights: Fill times says it uses AeroData; Check flights doesn't", /AeroData/.test(b.fill || "") && b.check && !/AeroData/.test(b.check), b);
+  await page.click("#main [data-checkflights]"); await sleep(600);
+  const t = await toast(page);
+  check(look + " Flights: Check flights asks for live positions only and says what it found", db.flightCalls.length === 1 && db.flightCalls[0].action === "check" && /1 live ETAs · 1 landed/.test(t) && !/timetable/i.test(t), { calls: db.flightCalls, t });
+  await page.click("#main [data-filltimes]"); await sleep(600);
+  check(look + " Flights: Fill times asks for that sheet's timetable", db.flightCalls.length === 2 && db.flightCalls[1].action === "timetable" && /^\d{4}-\d{2}-\d{2}$/.test(db.flightCalls[1].day), db.flightCalls);
+  await go("settings");
+  check(look + " Settings: no timetable timer (AeroData runs only from Fill times)", await page.evaluate(() => !document.querySelector('[data-setting="schedule_every_hours"]') && !/AeroDataBox/.test(document.querySelector(".fchecks").textContent)));
+  check(look + " Flights and Settings: no errors", page.__errors.length === 0, page.__errors);
+});
 
 check("the security policy blocked nothing the app needs", cspBlocked.length === 0, cspBlocked.slice(0, 3));
 await browser.close(); server.close();
