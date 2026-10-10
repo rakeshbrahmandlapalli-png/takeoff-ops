@@ -56,7 +56,7 @@ The user wants looks kept **separate** (a change to one must not change another)
 - Summary: progress bar, activity by day with chips/search/coloured dots, picks
   "Cars in by hour" bars.
 - Location on PICKS (per client, Clients → Edit, `brand.picks_yard`): picks rows get a YARD button instead of NO SHOW (NO SHOW in the car panel), yard counts under the numbers. Anyone who takes cars in can set it (setup 67).
-- Exit fee (per client, Clients → Edit, `brand.exit_fee` / `brand.exit_free`, setup 75): references starting with a listed code (letters and numbers only, any case) get a green NO EXIT FEE tag on DROPS rows; the car panel says the fee or "None for this booking". Nothing shows while no fee is set.
+- Exit fee (Settings → Exit fee, **owners only**, `companies.exit_fee` / `exit_free`, setup 75): references starting with a listed code (letters and numbers only, any case) get a green NO EXIT FEE tag on DROPS rows. Other DROPS cars get an EXIT FEE box in the car panel: 📷 CASH / 📷 CARD take a photo of the payment (pt-photos <company>/docs/<booking>/x<time>.jpg, 90 days) and mark it paid (`set_exit_paid`, anyone who can CLEAR); "Cash/Card, no photo" links; the row then shows EXIT £10 CASH. Nothing shows while no fee is set.
 - Dashboard (owner/manager, Menu → OFFICE): parked now by return day, desk adds, money taken/owed/left unpaid, removed, complaints (`owner_dashboard`, setup 66).
 - PICKS "+ New booking at the desk" (everyone but view-only): quick form with a docket photo (camera), NEW BOOKING, taken in, location; photo in pt-photos at <company>/docs/<booking>/, kept 90 days, shown in the car panel (also on its DROPS car by ref). Setup 69.
 - Every look: menu bottom shows "App version <etag> · up to date" or
@@ -75,7 +75,7 @@ The user wants looks kept **separate** (a change to one must not change another)
   force-push it (it only carries merged history).
 - Keep UI text short; the user removed explanatory notes in the menu (keep only
   the Display note).
-- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **531 passing** as of 10 Oct
+- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **544 passing** as of 10 Oct
   2026. Add tests for every change. Write output to a file and grep `FAIL|passed`.
   The mock Supabase lives in run.mjs (`rpc()` cases, REST routes).
   Previews: `SHOTS=<dir> node run.mjs` screenshots TakeOff's look (phone and desktop).
