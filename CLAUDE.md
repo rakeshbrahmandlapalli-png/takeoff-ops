@@ -59,7 +59,7 @@ The user wants looks kept **separate** (a change to one must not change another)
 - Exit fee (Settings → Exit fee, **owners only**, `companies.exit_fee` / `exit_free`, setup 76): references starting with a listed code (letters and numbers only, any case) get a green NO EXIT FEE tag on DROPS rows. Other DROPS cars get an EXIT FEE box in the car panel: 📷 CASH / 📷 CARD take a photo of the payment (pt-photos <company>/docs/<booking>/x<time>.jpg, 90 days) and mark it paid (`set_exit_paid`, anyone who can CLEAR); "Cash/Card, no photo" links; the row then shows EXIT £10 CASH. Nothing shows while no fee is set.
 - PICKS car (every look): RETURN FLIGHT box (anyone who takes cars in or does flights), shown on the row after the drop time; the office also gets BACK DATE AND TIME there (setup 78).
 - Yard colours (Settings → Yard colours, **owners only**, `companies.yard_colours`, setup 77): each yard's tag on DROPS rows, the PICKS location button and the car's yard buttons filled with the colour (`applyYardColours` writes `<style id=yardColours>`); a yard with no colour keeps the look's own. Every look.
-- Key check (every look but the card ones, DROPS boards, everyone but view-only): **K** beside TO DO / ALL. While on, each drop gets a tick box (`keyBox`) and its yard tag goes grey (`kgrey`) until ticked (key found in the cabinet); the button counts "K n/N" cars on site. Ticks and the switch are on the phone only (localStorage `takeoff_keys` per sheet, `takeoff_keymode`); sharing them between phones would need a DB part. A separate Key check page was tried and parked by the user.
+- Key check (every look but the card ones, DROPS boards, everyone but view-only): **K** beside TO DO / ALL. While on, each drop gets a tick box (`keyBox`) and its yard tag goes grey (`kgrey`) until ticked (key found in the cabinet). The grey stays with K off while any key on the sheet is ticked (`keyGrey`); K on shows "Key check · Untick all" above the list to end it. The button counts "K n/N" cars on site. Ticks and the switch are on the phone only (localStorage `takeoff_keys` per sheet, `takeoff_keymode`); sharing them between phones would need a DB part. A separate Key check page was tried and parked by the user.
 - Dashboard (owner/manager, Menu → OFFICE): parked now by return day, desk adds, money taken/owed/left unpaid, removed, complaints (`owner_dashboard`, setup 66).
 - PICKS "+ New booking at the desk" (everyone but view-only): quick form with a docket photo (camera), NEW BOOKING, taken in, location; photo in pt-photos at <company>/docs/<booking>/, kept 90 days, shown in the car panel (also on its DROPS car by ref). Setup 69.
 - Every look: menu bottom shows "App version <etag> · up to date" or
@@ -78,7 +78,7 @@ The user wants looks kept **separate** (a change to one must not change another)
   force-push it (it only carries merged history).
 - Keep UI text short; the user removed explanatory notes in the menu (keep only
   the Display note).
-- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **687 passing** as of 10 Oct
+- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **695 passing** as of 10 Oct
   2026. Add tests for every change. Write output to a file and grep `FAIL|passed`.
   The mock Supabase lives in run.mjs (`rpc()` cases, REST routes).
   Previews: `SHOTS=<dir> node run.mjs` screenshots TakeOff's look (phone and desktop).
