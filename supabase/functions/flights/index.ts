@@ -249,11 +249,13 @@ async function checkSchedule(admin: SupabaseClient, c: Company, days: string[], 
     if (rows.every((b) => b.overstay || b.cleared_at || ["landed", "cancelled"].includes(b.flight_status))) { tally.done++; continue; }
     tally.sheets++;
 
-    // Only the 12-hour chunks with a car still waiting on its flight: one
-    // already matched to the timetable needs the chunk around its time (an
-    // hour either side); one not matched yet, or with no flight number,
-    // needs every chunk. Landed, cancelled and handed-back cars need none.
-    const waiting = (rows as Booking[]).filter((b) => !b.overstay && !b.cleared_at && !["landed", "cancelled"].includes(b.flight_status));
+    // Only the 12-hour chunks with a car FR24 can't update: one already
+    // matched to the timetable needs the chunk around its time (an hour
+    // either side); one not matched yet, or with no flight number, needs
+    // every chunk. Landed, cancelled and handed-back cars need none, and
+    // nor does a flight FR24 has in the air (it has the ETA; the timetable
+    // only adds the scheduled time, cancellations and late departures).
+    const waiting = (rows as Booking[]).filter((b) => !b.overstay && !b.cleared_at && !["landed", "cancelled", "airborne"].includes(b.flight_status));
     const local = (d: Date) => { const l = localParts(d, tz); return `${l.day}T${l.time}`; };
     const want = (from: string, to: string) => waiting.some((b) => {
       if (!b.flight || !b.sched_at) return true;
