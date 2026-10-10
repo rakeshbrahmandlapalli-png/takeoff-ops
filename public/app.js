@@ -3583,6 +3583,7 @@
         return '<div class="rowline"><div class="grow"><strong>' + (y.yard ? esc(YARD_LABEL[y.yard] || y.yard) : "No yard yet") + '</strong><div class="note">' + line + '</div></div>' + yardNum(y) + "</div>";
       }).join("") + "</div>";
     }
+    h += '<div class="section-label">Cars on site, next 14 days</div><div class="box dlist booked">' + bookedBody(D, PK) + "</div>";
     var pdays = (PK.late ? [{ late: true, n: PK.late }] : []).concat(PK.days || []);
     h += '<div class="section-label">Parked now, by return day</div><div class="box dlist dpark">' + (pdays.length ? pdays.map(function (d) {
       if (d.late) return '<details class="latebox"><summary class="rowline late"><div class="grow"><strong>Past their return</strong><div class="note">Return time gone, not handed back yet · tap to see them</div></div><strong class="num">' + d.n + "</strong></summary>" + lateBody(PK) + "</details>";
@@ -3656,6 +3657,7 @@
       metric('comp', 'Complaints', x.complaints.length, 'Recorded in this period', 'complaints') +
       metric('early', 'Early returns', +x.D.early || 0, (+x.D.changed || 0) + ' return changes', null) + '</div></section><section class="ops-panel ops-details">' + panelHead('Detailed records') +
       detail('unpaid', 'Left with no payment recorded') + detail('added', 'Added at the desk') + detail('money', 'Money taken') + detail('owed', 'Owed now') + detail('waived', 'Waived') + detail('removed', 'Removed') + detail('complaints', 'Complaints') + '</section></div></div>';
+    h += '<section class="ops-panel ops-booked">' + panelHead('Cars on site', 'Next 14 days') + '<div class="booked">' + bookedBody(x.D, PK) + '</div></section>';
     if (x.yards.length) h += '<section class="ops-panel ops-yards">' + panelHead('Parked now, by yard') + '<div class="dlist">' + x.yards.map(function (y) {
       var ds = y.days || [], shown = ds.slice(0, 4), rest = ds.slice(4).reduce(function (n, d) { return n + d.n; }, 0);
       var line = shown.map(function (d) { return (d.day ? esc(x.dayName(d.day)) : '<b class="late">past return</b>') + ' ' + d.n; }).join(' · ') + (rest ? ' · later ' + rest : '');
@@ -4459,6 +4461,54 @@
     S.company.capacity = r.data.capacity; S.company.yard_capacity = r.data.yard_capacity || {}; S.dash = null;
     toast(r.data.capacity ? "Saved: " + r.data.capacity + " spaces" : "Capacity cleared"); render();
   }
+  // Cars on site per day (database part 81): pasted from the booking report, drawn against capacity.
+  var MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  function parseBooked(text) {
+    var t = String(text || "").replace(/(\d),(\d{3})(?!\d)/g, "$1$2"), dates = [], pad = function (n) { return ("0" + n).slice(-2); };
+    // 2026-10-10, or 10-October-2026 / 10 Oct 2026 (the report's own filter boxes)
+    t = t.replace(/(\d{4})-(\d{2})-(\d{2})|(\d{1,2})[ \-\/]([A-Za-z]{3})[A-Za-z]*[ \-\/,]+(\d{4})/g, function (m, y, mo, d, d2, mon, y2) {
+      if (y) dates.push(y + "-" + mo + "-" + d);
+      else { var n = MONTHS[mon.toLowerCase()]; if (n) dates.push(y2 + "-" + pad(n) + "-" + pad(d2)); else return m; }
+      return " ";
+    });
+    var nums = t.match(/\d+/g) || [];
+    if (!dates.length) return { error: "No dates found. Copy the date and total columns from the report." };
+    if (dates.length !== nums.length) return { error: "Found " + dates.length + " dates but " + nums.length + " totals. Copy both columns, dates and totals only." };
+    var days = {};
+    for (var i = 0; i < dates.length; i++) {
+      var d = new Date(dates[i] + "T12:00:00Z");
+      if (isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== dates[i]) return { error: "Not a date: " + dates[i] };
+      days[dates[i]] = +nums[i];
+    }
+    return { days: days };
+  }
+  function bookedBody(D, PK) {
+    var booked = D.booked || {}, today = londonParts(new Date()).key, cap = +S.company.capacity || 0;
+    var keys = Object.keys(booked).filter(function (k) { return k >= today; }).sort().slice(0, 14);
+    var ret = {}; (PK.days || []).forEach(function (d) { ret[d.day] = +d.n; });
+    var h = "";
+    if (keys.length) {
+      var max = Math.max.apply(null, keys.map(function (k) { return +booked[k] || 0; }).concat([cap, 1])), peak = keys[0];
+      keys.forEach(function (k) { if (booked[k] > booked[peak]) peak = k; });
+      h += '<div class="booked-top"><span>Busiest: <b>' + esc(k0(peak)) + "</b> " + booked[peak] + (cap ? " of " + cap : "") + "</span>" + (D.booked_at ? "<span>Pasted " + esc(dayShort(D.booked_at)) + " " + esc(hhmm(D.booked_at)) + "</span>" : "") + "</div>";
+      h += '<div class="booked-rows">' + keys.map(function (k) {
+        var n = +booked[k] || 0, pct = Math.round(n / max * 100), lvl = !cap ? "" : n > cap ? " over" : n >= cap * 0.9 ? " near" : "";
+        var note = cap ? (n > cap ? (n - cap) + " over" : (cap - n) + " free") : "";
+        return '<div class="booked-row' + lvl + '"><span class="booked-day">' + esc(k0(k)) + '</span><span class="booked-bar" role="img" aria-label="' + n + (cap ? " of " + cap : "") + '"><i style="width:' + pct + '%"></i>' + (cap && cap < max ? '<u style="left:' + Math.round(cap / max * 100) + '%"></u>' : "") + '</span><strong class="num">' + n + '</strong><small>' + note + "</small></div>";
+      }).join("") + "</div>";
+    } else h += '<div class="empty">No days yet. Paste the Bookings report from the booking system.</div>';
+    return h + '<details class="booked-paste"><summary>' + (keys.length ? "Paste a new report" : "Paste report") + '</summary><textarea id="bookedText" rows="6" spellcheck="false" placeholder="2026-10-10 638&#10;2026-10-11 651&#10;(or the date column, then the total column)"></textarea><div class="row-actions"><button type="button" class="btn brand small" data-savebooked>Save</button></div><p class="note">Dates and totals only. Replaces the list above.</p></details>';
+    function k0(k) { return k === today ? "Today" : k === addDaysKey(today, 1) ? "Tomorrow" : longDay(k); }
+  }
+  async function saveBooked(btn) {
+    var r0 = parseBooked(($("bookedText") || {}).value);
+    if (r0.error) return toast(r0.error, true);
+    btn.disabled = true;
+    var r = await sb.rpc("set_booked_days", { p_days: r0.days });
+    btn.disabled = false;
+    if (r.error) return toast(r.error.message, true);
+    S.dash = null; toast("Saved " + Object.keys(r0.days).length + " days"); render();
+  }
   function overstayRateHtml() {
     var rate = +(S.company && S.company.overstay_rate) || 0;
     return '<div class="box" style="padding:14px;margin-top:14px;max-width:560px">' + boxTitle("Overstay charges", rate ? money(rate) + " a day" : "Off") +
@@ -4788,6 +4838,7 @@
     if (t.dataset.saveycol !== undefined) return saveYardColours(t);
     if (t.dataset.ycoff) { var yi = document.querySelector('[data-ycol="' + t.dataset.ycoff + '"]'); if (yi) { yi.setAttribute("data-off", ""); var yt = yi.parentNode.querySelector(".code"); if (yt) yt.removeAttribute("style"); } t.outerHTML = '<span class="note">Not set</span>'; return; }
     if (t.dataset.savecap !== undefined) return saveCapacity(t);
+    if (t.dataset.savebooked !== undefined) return saveBooked(t);
     if (t.dataset.swipestep) { setSwipeChoice(t.dataset.swipestep); render(); return openMenu(); }
     if (t.dataset.swipeleft) { setSwipeLeftChoice(t.dataset.swipeleft); render(); return openMenu(); }
     if (t.closest("[data-swipeonlyme]")) { setSwipeOnlyChoice(!swipeOnlyChoice()); render(); return openMenu(); }
