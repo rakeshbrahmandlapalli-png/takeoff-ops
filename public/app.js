@@ -1500,15 +1500,45 @@
     input.value = "";
     openPt(r); ptPump(r);
   }
+  // A canvas as a JPEG. On some Android phones toBlob's answer never comes
+  // after the camera's been open (PT stuck on "Making the PDF…" or "Saving…"
+  // until the app is switched away and back, 10 Oct). So it gets a few
+  // seconds, then the picture is copied the plain way (toDataURL), which
+  // always finishes; and for the next minute the plain way is used at once.
+  var BLOB_WAIT = 4000, blobStuckAt = 0;
+  function jpegOf(c, q) {
+    if (Date.now() - blobStuckAt < 60000) return Promise.resolve(jpegPlain(c, q));
+    return new Promise(function (ok) {
+      var done = false, t = setTimeout(function () {
+        if (done) return; done = true; blobStuckAt = Date.now(); ok(jpegPlain(c, q));
+      }, BLOB_WAIT);
+      try { c.toBlob(function (b) { if (done) return; done = true; clearTimeout(t); ok(b || jpegPlain(c, q)); }, "image/jpeg", q); }
+      catch (e) { done = true; clearTimeout(t); ok(jpegPlain(c, q)); }
+    });
+  }
+  function jpegPlain(c, q) {
+    try {
+      var s = atob(c.toDataURL("image/jpeg", q).split(",")[1]), a = new Uint8Array(s.length);
+      for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i);
+      return a.length ? new Blob([a], { type: "image/jpeg" }) : null;
+    } catch (e) { return null; }
+  }
+  // A promise that gives up after ms (the same Android stall can catch
+  // createImageBitmap), so the caller's own fallback takes over.
+  function inTime(p, ms) {
+    var late = false;
+    p.then(function (x) { if (late && x && x.close) x.close(); }, function () {});   // a picture that turns up too late is let go
+    return Promise.race([p, new Promise(function (ok, no) { setTimeout(function () { late = true; no(new Error("took too long")); }, ms); })]);
+  }
   // Full camera photos are 4-8 MB; 3000 px is sharper than anyone zooms into
   // and a lot quicker to upload on mobile data.
   // Gallery photos: made upload size and stamped with when they were taken.
   async function ptShrink(b, reg) {
     try {
       var when = await ptTakenAt(b);
-      var im = await createImageBitmap(b), k = Math.min(1, PT_MAX / Math.max(im.width, im.height));
+      var im = await inTime(createImageBitmap(b), 8000), k = Math.min(1, PT_MAX / Math.max(im.width, im.height));
       var c = ptCanvas(im, Math.round(im.width * k), Math.round(im.height * k), when, reg); if (im.close) im.close();
-      return await new Promise(function (ok) { c.toBlob(function (x) { ok(x || b); }, "image/jpeg", PT_Q); });
+      return (await jpegOf(c, PT_Q)) || b;
     } catch (e) { return b; }
   }
   // Date, time and reg burnt into the bottom corner of the photo, so it stays
@@ -1786,8 +1816,8 @@
       if (!v.videoWidth) break;
       var fr = null;
       // Copied at upload size: a full 4K frame is 33 MB of memory, a 2400 px one 13 MB.
-      try { fr = await createImageBitmap(v, v.videoWidth >= v.videoHeight ? { resizeWidth: Math.min(PT_MAX, v.videoWidth), resizeQuality: "high" } : { resizeHeight: Math.min(PT_MAX, v.videoHeight), resizeQuality: "high" }); }
-      catch (e) { try { fr = await createImageBitmap(v); } catch (e2) { fr = null; } }
+      try { fr = await inTime(createImageBitmap(v, v.videoWidth >= v.videoHeight ? { resizeWidth: Math.min(PT_MAX, v.videoWidth), resizeQuality: "high" } : { resizeHeight: Math.min(PT_MAX, v.videoHeight), resizeQuality: "high" }), 3000); }
+      catch (e) { try { fr = /too long/.test(e.message) ? null : await inTime(createImageBitmap(v), 3000); } catch (e2) { fr = null; } }
       if (!fr) { if (!best) best = v; break; }   // can't copy frames: the picture as it is now
       var sc = camSharpness(fr);
       if (sc > bestScore) { if (best && best.close) best.close(); best = fr; bestScore = sc; } else if (fr.close) fr.close();
@@ -1797,7 +1827,7 @@
     var c = ptCanvas(best, Math.round(w * k), Math.round(h * k), when, cur.reg);
     if (best.close) best.close();
     var thumb = ptThumb(c, c.width, c.height);
-    var b = await new Promise(function (ok) { c.toBlob(ok, "image/jpeg", PT_Q); });
+    var b = await jpegOf(c, PT_Q);
     c.width = c.height = 0;
     if (!b || pt !== cur) return;
     cur.items.push({ file: b, url: thumb, state: cur.mode === "photos" ? "local" : "wait", n: cur.items.length + 1, ready: true });
@@ -1930,7 +1960,7 @@
     } catch (e) { return ""; }
   }
   async function ptThumbOf(blob) {
-    try { var im = await createImageBitmap(blob), t = ptThumb(im, im.width, im.height); if (im.close) im.close(); return t; } catch (e) { return ""; }
+    try { var im = await inTime(createImageBitmap(blob), 8000), t = ptThumb(im, im.width, im.height); if (im.close) im.close(); return t; } catch (e) { return ""; }
   }
   function ptImg(x, attrs) { return "<img" + (x.url ? ' src="' + x.url + '"' : "") + ' alt="" decoding="async"' + (attrs || "") + ">"; }
 
@@ -2009,12 +2039,12 @@
       var k = Math.min(1, max / Math.max(w, h));
       var c = document.createElement("canvas"); c.width = Math.round(w * k); c.height = Math.round(h * k);
       c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
-      var b = await new Promise(function (ok) { c.toBlob(ok, "image/jpeg", q); });
+      var b = await jpegOf(c, q);
       c.width = c.height = 0;   // free the canvas memory at once (iPhones are strict about it)
       return b && b.size < f.size ? b : null;
     }
     try {
-      var im = await createImageBitmap(f), b1 = await draw(im, im.width, im.height); if (im.close) im.close();
+      var im = await inTime(createImageBitmap(f), 8000), b1 = await draw(im, im.width, im.height); if (im.close) im.close();
       if (b1) return { blob: b1, how: "bitmap" };
     } catch (e) {}
     var url = "";
@@ -2252,6 +2282,17 @@
     cur.pdfMaking = 0; cur.pdf = P;
     if ($("panel").open && panelRow && panelRow.id === cur.id && !$("camVideo")) openPt(panelRow);
   }
+  // Back in the app (from recent apps, a call, the screen going off): PT
+  // carries on, and a PDF finished meanwhile shows its button.
+  function ptWake() {
+    var cur = pt, r = panelRow;
+    if (!cur || !r || r.id !== cur.id || !$("panel").open || $("camVideo")) return;
+    if (cur.mode !== "photos") ptPump(r);
+    var b = $("panelBody").querySelector("[data-ptpdf]");
+    if (b && b.disabled && cur.pdf && !cur.pdfMaking) openPt(r);
+  }
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") ptWake(); });
+  window.addEventListener("focus", ptWake);
   // Each photo's PDF page is made once, and while the camera is still open
   // (one at a time, between shots), so Done has little left to do: 46 photos
   // took over a minute when all were made after Done (30 Sept).
@@ -2273,11 +2314,11 @@
   // The photo made PDF size; kept as it is when it's already small.
   async function ptPdfJpeg(b) {
     try {
-      var im = await createImageBitmap(b), k = Math.min(1, PDF_MAX / Math.max(im.width, im.height));
+      var im = await inTime(createImageBitmap(b), 8000), k = Math.min(1, PDF_MAX / Math.max(im.width, im.height));
       if (k === 1 && b.size < 700000) { if (im.close) im.close(); return await ptJpegBytes(b); }
       var c = document.createElement("canvas"); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
       c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); if (im.close) im.close();
-      var j = await new Promise(function (ok) { c.toBlob(ok, "image/jpeg", PDF_Q); });
+      var j = await jpegOf(c, PDF_Q);
       c.width = c.height = 0;
       var bytes = new Uint8Array(await j.arrayBuffer()), d = jpegSize(bytes);
       if (d) return { bytes: bytes, w: d.w, h: d.h, c: d.c };
@@ -2288,9 +2329,9 @@
   async function ptJpegBytes(b) {
     var bytes = new Uint8Array(await b.arrayBuffer()), d = jpegSize(bytes);
     if (d) return { bytes: bytes, w: d.w, h: d.h, c: d.c };
-    var im = await createImageBitmap(b), c = document.createElement("canvas"); c.width = im.width; c.height = im.height;
+    var im = await inTime(createImageBitmap(b), 8000), c = document.createElement("canvas"); c.width = im.width; c.height = im.height;
     c.getContext("2d").drawImage(im, 0, 0); if (im.close) im.close();
-    var j = await new Promise(function (ok) { c.toBlob(ok, "image/jpeg", PT_Q); });
+    var j = await jpegOf(c, PT_Q);
     bytes = new Uint8Array(await j.arrayBuffer()); d = jpegSize(bytes);
     return { bytes: bytes, w: d.w, h: d.h, c: d.c };
   }

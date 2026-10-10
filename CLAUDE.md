@@ -75,7 +75,7 @@ The user wants looks kept **separate** (a change to one must not change another)
   force-push it (it only carries merged history).
 - Keep UI text short; the user removed explanatory notes in the menu (keep only
   the Display note).
-- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **553 passing** as of 10 Oct
+- Tests: `cd checks/e2e && timeout 580 node run.mjs` — **559 passing** as of 10 Oct
   2026. Add tests for every change. Write output to a file and grep `FAIL|passed`.
   The mock Supabase lives in run.mjs (`rpc()` cases, REST routes).
   Previews: `SHOTS=<dir> node run.mjs` screenshots TakeOff's look (phone and desktop).
