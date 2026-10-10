@@ -1,4 +1,4 @@
--- Parking Ops — database part 75: the exit fee, the bookings that don't pay it,
+-- Parking Ops — database part 76: the exit fee, the bookings that don't pay it,
 -- and the payment taken by cash or card with a photo.
 --
 -- Settings → Exit fee (owners only): the fee (e.g. £10 at Airport Parking
